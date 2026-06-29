@@ -322,6 +322,152 @@ button:disabled {
   gap: 8px;
 }
 
+.notificationsMenu {
+  position: relative;
+}
+
+.topbar button.hasNotifications {
+  position: relative;
+  border-color: rgba(67, 211, 198, 0.55);
+  color: var(--accent-strong);
+}
+
+.notificationBadge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 2px solid var(--panel-solid);
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.notificationsPanel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 20;
+  width: min(360px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(7, 16, 26, 0.97);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(16px);
+}
+
+.notificationsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.notificationsHeader strong,
+.notificationsHeader span {
+  display: block;
+}
+
+.notificationsHeader span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.notificationsHeader button {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.notificationsList {
+  display: grid;
+  gap: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.notificationItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: rgba(14, 27, 41, 0.86);
+}
+
+.notificationItem.info {
+  border-left-color: #38bdf8;
+}
+
+.notificationItem.warning {
+  border-left-color: #f59e0b;
+}
+
+.notificationItem.critical {
+  border-left-color: #ef4444;
+}
+
+.notificationItem span,
+.notificationItem strong,
+.notificationItem p {
+  display: block;
+}
+
+.notificationItem span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.notificationItem strong {
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 24px;
+}
+
+.notificationItem p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.notificationItem button {
+  width: auto;
+  min-width: 54px;
+  height: 34px;
+  border: 1px solid rgba(67, 211, 198, 0.4);
+  background: rgba(15, 143, 134, 0.22);
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.emptyNotifications {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
 .connectionStatus {
   display: inline-block;
   margin-top: 8px;
@@ -650,6 +796,12 @@ button:disabled {
   align-items: start;
 }
 
+.inventoryForms {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
 .quotesLayout {
   display: grid;
   grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
@@ -796,6 +948,24 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.movementList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.movementList span {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .quoteActions {
@@ -1851,4 +2021,190 @@ button:disabled {
   .customerTable td.emptyTable::before {
     content: "";
   }
+}
+
+/* Dark operational theme */
+:root {
+  --bg: #050b12;
+  --panel: rgba(9, 18, 28, 0.88);
+  --panel-solid: #09121c;
+  --panel-soft: rgba(14, 27, 41, 0.82);
+  --ink: #edf6ff;
+  --muted: #9fb2c7;
+  --line: rgba(150, 180, 205, 0.22);
+  --accent: #0f8f86;
+  --accent-strong: #43d3c6;
+  --sidebar: rgba(3, 10, 18, 0.92);
+  --app-background-image: url("/background2.png");
+}
+
+body {
+  background:
+    linear-gradient(rgba(3, 8, 14, 0.9), rgba(3, 8, 14, 0.84)),
+    var(--app-background-image);
+  background-attachment: fixed;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.shell {
+  background:
+    radial-gradient(circle at 22% 10%, rgba(15, 143, 134, 0.16), transparent 32%),
+    linear-gradient(rgba(3, 8, 14, 0.86), rgba(3, 8, 14, 0.9)),
+    var(--app-background-image);
+  background-attachment: fixed;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.workspace {
+  background: transparent;
+  color: var(--ink);
+}
+
+.sidebar {
+  border-right: 1px solid var(--line);
+  background: var(--sidebar);
+  backdrop-filter: blur(14px);
+}
+
+.topbar p,
+.sectionHeader p,
+.gmailStatusPanel p,
+.integrationStatusPanel p,
+.agendaToolbar p {
+  color: var(--accent-strong);
+}
+
+.topbar h1,
+.sectionHeader h2,
+.authIntro h1,
+.summaryGrid strong,
+.operatorStrip strong,
+.formGrid label,
+.customerTable td strong,
+.workOrderCardHeader strong,
+.deviceCardHeader strong,
+.quoteCardHeader strong,
+.paymentCardHeader strong,
+.vehicleCardHeader strong,
+.gmailMessageList strong,
+.whatsAppChatList strong,
+.whatsAppGroupGrid strong,
+.agendaWeekStrip strong,
+.agendaItem h3,
+.agendaTime strong {
+  color: var(--ink);
+}
+
+.topbar button,
+.operatorStrip,
+.summaryGrid article,
+.monitorCard,
+.customerForm,
+.customerDirectory,
+.sitesPanel,
+.deviceForm,
+.deviceDirectory,
+.workOrderForm,
+.workOrderDirectory,
+.quoteForm,
+.quoteDirectory,
+.paymentForm,
+.paymentDirectory,
+.vehicleForm,
+.vehicleDirectory,
+.gmailStatusPanel,
+.integrationStatusPanel,
+.gmailPanel,
+.integrationPanel,
+.agendaToolbar,
+.agendaWeekStrip button,
+.agendaColumn {
+  border-color: var(--line);
+  background: var(--panel);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(12px);
+}
+
+.deviceCard,
+.workOrderCard,
+.quoteCard,
+.paymentCard,
+.vehicleCard,
+.integrationChecklist article,
+.gmailWorkflowGrid article,
+.integrationWorkflowGrid article,
+.gmailMessageList article,
+.whatsAppChatList article,
+.whatsAppGroupGrid article,
+.agendaItem,
+.agendaTime,
+.secondaryButton,
+.iconTextButton,
+.geoButton,
+.customerTable th {
+  border-color: var(--line);
+  background: var(--panel-soft);
+  color: var(--ink);
+}
+
+.formGrid input,
+.formGrid select,
+.formGrid textarea,
+.searchBox input,
+.directoryToolbar select,
+.agendaControls input,
+.agendaControls select,
+.authForm label > span {
+  border-color: var(--line);
+  background: rgba(2, 9, 16, 0.74);
+  color: var(--ink);
+}
+
+.formGrid input::placeholder,
+.formGrid textarea::placeholder,
+.searchBox input::placeholder,
+.authForm input::placeholder {
+  color: rgba(159, 178, 199, 0.74);
+}
+
+.formGrid input:focus,
+.formGrid select:focus,
+.formGrid textarea:focus,
+.searchBox input:focus,
+.directoryToolbar select:focus,
+.agendaControls input:focus,
+.agendaControls select:focus {
+  border-color: rgba(67, 211, 198, 0.65);
+  outline: 2px solid rgba(67, 211, 198, 0.18);
+}
+
+.authForm input {
+  background: transparent;
+  color: var(--ink);
+}
+
+.directoryToolbar,
+.workOrderDirectory .directoryToolbar,
+.customerTableWrap {
+  border-color: var(--line);
+}
+
+.customerTable th {
+  color: var(--muted);
+}
+
+.customerTable tr.selectedRow,
+.agendaWeekStrip button.selectedDay,
+.gmailMessageList article.unreadMail,
+.whatsAppChatList article.unreadChat {
+  border-color: rgba(67, 211, 198, 0.46);
+  background: rgba(10, 88, 80, 0.28);
+}
+
+.emptyPanel {
+  color: var(--muted);
 }

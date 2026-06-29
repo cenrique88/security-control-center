@@ -5,6 +5,7 @@ import { CustomersModule } from "./customers/customers.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { DevicesModule } from "./devices/devices.module";
 import { GmailModule } from "./gmail/gmail.module";
+import { InventoryModule } from "./inventory/inventory.module";
 import { PaymentsModule } from "./payments/payments.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { QuotesModule } from "./quotes/quotes.module";
@@ -24,6 +25,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     QuotesModule,
     PaymentsModule,
     VehiclesModule,
+    InventoryModule,
     GmailModule,
     WhatsAppModule,
   ],

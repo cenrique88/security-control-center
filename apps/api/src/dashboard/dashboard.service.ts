@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { GmailService } from "../gmail/gmail.service";
+import { InventoryService } from "../inventory/inventory.service";
 import { WhatsAppService } from "../whatsapp/whatsapp.service";
 
 @Injectable()
@@ -8,6 +9,7 @@ export class DashboardService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gmailService: GmailService,
+    private readonly inventoryService: InventoryService,
     private readonly whatsAppService: WhatsAppService,
   ) {}
 
@@ -35,6 +37,7 @@ export class DashboardService {
       totalVehicles,
       activeVehicles,
       inactiveVehicles,
+      inventory,
       gmail,
       whatsApp,
     ] = await Promise.all([
@@ -81,6 +84,7 @@ export class DashboardService {
       this.prisma.vehicle.count(),
       this.prisma.vehicle.count({ where: { active: true } }),
       this.prisma.vehicle.count({ where: { active: false } }),
+      this.inventoryService.summary(),
       this.safeIntegration(() => this.gmailService.sync()),
       this.safeIntegration(() => this.whatsAppService.sync()),
     ]);
@@ -126,6 +130,7 @@ export class DashboardService {
       totalVehicles,
       activeVehicles,
       inactiveVehicles,
+      inventory,
       integrations: {
         gmail: gmailSummary,
         whatsApp: whatsAppSummary,
@@ -141,10 +146,14 @@ export class DashboardService {
         { label: "Monto a cobrar", value: pendingPaymentAmount, detail: "Suma de cobros sin pagar" },
         { label: "Equipos instalados", value: installedDevices, detail: "Dispositivos cargados en sitios" },
         { label: "Vehiculos activos", value: activeVehicles, detail: `${inactiveVehicles} inactivos` },
+        { label: "Articulos en almacen", value: inventory.totalItems, detail: `${inventory.lowStock} con stock bajo` },
+        { label: "Sin stock", value: inventory.outOfStock, detail: "Articulos que necesitan reposicion" },
         {
           label: "Gmail no leidos",
           value: gmailSummary.unread,
-          detail: gmailSummary.connected ? `${gmailSummary.important} importantes` : "Gmail sin conexion",
+          detail: gmailSummary.connected
+            ? `${gmailSummary.pendingReplies} pendientes en bandeja`
+            : "Gmail sin conexion",
         },
         {
           label: "WhatsApp activos",

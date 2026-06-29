@@ -61,29 +61,29 @@ export class GmailService {
 
   async sync() {
     const accessToken = await this.getAccessToken();
-    const [profile, inbox, unread, important, pending] = await Promise.all([
+    const inboxQuery = this.config.get<string>("GMAIL_INBOX_QUERY") ?? "in:inbox category:primary";
+    const [profile, inbox] = await Promise.all([
       this.gmailRequest<{ emailAddress: string; messagesTotal: number; threadsTotal: number }>(
         accessToken,
         "/gmail/v1/users/me/profile",
       ),
-      this.listMessages(accessToken, "in:inbox", 20),
-      this.listMessages(accessToken, "is:unread", 1),
-      this.listMessages(accessToken, "is:important", 1),
-      this.listMessages(accessToken, "in:inbox is:unread", 1),
+      this.listMessages(accessToken, inboxQuery, 50),
     ]);
 
     const details = await Promise.all(
       (inbox.messages ?? []).slice(0, 20).map((message) => this.getMessage(accessToken, message.id)),
     );
+    const unreadCount = details.filter((message) => message.labelIds?.includes("UNREAD")).length;
+    const importantCount = details.filter((message) => message.labelIds?.includes("IMPORTANT")).length;
 
     return {
       provider: "Gmail",
       connected: true,
       lastSyncAt: new Date().toISOString(),
       emailAddress: profile.emailAddress,
-      unread: unread.resultSizeEstimate ?? 0,
-      important: important.resultSizeEstimate ?? 0,
-      pendingReplies: pending.resultSizeEstimate ?? 0,
+      unread: unreadCount,
+      important: importantCount,
+      pendingReplies: unreadCount,
       messagesTotal: profile.messagesTotal,
       threadsTotal: profile.threadsTotal,
       messages: details.map((message) => this.toMessageSummary(message)),

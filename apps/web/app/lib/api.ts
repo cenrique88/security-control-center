@@ -34,6 +34,12 @@ export type DashboardSummary = {
   totalVehicles?: number;
   activeVehicles: number;
   inactiveVehicles?: number;
+  inventory?: {
+    totalItems: number;
+    lowStock: number;
+    outOfStock: number;
+    movements: number;
+  };
   integrations?: {
     gmail: {
       provider: string;
@@ -268,6 +274,71 @@ export type VehiclePayload = {
   plate?: string;
   traccarDeviceId?: string;
   active?: boolean;
+};
+
+export type InventoryMovementType = "IN" | "OUT" | "ADJUST";
+
+export type InventoryMovement = {
+  id: string;
+  itemId: string;
+  type: InventoryMovementType;
+  quantity: number;
+  stockAfter: number;
+  reason?: string | null;
+  workOrderId?: string | null;
+  installedDeviceId?: string | null;
+  createdAt: string;
+  workOrder?: {
+    id: string;
+    title: string;
+    customer: {
+      id: string;
+      name: string;
+    };
+  } | null;
+  installedDevice?: {
+    id: string;
+    brand?: string | null;
+    model?: string | null;
+    serial?: string | null;
+  } | null;
+};
+
+export type InventoryItem = {
+  id: string;
+  sku?: string | null;
+  name: string;
+  category?: DeviceType | null;
+  unit: string;
+  stock: number;
+  minStock: number;
+  location?: string | null;
+  supplier?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  movements: InventoryMovement[];
+};
+
+export type InventoryItemPayload = {
+  sku?: string;
+  name: string;
+  category?: DeviceType | "";
+  unit?: string;
+  stock?: number;
+  minStock?: number;
+  location?: string;
+  supplier?: string;
+  notes?: string;
+};
+
+export type InventoryMovementPayload = {
+  itemId: string;
+  type: InventoryMovementType;
+  quantity: number;
+  reason?: string;
+  workOrderId?: string;
+  installedDeviceId?: string;
 };
 
 export type GmailStatus = {

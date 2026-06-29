@@ -11,6 +11,7 @@ import {
   Mail,
   MapPin,
   MessageSquare,
+  Package,
   Plus,
   RefreshCw,
   Save,
@@ -35,6 +36,10 @@ import {
   DeviceType,
   GmailSync,
   GmailStatus,
+  InventoryItem,
+  InventoryItemPayload,
+  InventoryMovementPayload,
+  InventoryMovementType,
   InstalledDevice,
   Payment,
   PaymentPayload,
@@ -57,6 +62,7 @@ const modules = [
   { name: "Agenda", icon: CalendarDays },
   { name: "Presupuestos", icon: ClipboardList },
   { name: "Cobros", icon: DollarSign },
+  { name: "Almacen", icon: Package },
   { name: "Equipos", icon: Video },
   { name: "Vehiculos", icon: Car },
   { name: "Gmail", icon: Mail },
@@ -85,6 +91,15 @@ const workStatusLabels: Record<WorkOrderStatus, string> = {
   WAITING_CUSTOMER: "Espera cliente",
   COMPLETED: "Completado",
   CANCELLED: "Cancelado",
+};
+
+type AppNotification = {
+  id: string;
+  title: string;
+  detail: string;
+  module: string;
+  severity: "info" | "warning" | "critical";
+  value: number | string;
 };
 
 const emptyCustomerForm: CustomerPayload = {
@@ -147,6 +162,27 @@ const emptyVehicleForm: VehiclePayload = {
   plate: "",
   traccarDeviceId: "",
   active: true,
+};
+
+const emptyInventoryForm: InventoryItemPayload = {
+  sku: "",
+  name: "",
+  category: "",
+  unit: "u",
+  stock: 0,
+  minStock: 0,
+  location: "",
+  supplier: "",
+  notes: "",
+};
+
+const emptyInventoryMovementForm: InventoryMovementPayload = {
+  itemId: "",
+  type: "OUT",
+  quantity: 1,
+  reason: "",
+  workOrderId: "",
+  installedDeviceId: "",
 };
 
 const fallbackGmailStatus: GmailStatus = {
@@ -217,6 +253,12 @@ const fallbackSummary: DashboardSummary = {
   totalVehicles: 0,
   activeVehicles: 0,
   inactiveVehicles: 0,
+  inventory: {
+    totalItems: 0,
+    lowStock: 0,
+    outOfStock: 0,
+    movements: 0,
+  },
   integrations: {
     gmail: {
       provider: "Gmail",
@@ -261,6 +303,7 @@ export default function Home() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [gmailStatus, setGmailStatus] = useState<GmailStatus>(fallbackGmailStatus);
   const [gmailSync, setGmailSync] = useState<GmailSync>(emptyGmailSync);
   const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus>(fallbackWhatsAppStatus);
@@ -272,6 +315,9 @@ export default function Home() {
   const [quoteForm, setQuoteForm] = useState<QuotePayload>(emptyQuoteForm);
   const [paymentForm, setPaymentForm] = useState<PaymentPayload>(emptyPaymentForm);
   const [vehicleForm, setVehicleForm] = useState<VehiclePayload>(emptyVehicleForm);
+  const [inventoryForm, setInventoryForm] = useState<InventoryItemPayload>(emptyInventoryForm);
+  const [inventoryMovementForm, setInventoryMovementForm] =
+    useState<InventoryMovementPayload>(emptyInventoryMovementForm);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [deviceSearch, setDeviceSearch] = useState("");
@@ -286,6 +332,9 @@ export default function Home() {
   const [paymentStatus, setPaymentStatus] = useState<"ALL" | "PENDING" | "PAID" | "OVERDUE">("ALL");
   const [vehicleSearch, setVehicleSearch] = useState("");
   const [vehicleStatus, setVehicleStatus] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
+  const [inventorySearch, setInventorySearch] = useState("");
+  const [inventoryCategory, setInventoryCategory] = useState<DeviceType | "ALL">("ALL");
+  const [inventoryStockFilter, setInventoryStockFilter] = useState<"ALL" | "LOW">("ALL");
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerStatus, setCustomerStatus] = useState<CustomerStatus | "ALL">("ALL");
   const [status, setStatus] = useState("Cargando datos...");
@@ -298,6 +347,7 @@ export default function Home() {
   const [quotesLoading, setQuotesLoading] = useState(false);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [vehiclesLoading, setVehiclesLoading] = useState(false);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
   const [gmailLoading, setGmailLoading] = useState(false);
   const [whatsAppLoading, setWhatsAppLoading] = useState(false);
   const [customerError, setCustomerError] = useState("");
@@ -308,9 +358,11 @@ export default function Home() {
   const [quoteError, setQuoteError] = useState("");
   const [paymentError, setPaymentError] = useState("");
   const [vehicleError, setVehicleError] = useState("");
+  const [inventoryError, setInventoryError] = useState("");
   const [gmailError, setGmailError] = useState("");
   const [whatsAppError, setWhatsAppError] = useState("");
   const [locating, setLocating] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const summaryCards = useMemo(
     () => [
@@ -319,11 +371,100 @@ export default function Home() {
       { label: "Trabajos programados", value: summary.scheduledJobs },
       { label: "Equipos instalados", value: summary.installedDevices },
       { label: "Cobros pendientes", value: summary.pendingPayments },
+      { label: "Stock bajo", value: summary.inventory?.lowStock ?? 0 },
       { label: "A cobrar", value: formatCurrency(summary.pendingPaymentAmount ?? 0) },
       { label: "Gmail no leidos", value: summary.integrations?.gmail.unread ?? 0 },
-      { label: "WhatsApp chats", value: summary.integrations?.whatsApp.activeChats ?? 0 },
+      { label: "WhatsApp no leidos", value: summary.integrations?.whatsApp.unread ?? 0 },
     ],
     [summary],
+  );
+
+  const notifications = useMemo<AppNotification[]>(() => {
+    const items: AppNotification[] = [];
+    const addNotification = (notification: AppNotification, condition: boolean) => {
+      if (condition) {
+        items.push(notification);
+      }
+    };
+
+    addNotification(
+      {
+        id: "inventory-low",
+        title: "Stock bajo",
+        detail: `${summary.inventory?.outOfStock ?? 0} articulos sin stock.`,
+        module: "Almacen",
+        severity: "warning",
+        value: summary.inventory?.lowStock ?? 0,
+      },
+      Boolean(summary.inventory?.lowStock),
+    );
+
+    addNotification(
+      {
+        id: "payments-overdue",
+        title: "Cobros vencidos",
+        detail: "Hay cobros pendientes con fecha vencida.",
+        module: "Cobros",
+        severity: "critical",
+        value: summary.overduePayments ?? 0,
+      },
+      Boolean(summary.overduePayments),
+    );
+
+    addNotification(
+      {
+        id: "payments-pending",
+        title: "Cobros pendientes",
+        detail: `Monto a cobrar: ${formatCurrency(summary.pendingPaymentAmount ?? 0)}`,
+        module: "Cobros",
+        severity: "warning",
+        value: summary.pendingPayments,
+      },
+      summary.pendingPayments > 0,
+    );
+
+    addNotification(
+      {
+        id: "work-scheduled",
+        title: "Trabajos programados",
+        detail: `${summary.inProgressJobs ?? 0} en curso y ${summary.waitingJobs ?? 0} en espera.`,
+        module: "Trabajos",
+        severity: "info",
+        value: summary.scheduledJobs,
+      },
+      summary.scheduledJobs > 0 || Boolean(summary.inProgressJobs) || Boolean(summary.waitingJobs),
+    );
+
+    addNotification(
+      {
+        id: "gmail-unread",
+        title: "Gmail no leidos",
+        detail: "Correos pendientes en la bandeja principal.",
+        module: "Gmail",
+        severity: "info",
+        value: summary.integrations?.gmail.unread ?? 0,
+      },
+      Boolean(summary.integrations?.gmail.unread),
+    );
+
+    addNotification(
+      {
+        id: "whatsapp-unread",
+        title: "WhatsApp no leidos",
+        detail: `${summary.integrations?.whatsApp.activeChats ?? 0} chats activos sincronizados.`,
+        module: "WhatsApp",
+        severity: "warning",
+        value: summary.integrations?.whatsApp.unread ?? 0,
+      },
+      Boolean(summary.integrations?.whatsApp.unread),
+    );
+
+    return items;
+  }, [summary]);
+
+  const criticalNotifications = useMemo(
+    () => notifications.filter((notification) => notification.severity === "critical").length,
+    [notifications],
   );
 
   const customerStats = useMemo(
@@ -444,6 +585,16 @@ export default function Home() {
     [vehicles],
   );
 
+  const inventoryStats = useMemo(
+    () => [
+      { label: "Articulos", value: inventoryItems.length },
+      { label: "Stock bajo", value: inventoryItems.filter((item) => item.stock <= item.minStock).length },
+      { label: "Sin stock", value: inventoryItems.filter((item) => item.stock === 0).length },
+      { label: "Movimientos", value: inventoryItems.reduce((sum, item) => sum + item.movements.length, 0) },
+    ],
+    [inventoryItems],
+  );
+
   const gmailStats = useMemo(
     () => [
       { label: "No leidos", value: gmailSync.unread || gmailStatus.unread },
@@ -495,6 +646,7 @@ export default function Home() {
     void loadAgenda(token);
     void loadQuotes(token);
     void loadPayments(token);
+    void loadInventory(token);
     void loadVehicles(token);
     void loadGmailStatus(token);
     void syncGmail(token, true);
@@ -763,6 +915,41 @@ export default function Home() {
       setPaymentError("No se pudieron cargar los cobros");
     } finally {
       setPaymentsLoading(false);
+    }
+  }
+
+  async function loadInventory(activeToken = token) {
+    if (!activeToken) {
+      return;
+    }
+
+    setInventoryLoading(true);
+    setInventoryError("");
+    try {
+      const params = new URLSearchParams();
+      if (inventorySearch.trim()) {
+        params.set("search", inventorySearch.trim());
+      }
+      if (inventoryCategory !== "ALL") {
+        params.set("category", inventoryCategory);
+      }
+      if (inventoryStockFilter === "LOW") {
+        params.set("lowStock", "true");
+      }
+
+      const query = params.toString();
+      const data = await apiRequest<InventoryItem[]>(`/api/inventory${query ? `?${query}` : ""}`, {
+        token: activeToken,
+      });
+      setInventoryItems(data);
+      setInventoryMovementForm((currentForm) => ({
+        ...currentForm,
+        itemId: currentForm.itemId || data[0]?.id || "",
+      }));
+    } catch {
+      setInventoryError("No se pudo cargar el almacen");
+    } finally {
+      setInventoryLoading(false);
     }
   }
 
@@ -1097,6 +1284,65 @@ export default function Home() {
     }
   }
 
+  async function saveInventoryItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) {
+      return;
+    }
+
+    if (!inventoryForm.name.trim()) {
+      setInventoryError("El nombre del articulo es obligatorio");
+      return;
+    }
+
+    setInventoryLoading(true);
+    setInventoryError("");
+    try {
+      await apiRequest<InventoryItem>("/api/inventory", {
+        token,
+        method: "POST",
+        body: JSON.stringify(cleanInventoryPayload(inventoryForm)),
+      });
+      setInventoryForm(emptyInventoryForm);
+      await Promise.all([loadInventory(token), loadSummary(token)]);
+    } catch {
+      setInventoryError("No se pudo guardar el articulo");
+    } finally {
+      setInventoryLoading(false);
+    }
+  }
+
+  async function saveInventoryMovement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) {
+      return;
+    }
+
+    if (!inventoryMovementForm.itemId || Number(inventoryMovementForm.quantity) < 0) {
+      setInventoryError("Selecciona un articulo y una cantidad valida");
+      return;
+    }
+
+    setInventoryLoading(true);
+    setInventoryError("");
+    try {
+      await apiRequest("/api/inventory/movements", {
+        token,
+        method: "POST",
+        body: JSON.stringify(cleanInventoryMovementPayload(inventoryMovementForm)),
+      });
+      setInventoryMovementForm((currentForm) => ({
+        ...emptyInventoryMovementForm,
+        itemId: currentForm.itemId,
+      }));
+      await Promise.all([loadInventory(token), loadSummary(token)]);
+    } catch {
+      setInventoryError("No se pudo registrar el movimiento");
+    } finally {
+      setInventoryLoading(false);
+    }
+  }
+
   async function acceptQuote(id: string) {
     if (!token) {
       return;
@@ -1309,6 +1555,7 @@ export default function Home() {
               module.name === "Agenda" ||
               module.name === "Presupuestos" ||
               module.name === "Cobros" ||
+              module.name === "Almacen" ||
               module.name === "Equipos" ||
               module.name === "Vehiculos" ||
               module.name === "Gmail" ||
@@ -1355,6 +1602,8 @@ export default function Home() {
                         ? loadQuotes()
                         : activeModule === "Cobros"
                           ? loadPayments()
+                        : activeModule === "Almacen"
+                          ? loadInventory()
                         : activeModule === "Equipos"
                           ? loadDevices()
                           : activeModule === "Vehiculos"
@@ -1376,6 +1625,7 @@ export default function Home() {
                   agendaLoading ||
                   quotesLoading ||
                   paymentsLoading ||
+                  inventoryLoading ||
                   vehiclesLoading ||
                   gmailLoading ||
                   whatsAppLoading
@@ -1384,9 +1634,56 @@ export default function Home() {
                 }
               />
             </button>
-            <button type="button" title="Notificaciones" aria-label="Notificaciones">
-              <Bell size={20} />
-            </button>
+            <div className="notificationsMenu">
+              <button
+                type="button"
+                title="Notificaciones"
+                aria-label="Notificaciones"
+                className={notifications.length ? "hasNotifications" : ""}
+                onClick={() => setNotificationsOpen((current) => !current)}
+              >
+                <Bell size={20} />
+                {notifications.length ? (
+                  <span className="notificationBadge">{criticalNotifications || notifications.length}</span>
+                ) : null}
+              </button>
+              {notificationsOpen ? (
+                <section className="notificationsPanel" aria-label="Notificaciones activas">
+                  <div className="notificationsHeader">
+                    <div>
+                      <strong>Notificaciones</strong>
+                      <span>{notifications.length ? `${notifications.length} alertas activas` : "Sin alertas activas"}</span>
+                    </div>
+                    <button type="button" aria-label="Cerrar notificaciones" onClick={() => setNotificationsOpen(false)}>
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <div className="notificationsList">
+                    {notifications.map((notification) => (
+                      <article key={notification.id} className={`notificationItem ${notification.severity}`}>
+                        <div>
+                          <span>{notification.title}</span>
+                          <strong>{notification.value}</strong>
+                          <p>{notification.detail}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveModule(notification.module);
+                            setNotificationsOpen(false);
+                          }}
+                        >
+                          Ver
+                        </button>
+                      </article>
+                    ))}
+                    {!notifications.length ? (
+                      <p className="emptyNotifications">Todo al dia por ahora.</p>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
+            </div>
             <button type="button" title="Cerrar sesion" aria-label="Cerrar sesion" onClick={logout}>
               <LogOut size={20} />
             </button>
@@ -1518,6 +1815,28 @@ export default function Home() {
             onSearchChange={setPaymentSearch}
             onSelectCustomer={selectCustomer}
             onStatusChange={setPaymentStatus}
+          />
+        ) : activeModule === "Almacen" ? (
+          <InventoryView
+            devices={devices}
+            inventoryCategory={inventoryCategory}
+            inventoryError={inventoryError}
+            inventoryForm={inventoryForm}
+            inventoryItems={inventoryItems}
+            inventoryMovementForm={inventoryMovementForm}
+            inventorySearch={inventorySearch}
+            inventoryStats={inventoryStats}
+            inventoryStockFilter={inventoryStockFilter}
+            loading={inventoryLoading}
+            workOrders={workOrders}
+            onFormChange={setInventoryForm}
+            onMovementFormChange={setInventoryMovementForm}
+            onMovementSave={saveInventoryMovement}
+            onRefresh={() => loadInventory()}
+            onSave={saveInventoryItem}
+            onSearchChange={setInventorySearch}
+            onCategoryChange={setInventoryCategory}
+            onStockFilterChange={setInventoryStockFilter}
           />
         ) : activeModule === "Vehiculos" ? (
           <VehiclesView
@@ -2957,6 +3276,305 @@ function VehiclesView({
   );
 }
 
+function InventoryView({
+  devices,
+  inventoryCategory,
+  inventoryError,
+  inventoryForm,
+  inventoryItems,
+  inventoryMovementForm,
+  inventorySearch,
+  inventoryStats,
+  inventoryStockFilter,
+  loading,
+  workOrders,
+  onCategoryChange,
+  onFormChange,
+  onMovementFormChange,
+  onMovementSave,
+  onRefresh,
+  onSave,
+  onSearchChange,
+  onStockFilterChange,
+}: {
+  devices: InstalledDevice[];
+  inventoryCategory: DeviceType | "ALL";
+  inventoryError: string;
+  inventoryForm: InventoryItemPayload;
+  inventoryItems: InventoryItem[];
+  inventoryMovementForm: InventoryMovementPayload;
+  inventorySearch: string;
+  inventoryStats: Array<{ label: string; value: number | string }>;
+  inventoryStockFilter: "ALL" | "LOW";
+  loading: boolean;
+  workOrders: WorkOrder[];
+  onCategoryChange: (value: DeviceType | "ALL") => void;
+  onFormChange: (form: InventoryItemPayload) => void;
+  onMovementFormChange: (form: InventoryMovementPayload) => void;
+  onMovementSave: (event: FormEvent<HTMLFormElement>) => void;
+  onRefresh: () => void;
+  onSave: (event: FormEvent<HTMLFormElement>) => void;
+  onSearchChange: (value: string) => void;
+  onStockFilterChange: (value: "ALL" | "LOW") => void;
+}) {
+  return (
+    <section className="workOrdersModule">
+      <div className="summaryGrid customerStats" aria-label="Resumen de almacen">
+        {inventoryStats.map((card) => (
+          <article key={card.label}>
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+          </article>
+        ))}
+      </div>
+
+      <div className="workOrdersLayout">
+        <div className="inventoryForms">
+          <form className="workOrderForm" onSubmit={onSave}>
+            <div className="sectionHeader compactHeader">
+              <div>
+                <p>Alta de stock</p>
+                <h2>Nuevo articulo</h2>
+              </div>
+            </div>
+            <div className="formGrid">
+              <label>
+                SKU
+                <input value={inventoryForm.sku} onChange={(event) => onFormChange({ ...inventoryForm, sku: event.target.value })} />
+              </label>
+              <label>
+                Categoria
+                <select
+                  value={inventoryForm.category}
+                  onChange={(event) => onFormChange({ ...inventoryForm, category: event.target.value as DeviceType | "" })}
+                >
+                  <option value="">Sin categoria</option>
+                  {Object.entries(deviceTypeLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="wideField">
+                Nombre
+                <input
+                  value={inventoryForm.name}
+                  onChange={(event) => onFormChange({ ...inventoryForm, name: event.target.value })}
+                  placeholder="Camara IP, bateria, DVR, cable UTP"
+                />
+              </label>
+              <label>
+                Stock inicial
+                <input
+                  type="number"
+                  min="0"
+                  value={inventoryForm.stock}
+                  onChange={(event) => onFormChange({ ...inventoryForm, stock: Number(event.target.value) })}
+                />
+              </label>
+              <label>
+                Minimo
+                <input
+                  type="number"
+                  min="0"
+                  value={inventoryForm.minStock}
+                  onChange={(event) => onFormChange({ ...inventoryForm, minStock: Number(event.target.value) })}
+                />
+              </label>
+              <label>
+                Unidad
+                <input value={inventoryForm.unit} onChange={(event) => onFormChange({ ...inventoryForm, unit: event.target.value })} />
+              </label>
+              <label>
+                Ubicacion
+                <input
+                  value={inventoryForm.location}
+                  onChange={(event) => onFormChange({ ...inventoryForm, location: event.target.value })}
+                  placeholder="Estante, camioneta, deposito"
+                />
+              </label>
+              <label className="wideField">
+                Proveedor
+                <input
+                  value={inventoryForm.supplier}
+                  onChange={(event) => onFormChange({ ...inventoryForm, supplier: event.target.value })}
+                />
+              </label>
+              <label className="wideField">
+                Notas
+                <textarea value={inventoryForm.notes} onChange={(event) => onFormChange({ ...inventoryForm, notes: event.target.value })} />
+              </label>
+            </div>
+            <button className="primaryButton" type="submit" disabled={loading}>
+              <Save size={18} />
+              Guardar articulo
+            </button>
+          </form>
+
+          <form className="workOrderForm" onSubmit={onMovementSave}>
+            <div className="sectionHeader compactHeader">
+              <div>
+                <p>Movimiento</p>
+                <h2>Consumir o ajustar</h2>
+              </div>
+            </div>
+            <div className="formGrid">
+              <label className="wideField">
+                Articulo
+                <select
+                  value={inventoryMovementForm.itemId}
+                  onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, itemId: event.target.value })}
+                >
+                  <option value="">Seleccionar articulo</option>
+                  {inventoryItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({item.stock} {item.unit})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Tipo
+                <select
+                  value={inventoryMovementForm.type}
+                  onChange={(event) =>
+                    onMovementFormChange({ ...inventoryMovementForm, type: event.target.value as InventoryMovementType })
+                  }
+                >
+                  <option value="IN">Entrada</option>
+                  <option value="OUT">Salida</option>
+                  <option value="ADJUST">Ajuste exacto</option>
+                </select>
+              </label>
+              <label>
+                Cantidad
+                <input
+                  type="number"
+                  min="0"
+                  value={inventoryMovementForm.quantity}
+                  onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, quantity: Number(event.target.value) })}
+                />
+              </label>
+              <label className="wideField">
+                Trabajo relacionado
+                <select
+                  value={inventoryMovementForm.workOrderId}
+                  onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, workOrderId: event.target.value })}
+                >
+                  <option value="">Sin trabajo</option>
+                  {workOrders.map((workOrder) => (
+                    <option key={workOrder.id} value={workOrder.id}>
+                      {workOrder.title} - {workOrder.customer.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="wideField">
+                Equipo instalado
+                <select
+                  value={inventoryMovementForm.installedDeviceId}
+                  onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, installedDeviceId: event.target.value })}
+                >
+                  <option value="">Sin equipo</option>
+                  {devices.map((device) => (
+                    <option key={device.id} value={device.id}>
+                      {[device.brand, device.model, device.serial].filter(Boolean).join(" ") || device.type}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="wideField">
+                Motivo
+                <textarea
+                  value={inventoryMovementForm.reason}
+                  onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, reason: event.target.value })}
+                  placeholder="Uso en instalacion, compra, recuento, devolucion"
+                />
+              </label>
+            </div>
+            <button className="primaryButton" type="submit" disabled={loading || !inventoryItems.length}>
+              <RefreshCw size={18} />
+              Registrar movimiento
+            </button>
+          </form>
+        </div>
+
+        <section className="workOrderDirectory">
+          <div className="directoryToolbar">
+            <label className="searchBox">
+              <Search size={18} />
+              <input
+                value={inventorySearch}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="Buscar articulo, SKU, ubicacion o proveedor"
+              />
+            </label>
+            <select value={inventoryCategory} onChange={(event) => onCategoryChange(event.target.value as DeviceType | "ALL")}>
+              <option value="ALL">Todas</option>
+              {Object.entries(deviceTypeLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <select value={inventoryStockFilter} onChange={(event) => onStockFilterChange(event.target.value as "ALL" | "LOW")}>
+              <option value="ALL">Todo stock</option>
+              <option value="LOW">Stock bajo</option>
+            </select>
+            <button type="button" onClick={onRefresh}>
+              <RefreshCw size={18} className={loading ? "spin" : ""} />
+              Filtrar
+            </button>
+          </div>
+          {inventoryError ? <p className="formError">{inventoryError}</p> : null}
+          <div className="workOrderGrid">
+            {inventoryItems.map((item) => (
+              <article key={item.id} className="workOrderCard">
+                <div className="workOrderCardHeader">
+                  <span className={`statusPill ${item.stock <= item.minStock ? "waiting_customer" : "completed"}`}>
+                    {item.stock <= item.minStock ? "Stock bajo" : "Disponible"}
+                  </span>
+                  <strong>{item.name}</strong>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Stock</dt>
+                    <dd>
+                      {item.stock} {item.unit}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Minimo</dt>
+                    <dd>{item.minStock}</dd>
+                  </div>
+                  <div>
+                    <dt>Categoria</dt>
+                    <dd>{item.category ? deviceTypeLabels[item.category] : "Sin categoria"}</dd>
+                  </div>
+                  <div>
+                    <dt>Ubicacion</dt>
+                    <dd>{item.location || "Sin ubicacion"}</dd>
+                  </div>
+                </dl>
+                <p>{item.sku || item.supplier || item.notes || "Sin datos adicionales"}</p>
+                <div className="movementList">
+                  {item.movements.map((movement) => (
+                    <span key={movement.id}>
+                      {movement.type} {movement.quantity} - stock {movement.stockAfter}
+                    </span>
+                  ))}
+                </div>
+              </article>
+            ))}
+            {!inventoryItems.length ? <p className="emptyPanel">No hay articulos para los filtros actuales.</p> : null}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function GmailView({
   gmailError,
   gmailStats,
@@ -3466,6 +4084,31 @@ function cleanVehiclePayload(form: VehiclePayload): VehiclePayload {
     plate: form.plate?.trim() || undefined,
     traccarDeviceId: form.traccarDeviceId?.trim() || undefined,
     active: form.active,
+  };
+}
+
+function cleanInventoryPayload(form: InventoryItemPayload): InventoryItemPayload {
+  return {
+    sku: form.sku?.trim() || undefined,
+    name: form.name.trim(),
+    category: form.category || undefined,
+    unit: form.unit?.trim() || "u",
+    stock: Number(form.stock) || 0,
+    minStock: Number(form.minStock) || 0,
+    location: form.location?.trim() || undefined,
+    supplier: form.supplier?.trim() || undefined,
+    notes: form.notes?.trim() || undefined,
+  };
+}
+
+function cleanInventoryMovementPayload(form: InventoryMovementPayload): InventoryMovementPayload {
+  return {
+    itemId: form.itemId,
+    type: form.type,
+    quantity: Number(form.quantity) || 0,
+    reason: form.reason?.trim() || undefined,
+    workOrderId: form.workOrderId || undefined,
+    installedDeviceId: form.installedDeviceId || undefined,
   };
 }
 

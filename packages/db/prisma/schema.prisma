@@ -39,6 +39,12 @@ enum ServiceType {
   OTHER
 }
 
+enum InventoryMovementType {
+  IN
+  OUT
+  ADJUST
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -94,6 +100,7 @@ model WorkOrder {
   updatedAt   DateTime        @updatedAt
   customer    Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
   site        Site?           @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  inventoryMovements InventoryMovement[]
 }
 
 model InstalledDevice {
@@ -109,6 +116,38 @@ model InstalledDevice {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   site        Site        @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  inventoryMovements InventoryMovement[]
+}
+
+model InventoryItem {
+  id          String              @id @default(cuid())
+  sku         String?             @unique
+  name        String
+  category    ServiceType?
+  unit        String              @default("u")
+  stock       Int                 @default(0)
+  minStock    Int                 @default(0)
+  location    String?
+  supplier    String?
+  notes       String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  movements   InventoryMovement[]
+}
+
+model InventoryMovement {
+  id              String                @id @default(cuid())
+  itemId          String
+  type            InventoryMovementType
+  quantity        Int
+  stockAfter      Int
+  reason          String?
+  workOrderId     String?
+  installedDeviceId String?
+  createdAt       DateTime              @default(now())
+  item            InventoryItem         @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  workOrder       WorkOrder?            @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+  installedDevice InstalledDevice?      @relation(fields: [installedDeviceId], references: [id], onDelete: SetNull)
 }
 
 model Quote {
