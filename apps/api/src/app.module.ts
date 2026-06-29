@@ -4,7 +4,13 @@ import { AuthModule } from "./auth/auth.module";
 import { CustomersModule } from "./customers/customers.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { DevicesModule } from "./devices/devices.module";
+import { GmailModule } from "./gmail/gmail.module";
+import { PaymentsModule } from "./payments/payments.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { QuotesModule } from "./quotes/quotes.module";
+import { VehiclesModule } from "./vehicles/vehicles.module";
+import { WhatsAppModule } from "./whatsapp/whatsapp.module";
+import { WorkOrdersModule } from "./work-orders/work-orders.module";
 
 @Module({
   imports: [
@@ -14,6 +20,12 @@ import { PrismaModule } from "./prisma/prisma.module";
     DashboardModule,
     CustomersModule,
     DevicesModule,
+    WorkOrdersModule,
+    QuotesModule,
+    PaymentsModule,
+    VehiclesModule,
+    GmailModule,
+    WhatsAppModule,
   ],
 })
 export class AppModule {}

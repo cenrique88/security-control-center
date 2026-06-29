@@ -33,8 +33,21 @@ import {
   DashboardSummary,
   DevicePayload,
   DeviceType,
+  GmailSync,
+  GmailStatus,
   InstalledDevice,
+  Payment,
+  PaymentPayload,
+  Quote,
+  QuotePayload,
   SitePayload,
+  Vehicle,
+  VehiclePayload,
+  WhatsAppSync,
+  WhatsAppStatus,
+  WorkOrder,
+  WorkOrderPayload,
+  WorkOrderStatus,
 } from "./lib/api";
 
 const modules = [
@@ -66,6 +79,14 @@ const deviceTypeLabels: Record<DeviceType, string> = {
   OTHER: "Otro",
 };
 
+const workStatusLabels: Record<WorkOrderStatus, string> = {
+  SCHEDULED: "Programado",
+  IN_PROGRESS: "En curso",
+  WAITING_CUSTOMER: "Espera cliente",
+  COMPLETED: "Completado",
+  CANCELLED: "Cancelado",
+};
+
 const emptyCustomerForm: CustomerPayload = {
   name: "",
   legalName: "",
@@ -94,16 +115,132 @@ const emptyDeviceForm: DevicePayload = {
   notes: "",
 };
 
+const emptyWorkOrderForm: WorkOrderPayload = {
+  customerId: "",
+  siteId: "",
+  title: "",
+  type: "CCTV",
+  status: "SCHEDULED",
+  scheduledAt: "",
+  notes: "",
+};
+
+const emptyQuoteForm: QuotePayload = {
+  customerId: "",
+  number: "",
+  title: "",
+  laborPoints: 0,
+  subtotal: 0,
+  tax: 0,
+};
+
+const emptyPaymentForm: PaymentPayload = {
+  customerId: "",
+  concept: "",
+  amount: 0,
+  dueDate: "",
+  paidAt: "",
+};
+
+const emptyVehicleForm: VehiclePayload = {
+  name: "",
+  plate: "",
+  traccarDeviceId: "",
+  active: true,
+};
+
+const fallbackGmailStatus: GmailStatus = {
+  provider: "Gmail",
+  connected: false,
+  lastSyncAt: null,
+  unread: 0,
+  important: 0,
+  pendingReplies: 0,
+  checks: [],
+};
+
+const emptyGmailSync: GmailSync = {
+  provider: "Gmail",
+  connected: false,
+  lastSyncAt: "",
+  emailAddress: "",
+  unread: 0,
+  important: 0,
+  pendingReplies: 0,
+  messagesTotal: 0,
+  threadsTotal: 0,
+  messages: [],
+};
+
+const fallbackWhatsAppStatus: WhatsAppStatus = {
+  provider: "OpenWA",
+  connected: false,
+  lastSyncAt: null,
+  unread: 0,
+  pendingReplies: 0,
+  activeChats: 0,
+  checks: [],
+};
+
+const emptyWhatsAppSync: WhatsAppSync = {
+  provider: "OpenWA",
+  connected: false,
+  lastSyncAt: "",
+  unread: 0,
+  pendingReplies: 0,
+  activeChats: 0,
+  chats: [],
+  groups: [],
+};
+
 const fallbackSummary: DashboardSummary = {
+  lastUpdatedAt: "",
+  totalCustomers: 0,
   activeCustomers: 0,
+  prospectCustomers: 0,
+  inactiveCustomers: 0,
+  totalSites: 0,
+  totalWorkOrders: 0,
   scheduledJobs: 0,
+  inProgressJobs: 0,
+  waitingJobs: 0,
+  completedJobs: 0,
+  totalQuotes: 0,
+  pendingQuotes: 0,
+  acceptedQuotes: 0,
+  quotePipeline: 0,
+  totalPayments: 0,
   pendingPayments: 0,
+  overduePayments: 0,
+  pendingPaymentAmount: 0,
   installedDevices: 0,
+  totalVehicles: 0,
   activeVehicles: 0,
+  inactiveVehicles: 0,
+  integrations: {
+    gmail: {
+      provider: "Gmail",
+      connected: false,
+      lastSyncAt: null,
+      unread: 0,
+      pendingReplies: 0,
+      important: 0,
+      activeChats: 0,
+    },
+    whatsApp: {
+      provider: "OpenWA",
+      connected: false,
+      lastSyncAt: null,
+      unread: 0,
+      pendingReplies: 0,
+      important: 0,
+      activeChats: 0,
+    },
+  },
   monitoringItems: [
     { label: "Trabajos programados", value: 0, detail: "Sin conexion al backend" },
-    { label: "Correos importantes", value: 0, detail: "Gmail pendiente de conectar" },
-    { label: "Mensajes de WhatsApp", value: 0, detail: "Evolution API pendiente" },
+    { label: "Gmail no leidos", value: 0, detail: "Gmail pendiente de conectar" },
+    { label: "WhatsApp activos", value: 0, detail: "OpenWA pendiente" },
     { label: "Vehiculos activos", value: 0, detail: "Traccar pendiente" },
     { label: "Cobros pendientes", value: 0, detail: "Sin datos cargados" },
     { label: "Alertas tecnicas", value: 0, detail: "Pendiente de integraciones" },
@@ -119,13 +256,36 @@ export default function Home() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [sites, setSites] = useState<CustomerSite[]>([]);
   const [devices, setDevices] = useState<InstalledDevice[]>([]);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [agendaOrders, setAgendaOrders] = useState<WorkOrder[]>([]);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [gmailStatus, setGmailStatus] = useState<GmailStatus>(fallbackGmailStatus);
+  const [gmailSync, setGmailSync] = useState<GmailSync>(emptyGmailSync);
+  const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus>(fallbackWhatsAppStatus);
+  const [whatsAppSync, setWhatsAppSync] = useState<WhatsAppSync>(emptyWhatsAppSync);
   const [customerForm, setCustomerForm] = useState<CustomerPayload>(emptyCustomerForm);
   const [siteForm, setSiteForm] = useState<SitePayload>(emptySiteForm);
   const [deviceForm, setDeviceForm] = useState<DevicePayload>(emptyDeviceForm);
+  const [workOrderForm, setWorkOrderForm] = useState<WorkOrderPayload>(emptyWorkOrderForm);
+  const [quoteForm, setQuoteForm] = useState<QuotePayload>(emptyQuoteForm);
+  const [paymentForm, setPaymentForm] = useState<PaymentPayload>(emptyPaymentForm);
+  const [vehicleForm, setVehicleForm] = useState<VehiclePayload>(emptyVehicleForm);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [deviceSearch, setDeviceSearch] = useState("");
   const [deviceType, setDeviceType] = useState<DeviceType | "ALL">("ALL");
+  const [workSearch, setWorkSearch] = useState("");
+  const [workStatus, setWorkStatus] = useState<WorkOrderStatus | "ALL">("ALL");
+  const [agendaDate, setAgendaDate] = useState(() => toDateInputValue(new Date()));
+  const [agendaStatus, setAgendaStatus] = useState<WorkOrderStatus | "ALL">("ALL");
+  const [quoteSearch, setQuoteSearch] = useState("");
+  const [quoteStatus, setQuoteStatus] = useState<"ALL" | "PENDING" | "ACCEPTED">("ALL");
+  const [paymentSearch, setPaymentSearch] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState<"ALL" | "PENDING" | "PAID" | "OVERDUE">("ALL");
+  const [vehicleSearch, setVehicleSearch] = useState("");
+  const [vehicleStatus, setVehicleStatus] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerStatus, setCustomerStatus] = useState<CustomerStatus | "ALL">("ALL");
   const [status, setStatus] = useState("Cargando datos...");
@@ -133,17 +293,35 @@ export default function Home() {
   const [customersLoading, setCustomersLoading] = useState(false);
   const [sitesLoading, setSitesLoading] = useState(false);
   const [devicesLoading, setDevicesLoading] = useState(false);
+  const [workOrdersLoading, setWorkOrdersLoading] = useState(false);
+  const [agendaLoading, setAgendaLoading] = useState(false);
+  const [quotesLoading, setQuotesLoading] = useState(false);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [vehiclesLoading, setVehiclesLoading] = useState(false);
+  const [gmailLoading, setGmailLoading] = useState(false);
+  const [whatsAppLoading, setWhatsAppLoading] = useState(false);
   const [customerError, setCustomerError] = useState("");
   const [siteError, setSiteError] = useState("");
   const [deviceError, setDeviceError] = useState("");
+  const [workOrderError, setWorkOrderError] = useState("");
+  const [agendaError, setAgendaError] = useState("");
+  const [quoteError, setQuoteError] = useState("");
+  const [paymentError, setPaymentError] = useState("");
+  const [vehicleError, setVehicleError] = useState("");
+  const [gmailError, setGmailError] = useState("");
+  const [whatsAppError, setWhatsAppError] = useState("");
   const [locating, setLocating] = useState(false);
 
   const summaryCards = useMemo(
     () => [
+      { label: "Clientes", value: summary.totalCustomers ?? summary.activeCustomers },
       { label: "Clientes activos", value: summary.activeCustomers },
       { label: "Trabajos programados", value: summary.scheduledJobs },
       { label: "Equipos instalados", value: summary.installedDevices },
       { label: "Cobros pendientes", value: summary.pendingPayments },
+      { label: "A cobrar", value: formatCurrency(summary.pendingPaymentAmount ?? 0) },
+      { label: "Gmail no leidos", value: summary.integrations?.gmail.unread ?? 0 },
+      { label: "WhatsApp chats", value: summary.integrations?.whatsApp.activeChats ?? 0 },
     ],
     [summary],
   );
@@ -173,6 +351,125 @@ export default function Home() {
     [devices],
   );
 
+  const workOrderStats = useMemo(
+    () => [
+      { label: "Trabajos", value: workOrders.length },
+      { label: "Programados", value: workOrders.filter((workOrder) => workOrder.status === "SCHEDULED").length },
+      { label: "En curso", value: workOrders.filter((workOrder) => workOrder.status === "IN_PROGRESS").length },
+      { label: "Completados", value: workOrders.filter((workOrder) => workOrder.status === "COMPLETED").length },
+    ],
+    [workOrders],
+  );
+
+  const selectedAgendaDate = useMemo(() => parseDateInput(agendaDate), [agendaDate]);
+
+  const agendaItems = useMemo(
+    () =>
+      agendaOrders
+        .filter((workOrder) => workOrder.scheduledAt)
+        .sort((a, b) => new Date(a.scheduledAt ?? 0).getTime() - new Date(b.scheduledAt ?? 0).getTime()),
+    [agendaOrders],
+  );
+
+  const agendaToday = useMemo(
+    () => agendaItems.filter((workOrder) => isSameDay(workOrder.scheduledAt, selectedAgendaDate)),
+    [agendaItems, selectedAgendaDate],
+  );
+
+  const agendaOverdue = useMemo(
+    () =>
+      agendaItems.filter(
+        (workOrder) =>
+          workOrder.status !== "COMPLETED" &&
+          workOrder.status !== "CANCELLED" &&
+          startOfDay(new Date(workOrder.scheduledAt ?? "")).getTime() < startOfDay(selectedAgendaDate).getTime(),
+      ),
+    [agendaItems, selectedAgendaDate],
+  );
+
+  const agendaWeek = useMemo(
+    () =>
+      agendaItems.filter((workOrder) => {
+        const scheduledAt = new Date(workOrder.scheduledAt ?? "");
+        const day = startOfDay(scheduledAt).getTime();
+        const start = startOfDay(selectedAgendaDate).getTime();
+        const end = addDays(startOfDay(selectedAgendaDate), 6).getTime();
+        return day >= start && day <= end;
+      }),
+    [agendaItems, selectedAgendaDate],
+  );
+
+  const agendaStats = useMemo(
+    () => [
+      { label: "Hoy", value: agendaToday.length },
+      { label: "Atrasados", value: agendaOverdue.length },
+      { label: "Semana", value: agendaWeek.length },
+      { label: "Sin fecha", value: agendaOrders.filter((workOrder) => !workOrder.scheduledAt).length },
+    ],
+    [agendaOrders, agendaOverdue, agendaToday, agendaWeek],
+  );
+
+  const quoteStats = useMemo(
+    () => [
+      { label: "Presupuestos", value: quotes.length },
+      { label: "Pendientes", value: quotes.filter((quote) => !quote.acceptedAt).length },
+      { label: "Aceptados", value: quotes.filter((quote) => quote.acceptedAt).length },
+      { label: "Total", value: formatCurrency(quotes.reduce((sum, quote) => sum + toMoneyNumber(quote.total), 0)) },
+    ],
+    [quotes],
+  );
+
+  const paymentStats = useMemo(
+    () => [
+      { label: "Cobros", value: payments.length },
+      { label: "Pendientes", value: payments.filter((payment) => !payment.paidAt).length },
+      { label: "Vencidos", value: payments.filter((payment) => isOverdue(payment)).length },
+      {
+        label: "A cobrar",
+        value: formatCurrency(
+          payments.filter((payment) => !payment.paidAt).reduce((sum, payment) => sum + toMoneyNumber(payment.amount), 0),
+        ),
+      },
+    ],
+    [payments],
+  );
+
+  const vehicleStats = useMemo(
+    () => [
+      { label: "Vehiculos", value: vehicles.length },
+      { label: "Activos", value: vehicles.filter((vehicle) => vehicle.active).length },
+      { label: "Inactivos", value: vehicles.filter((vehicle) => !vehicle.active).length },
+      { label: "Con Traccar", value: vehicles.filter((vehicle) => vehicle.traccarDeviceId).length },
+    ],
+    [vehicles],
+  );
+
+  const gmailStats = useMemo(
+    () => [
+      { label: "No leidos", value: gmailSync.unread || gmailStatus.unread },
+      { label: "Importantes", value: gmailSync.important || gmailStatus.important },
+      { label: "Por responder", value: gmailSync.pendingReplies || gmailStatus.pendingReplies },
+      {
+        label: "Configuracion",
+        value: `${gmailStatus.checks.filter((check) => check.configured).length}/${gmailStatus.checks.length || 4}`,
+      },
+    ],
+    [gmailStatus, gmailSync],
+  );
+
+  const whatsAppStats = useMemo(
+    () => [
+      { label: "No leidos", value: whatsAppSync.unread || whatsAppStatus.unread },
+      { label: "Chats activos", value: whatsAppSync.activeChats || whatsAppStatus.activeChats },
+      { label: "Por responder", value: whatsAppSync.pendingReplies || whatsAppStatus.pendingReplies },
+      {
+        label: "Configuracion",
+        value: `${whatsAppStatus.checks.filter((check) => check.configured).length}/${whatsAppStatus.checks.length || 4}`,
+      },
+    ],
+    [whatsAppStatus, whatsAppSync],
+  );
+
   useEffect(() => {
     const storedToken = localStorage.getItem("sscc_token");
     const storedUser = localStorage.getItem("sscc_user");
@@ -194,33 +491,77 @@ export default function Home() {
     void loadSummary(token);
     void loadCustomers(token);
     void loadDevices(token);
+    void loadWorkOrders(token);
+    void loadAgenda(token);
+    void loadQuotes(token);
+    void loadPayments(token);
+    void loadVehicles(token);
+    void loadGmailStatus(token);
+    void syncGmail(token, true);
+    void loadWhatsAppStatus(token);
+    void syncWhatsApp(token);
   }, [token]);
 
-  async function loadSummary(activeToken = token) {
+  useEffect(() => {
+    if (!token || activeModule !== "Gmail") {
+      return;
+    }
+
+    void syncGmail(token, true);
+    const interval = window.setInterval(() => {
+      void syncGmail(token, true);
+    }, 60000);
+
+    return () => window.clearInterval(interval);
+  }, [activeModule, token]);
+
+  useEffect(() => {
+    if (!token || activeModule !== "WhatsApp") {
+      return;
+    }
+
+    void syncWhatsApp(token, true);
+    const interval = window.setInterval(() => {
+      void syncWhatsApp(token, true);
+    }, 30000);
+
+    return () => window.clearInterval(interval);
+  }, [activeModule, token]);
+
+  useEffect(() => {
+    if (!token || activeModule !== "Dashboard") {
+      return;
+    }
+
+    void loadSummary(token);
+    const interval = window.setInterval(() => {
+      void loadSummary(token, true);
+    }, 30000);
+
+    return () => window.clearInterval(interval);
+  }, [activeModule, token]);
+
+  async function loadSummary(activeToken = token, silent = false) {
     if (!activeToken) {
       return;
     }
 
-    setLoading(true);
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const data = await apiRequest<DashboardSummary>("/api/dashboard/summary", {
         token: activeToken,
       });
-      setSummary({
-        ...data,
-        monitoringItems: [
-          ...data.monitoringItems,
-          { label: "Correos importantes", value: 0, detail: "Gmail pendiente de conectar" },
-          { label: "Mensajes de WhatsApp", value: 0, detail: "Evolution API pendiente" },
-          { label: "Alertas tecnicas", value: 0, detail: "Pendiente de integraciones" },
-        ],
-      });
-      setStatus("Datos conectados al backend");
+      setSummary(data);
+      setStatus(`Dashboard actualizado${data.lastUpdatedAt ? ` ${formatDateTime(data.lastUpdatedAt)}` : ""}`);
     } catch {
       setSummary(fallbackSummary);
       setStatus("Backend o base de datos no disponible");
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -304,6 +645,254 @@ export default function Home() {
       setDeviceError("No se pudieron cargar los equipos instalados");
     } finally {
       setDevicesLoading(false);
+    }
+  }
+
+  async function loadWorkOrders(activeToken = token, customerId = selectedCustomerId) {
+    if (!activeToken) {
+      return;
+    }
+
+    setWorkOrdersLoading(true);
+    setWorkOrderError("");
+    try {
+      const params = new URLSearchParams();
+      if (workSearch.trim()) {
+        params.set("search", workSearch.trim());
+      }
+      if (customerId) {
+        params.set("customerId", customerId);
+      }
+      if (workStatus !== "ALL") {
+        params.set("status", workStatus);
+      }
+
+      const query = params.toString();
+      const data = await apiRequest<WorkOrder[]>(`/api/work-orders${query ? `?${query}` : ""}`, {
+        token: activeToken,
+      });
+      setWorkOrders(data);
+    } catch {
+      setWorkOrderError("No se pudieron cargar los trabajos");
+    } finally {
+      setWorkOrdersLoading(false);
+    }
+  }
+
+  async function loadAgenda(activeToken = token) {
+    if (!activeToken) {
+      return;
+    }
+
+    setAgendaLoading(true);
+    setAgendaError("");
+    try {
+      const params = new URLSearchParams();
+      if (agendaStatus !== "ALL") {
+        params.set("status", agendaStatus);
+      }
+
+      const query = params.toString();
+      const data = await apiRequest<WorkOrder[]>(`/api/work-orders${query ? `?${query}` : ""}`, {
+        token: activeToken,
+      });
+      setAgendaOrders(data);
+    } catch {
+      setAgendaError("No se pudo cargar la agenda");
+    } finally {
+      setAgendaLoading(false);
+    }
+  }
+
+  async function loadQuotes(activeToken = token, customerId = selectedCustomerId) {
+    if (!activeToken) {
+      return;
+    }
+
+    setQuotesLoading(true);
+    setQuoteError("");
+    try {
+      const params = new URLSearchParams();
+      if (quoteSearch.trim()) {
+        params.set("search", quoteSearch.trim());
+      }
+      if (customerId) {
+        params.set("customerId", customerId);
+      }
+      if (quoteStatus !== "ALL") {
+        params.set("status", quoteStatus);
+      }
+
+      const query = params.toString();
+      const data = await apiRequest<Quote[]>(`/api/quotes${query ? `?${query}` : ""}`, {
+        token: activeToken,
+      });
+      setQuotes(data);
+    } catch {
+      setQuoteError("No se pudieron cargar los presupuestos");
+    } finally {
+      setQuotesLoading(false);
+    }
+  }
+
+  async function loadPayments(activeToken = token, customerId = selectedCustomerId) {
+    if (!activeToken) {
+      return;
+    }
+
+    setPaymentsLoading(true);
+    setPaymentError("");
+    try {
+      const params = new URLSearchParams();
+      if (paymentSearch.trim()) {
+        params.set("search", paymentSearch.trim());
+      }
+      if (customerId) {
+        params.set("customerId", customerId);
+      }
+      if (paymentStatus !== "ALL") {
+        params.set("status", paymentStatus);
+      }
+
+      const query = params.toString();
+      const data = await apiRequest<Payment[]>(`/api/payments${query ? `?${query}` : ""}`, {
+        token: activeToken,
+      });
+      setPayments(data);
+    } catch {
+      setPaymentError("No se pudieron cargar los cobros");
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }
+
+  async function loadVehicles(activeToken = token) {
+    if (!activeToken) {
+      return;
+    }
+
+    setVehiclesLoading(true);
+    setVehicleError("");
+    try {
+      const params = new URLSearchParams();
+      if (vehicleSearch.trim()) {
+        params.set("search", vehicleSearch.trim());
+      }
+      if (vehicleStatus !== "ALL") {
+        params.set("active", vehicleStatus === "ACTIVE" ? "true" : "false");
+      }
+
+      const query = params.toString();
+      const data = await apiRequest<Vehicle[]>(`/api/vehicles${query ? `?${query}` : ""}`, {
+        token: activeToken,
+      });
+      setVehicles(data);
+    } catch {
+      setVehicleError("No se pudieron cargar los vehiculos");
+    } finally {
+      setVehiclesLoading(false);
+    }
+  }
+
+  async function loadGmailStatus(activeToken = token) {
+    if (!activeToken) {
+      return;
+    }
+
+    setGmailLoading(true);
+    setGmailError("");
+    try {
+      const data = await apiRequest<GmailStatus>("/api/gmail/status", {
+        token: activeToken,
+      });
+      setGmailStatus(data);
+    } catch {
+      setGmailStatus(fallbackGmailStatus);
+      setGmailError("No se pudo consultar el estado de Gmail");
+    } finally {
+      setGmailLoading(false);
+    }
+  }
+
+  async function syncGmail(activeToken = token, silent = false) {
+    if (!activeToken) {
+      return;
+    }
+
+    if (!silent) {
+      setGmailLoading(true);
+    }
+    setGmailError("");
+    try {
+      const data = await apiRequest<GmailSync>("/api/gmail/sync", {
+        token: activeToken,
+      });
+      setGmailSync(data);
+      setGmailStatus((currentStatus) => ({
+        ...currentStatus,
+        connected: data.connected,
+        lastSyncAt: data.lastSyncAt,
+        unread: data.unread,
+        important: data.important,
+        pendingReplies: data.pendingReplies,
+      }));
+    } catch {
+      setGmailError("No se pudieron sincronizar los datos de Gmail");
+    } finally {
+      if (!silent) {
+        setGmailLoading(false);
+      }
+    }
+  }
+
+  async function loadWhatsAppStatus(activeToken = token) {
+    if (!activeToken) {
+      return;
+    }
+
+    setWhatsAppLoading(true);
+    setWhatsAppError("");
+    try {
+      const data = await apiRequest<WhatsAppStatus>("/api/whatsapp/status", {
+        token: activeToken,
+      });
+      setWhatsAppStatus(data);
+    } catch {
+      setWhatsAppStatus(fallbackWhatsAppStatus);
+      setWhatsAppError("No se pudo consultar el estado de WhatsApp");
+    } finally {
+      setWhatsAppLoading(false);
+    }
+  }
+
+  async function syncWhatsApp(activeToken = token, silent = false) {
+    if (!activeToken) {
+      return;
+    }
+
+    if (!silent) {
+      setWhatsAppLoading(true);
+    }
+    setWhatsAppError("");
+    try {
+      const data = await apiRequest<WhatsAppSync>("/api/whatsapp/sync", {
+        token: activeToken,
+      });
+      setWhatsAppSync(data);
+      setWhatsAppStatus((currentStatus) => ({
+        ...currentStatus,
+        connected: data.connected,
+        lastSyncAt: data.lastSyncAt,
+        unread: data.unread,
+        pendingReplies: data.pendingReplies,
+        activeChats: data.activeChats,
+      }));
+    } catch {
+      setWhatsAppError("No se pudieron sincronizar los datos de WhatsApp");
+    } finally {
+      if (!silent) {
+        setWhatsAppLoading(false);
+      }
     }
   }
 
@@ -393,6 +982,208 @@ export default function Home() {
     }
   }
 
+  async function saveWorkOrder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) {
+      return;
+    }
+
+    const customerId = workOrderForm.customerId || selectedCustomerId || "";
+    if (!customerId || !workOrderForm.title.trim()) {
+      setWorkOrderError("Selecciona un cliente y escribe el titulo del trabajo");
+      return;
+    }
+
+    setWorkOrdersLoading(true);
+    setWorkOrderError("");
+    try {
+      await apiRequest<WorkOrder>("/api/work-orders", {
+        token,
+        method: "POST",
+        body: JSON.stringify(cleanWorkOrderPayload({ ...workOrderForm, customerId })),
+      });
+      setWorkOrderForm({ ...emptyWorkOrderForm, customerId: selectedCustomerId ?? "" });
+      await Promise.all([loadWorkOrders(token), loadAgenda(token), loadCustomers(token), loadSummary(token)]);
+    } catch {
+      setWorkOrderError("No se pudo guardar el trabajo");
+    } finally {
+      setWorkOrdersLoading(false);
+    }
+  }
+
+  async function saveQuote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) {
+      return;
+    }
+
+    const customerId = quoteForm.customerId || selectedCustomerId || "";
+    if (!customerId || !quoteForm.title.trim()) {
+      setQuoteError("Selecciona un cliente y escribe el titulo del presupuesto");
+      return;
+    }
+
+    setQuotesLoading(true);
+    setQuoteError("");
+    try {
+      await apiRequest<Quote>("/api/quotes", {
+        token,
+        method: "POST",
+        body: JSON.stringify(cleanQuotePayload({ ...quoteForm, customerId })),
+      });
+      setQuoteForm({ ...emptyQuoteForm, customerId: selectedCustomerId ?? "" });
+      await Promise.all([loadQuotes(token), loadCustomers(token), loadSummary(token)]);
+    } catch {
+      setQuoteError("No se pudo guardar el presupuesto");
+    } finally {
+      setQuotesLoading(false);
+    }
+  }
+
+  async function savePayment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) {
+      return;
+    }
+
+    const customerId = paymentForm.customerId || selectedCustomerId || "";
+    if (!customerId || !paymentForm.concept.trim()) {
+      setPaymentError("Selecciona un cliente y escribe el concepto del cobro");
+      return;
+    }
+
+    setPaymentsLoading(true);
+    setPaymentError("");
+    try {
+      await apiRequest<Payment>("/api/payments", {
+        token,
+        method: "POST",
+        body: JSON.stringify(cleanPaymentPayload({ ...paymentForm, customerId })),
+      });
+      setPaymentForm({ ...emptyPaymentForm, customerId: selectedCustomerId ?? "" });
+      await Promise.all([loadPayments(token), loadCustomers(token), loadSummary(token)]);
+    } catch {
+      setPaymentError("No se pudo guardar el cobro");
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }
+
+  async function saveVehicle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) {
+      return;
+    }
+
+    if (!vehicleForm.name.trim()) {
+      setVehicleError("El nombre del vehiculo es obligatorio");
+      return;
+    }
+
+    setVehiclesLoading(true);
+    setVehicleError("");
+    try {
+      await apiRequest<Vehicle>("/api/vehicles", {
+        token,
+        method: "POST",
+        body: JSON.stringify(cleanVehiclePayload(vehicleForm)),
+      });
+      setVehicleForm(emptyVehicleForm);
+      await Promise.all([loadVehicles(token), loadSummary(token)]);
+    } catch {
+      setVehicleError("No se pudo guardar el vehiculo");
+    } finally {
+      setVehiclesLoading(false);
+    }
+  }
+
+  async function acceptQuote(id: string) {
+    if (!token) {
+      return;
+    }
+
+    setQuotesLoading(true);
+    setQuoteError("");
+    try {
+      await apiRequest<Quote>(`/api/quotes/${id}`, {
+        token,
+        method: "PATCH",
+        body: JSON.stringify({ acceptedAt: new Date().toISOString() }),
+      });
+      await Promise.all([loadQuotes(token), loadCustomers(token)]);
+    } catch {
+      setQuoteError("No se pudo aceptar el presupuesto");
+    } finally {
+      setQuotesLoading(false);
+    }
+  }
+
+  async function markPaymentPaid(id: string) {
+    if (!token) {
+      return;
+    }
+
+    setPaymentsLoading(true);
+    setPaymentError("");
+    try {
+      await apiRequest<Payment>(`/api/payments/${id}`, {
+        token,
+        method: "PATCH",
+        body: JSON.stringify({ paidAt: new Date().toISOString() }),
+      });
+      await Promise.all([loadPayments(token), loadSummary(token)]);
+    } catch {
+      setPaymentError("No se pudo marcar el cobro como pagado");
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }
+
+  async function toggleVehicleActive(vehicle: Vehicle) {
+    if (!token) {
+      return;
+    }
+
+    setVehiclesLoading(true);
+    setVehicleError("");
+    try {
+      await apiRequest<Vehicle>(`/api/vehicles/${vehicle.id}`, {
+        token,
+        method: "PATCH",
+        body: JSON.stringify({ active: !vehicle.active }),
+      });
+      await Promise.all([loadVehicles(token), loadSummary(token)]);
+    } catch {
+      setVehicleError("No se pudo actualizar el vehiculo");
+    } finally {
+      setVehiclesLoading(false);
+    }
+  }
+
+  async function updateWorkOrderStatus(id: string, nextStatus: WorkOrderStatus) {
+    if (!token) {
+      return;
+    }
+
+    setWorkOrdersLoading(true);
+    setWorkOrderError("");
+    try {
+      await apiRequest<WorkOrder>(`/api/work-orders/${id}`, {
+        token,
+        method: "PATCH",
+        body: JSON.stringify({
+          status: nextStatus,
+          completedAt: nextStatus === "COMPLETED" ? new Date().toISOString() : undefined,
+        }),
+      });
+      await Promise.all([loadWorkOrders(token), loadAgenda(token), loadSummary(token)]);
+    } catch {
+      setWorkOrderError("No se pudo actualizar el estado del trabajo");
+    } finally {
+      setWorkOrdersLoading(false);
+    }
+  }
+
   function editCustomer(customer: Customer) {
     selectCustomer(customer.id);
     setEditingCustomerId(customer.id);
@@ -410,8 +1201,14 @@ export default function Home() {
 
   function selectCustomer(customerId: string) {
     setSelectedCustomerId(customerId);
+    setWorkOrderForm((currentForm) => ({ ...currentForm, customerId, siteId: "" }));
+    setQuoteForm((currentForm) => ({ ...currentForm, customerId }));
+    setPaymentForm((currentForm) => ({ ...currentForm, customerId }));
     void loadSites(customerId);
     void loadDevices(token, customerId);
+    void loadWorkOrders(token, customerId);
+    void loadQuotes(token, customerId);
+    void loadPayments(token, customerId);
   }
 
   function cancelCustomerEdit() {
@@ -505,7 +1302,17 @@ export default function Home() {
         <nav className="nav">
           {modules.map((module) => {
             const Icon = module.icon;
-            const enabled = module.name === "Dashboard" || module.name === "Clientes" || module.name === "Equipos";
+            const enabled =
+              module.name === "Dashboard" ||
+              module.name === "Clientes" ||
+              module.name === "Trabajos" ||
+              module.name === "Agenda" ||
+              module.name === "Presupuestos" ||
+              module.name === "Cobros" ||
+              module.name === "Equipos" ||
+              module.name === "Vehiculos" ||
+              module.name === "Gmail" ||
+              module.name === "WhatsApp";
             return (
               <button
                 type="button"
@@ -540,12 +1347,42 @@ export default function Home() {
               onClick={() =>
                 activeModule === "Clientes"
                   ? loadCustomers()
-                  : activeModule === "Equipos"
-                    ? loadDevices()
-                    : loadSummary()
+                  : activeModule === "Trabajos"
+                    ? loadWorkOrders()
+                    : activeModule === "Agenda"
+                      ? loadAgenda()
+                      : activeModule === "Presupuestos"
+                        ? loadQuotes()
+                        : activeModule === "Cobros"
+                          ? loadPayments()
+                        : activeModule === "Equipos"
+                          ? loadDevices()
+                          : activeModule === "Vehiculos"
+                            ? loadVehicles()
+                            : activeModule === "Gmail"
+                              ? syncGmail()
+                              : activeModule === "WhatsApp"
+                                ? syncWhatsApp()
+                            : loadSummary()
               }
             >
-              <RefreshCw size={20} className={loading || customersLoading || devicesLoading ? "spin" : ""} />
+              <RefreshCw
+                size={20}
+                className={
+                  loading ||
+                  customersLoading ||
+                  devicesLoading ||
+                  workOrdersLoading ||
+                  agendaLoading ||
+                  quotesLoading ||
+                  paymentsLoading ||
+                  vehiclesLoading ||
+                  gmailLoading ||
+                  whatsAppLoading
+                    ? "spin"
+                    : ""
+                }
+              />
             </button>
             <button type="button" title="Notificaciones" aria-label="Notificaciones">
               <Bell size={20} />
@@ -608,6 +1445,114 @@ export default function Home() {
             onSiteSave={saveSite}
             onStatusChange={setCustomerStatus}
           />
+        ) : activeModule === "Trabajos" ? (
+          <WorkOrdersView
+            customers={customers}
+            loading={workOrdersLoading}
+            selectedCustomerId={selectedCustomerId}
+            sites={sites}
+            workOrderError={workOrderError}
+            workOrderForm={workOrderForm}
+            workOrderStats={workOrderStats}
+            workOrders={workOrders}
+            workSearch={workSearch}
+            workStatus={workStatus}
+            onFormChange={setWorkOrderForm}
+            onRefresh={() => loadWorkOrders()}
+            onSave={saveWorkOrder}
+            onSearchChange={setWorkSearch}
+            onSelectCustomer={selectCustomer}
+            onStatusChange={setWorkStatus}
+            onUpdateStatus={updateWorkOrderStatus}
+          />
+        ) : activeModule === "Agenda" ? (
+          <AgendaView
+            agendaDate={agendaDate}
+            agendaError={agendaError}
+            agendaOverdue={agendaOverdue}
+            agendaStats={agendaStats}
+            agendaStatus={agendaStatus}
+            agendaToday={agendaToday}
+            agendaWeek={agendaWeek}
+            loading={agendaLoading}
+            selectedDate={selectedAgendaDate}
+            onDateChange={setAgendaDate}
+            onRefresh={() => loadAgenda()}
+            onStatusChange={setAgendaStatus}
+            onUpdateStatus={updateWorkOrderStatus}
+          />
+        ) : activeModule === "Presupuestos" ? (
+          <QuotesView
+            customers={customers}
+            loading={quotesLoading}
+            quoteError={quoteError}
+            quoteForm={quoteForm}
+            quoteSearch={quoteSearch}
+            quoteStats={quoteStats}
+            quoteStatus={quoteStatus}
+            quotes={quotes}
+            selectedCustomerId={selectedCustomerId}
+            onAccept={acceptQuote}
+            onFormChange={setQuoteForm}
+            onRefresh={() => loadQuotes()}
+            onSave={saveQuote}
+            onSearchChange={setQuoteSearch}
+            onSelectCustomer={selectCustomer}
+            onStatusChange={setQuoteStatus}
+          />
+        ) : activeModule === "Cobros" ? (
+          <PaymentsView
+            customers={customers}
+            loading={paymentsLoading}
+            paymentError={paymentError}
+            paymentForm={paymentForm}
+            paymentSearch={paymentSearch}
+            paymentStats={paymentStats}
+            paymentStatus={paymentStatus}
+            payments={payments}
+            selectedCustomerId={selectedCustomerId}
+            onFormChange={setPaymentForm}
+            onMarkPaid={markPaymentPaid}
+            onRefresh={() => loadPayments()}
+            onSave={savePayment}
+            onSearchChange={setPaymentSearch}
+            onSelectCustomer={selectCustomer}
+            onStatusChange={setPaymentStatus}
+          />
+        ) : activeModule === "Vehiculos" ? (
+          <VehiclesView
+            loading={vehiclesLoading}
+            vehicleError={vehicleError}
+            vehicleForm={vehicleForm}
+            vehicleSearch={vehicleSearch}
+            vehicleStats={vehicleStats}
+            vehicleStatus={vehicleStatus}
+            vehicles={vehicles}
+            onFormChange={setVehicleForm}
+            onRefresh={() => loadVehicles()}
+            onSave={saveVehicle}
+            onSearchChange={setVehicleSearch}
+            onStatusChange={setVehicleStatus}
+            onToggleActive={toggleVehicleActive}
+          />
+        ) : activeModule === "Gmail" ? (
+          <GmailView
+            gmailError={gmailError}
+            gmailStats={gmailStats}
+            loading={gmailLoading}
+            status={gmailStatus}
+            sync={gmailSync}
+            onRefresh={() => syncGmail()}
+          />
+        ) : activeModule === "WhatsApp" ? (
+          <WhatsAppView
+            loading={whatsAppLoading}
+            status={whatsAppStatus}
+            sync={whatsAppSync}
+            whatsAppError={whatsAppError}
+            whatsAppStats={whatsAppStats}
+            onRefresh={() => syncWhatsApp()}
+          />
         ) : (
           <DevicesView
             customers={customers}
@@ -641,7 +1586,7 @@ function DashboardView({
 }: {
   loading: boolean;
   summary: DashboardSummary;
-  summaryCards: Array<{ label: string; value: number }>;
+  summaryCards: Array<{ label: string; value: number | string }>;
   onRefresh: () => void;
 }) {
   return (
@@ -658,7 +1603,7 @@ function DashboardView({
       <section className="monitor">
         <div className="sectionHeader">
           <div>
-            <p>Inicio de jornada</p>
+            <p>{summary.lastUpdatedAt ? `Actualizado ${formatDateTime(summary.lastUpdatedAt)}` : "Inicio de jornada"}</p>
             <h2>Operacion en vivo</h2>
           </div>
           <button type="button" onClick={onRefresh}>
@@ -670,7 +1615,7 @@ function DashboardView({
           {summary.monitoringItems.map((item) => (
             <article key={item.label} className="monitorCard">
               <span>{item.label}</span>
-              <strong>{item.value}</strong>
+              <strong>{formatDashboardValue(item)}</strong>
               <p>{item.detail ?? "Dato conectado al sistema"}</p>
             </article>
           ))}
@@ -678,6 +1623,17 @@ function DashboardView({
       </section>
     </>
   );
+}
+
+function formatDashboardValue(item: { label: string; value: number | string }) {
+  if (
+    typeof item.value === "number" &&
+    (item.label.toLowerCase().includes("monto") || item.label.toLowerCase().includes("pipeline"))
+  ) {
+    return formatCurrency(item.value);
+  }
+
+  return item.value;
 }
 
 function CustomersView({
@@ -1012,6 +1968,1207 @@ function CustomersView({
   );
 }
 
+function AgendaView({
+  agendaDate,
+  agendaError,
+  agendaOverdue,
+  agendaStats,
+  agendaStatus,
+  agendaToday,
+  agendaWeek,
+  loading,
+  selectedDate,
+  onDateChange,
+  onRefresh,
+  onStatusChange,
+  onUpdateStatus,
+}: {
+  agendaDate: string;
+  agendaError: string;
+  agendaOverdue: WorkOrder[];
+  agendaStats: Array<{ label: string; value: number }>;
+  agendaStatus: WorkOrderStatus | "ALL";
+  agendaToday: WorkOrder[];
+  agendaWeek: WorkOrder[];
+  loading: boolean;
+  selectedDate: Date;
+  onDateChange: (value: string) => void;
+  onRefresh: () => void;
+  onStatusChange: (value: WorkOrderStatus | "ALL") => void;
+  onUpdateStatus: (id: string, status: WorkOrderStatus) => void;
+}) {
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(startOfDay(selectedDate), index);
+    const count = agendaWeek.filter((workOrder) => isSameDay(workOrder.scheduledAt, date)).length;
+    return { date, count };
+  });
+
+  return (
+    <section className="agendaModule">
+      <div className="summaryGrid customerStats" aria-label="Resumen de agenda">
+        {agendaStats.map((card) => (
+          <article key={card.label}>
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+          </article>
+        ))}
+      </div>
+
+      <section className="agendaToolbar">
+        <div>
+          <p>Planificacion</p>
+          <h2>{formatFullDate(selectedDate)}</h2>
+        </div>
+        <div className="agendaControls">
+          <input
+            type="date"
+            value={agendaDate}
+            onChange={(event) => onDateChange(event.target.value)}
+            aria-label="Fecha de agenda"
+          />
+          <select
+            value={agendaStatus}
+            onChange={(event) => onStatusChange(event.target.value as WorkOrderStatus | "ALL")}
+            aria-label="Filtrar estado de agenda"
+          >
+            <option value="ALL">Todos</option>
+            {Object.entries(workStatusLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <button type="button" onClick={onRefresh}>
+            <RefreshCw size={18} className={loading ? "spin" : ""} />
+            Actualizar
+          </button>
+        </div>
+      </section>
+
+      {agendaError ? <p className="formError">{agendaError}</p> : null}
+
+      <div className="agendaWeekStrip" aria-label="Semana seleccionada">
+        {weekDays.map((day) => (
+          <button
+            key={day.date.toISOString()}
+            type="button"
+            className={isSameDay(day.date, selectedDate) ? "selectedDay" : ""}
+            onClick={() => onDateChange(toDateInputValue(day.date))}
+          >
+            <span>{formatShortWeekday(day.date)}</span>
+            <strong>{day.date.getDate()}</strong>
+            <em>{day.count}</em>
+          </button>
+        ))}
+      </div>
+
+      <div className="agendaLayout">
+        <section className="agendaColumn agendaMain">
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Dia seleccionado</p>
+              <h2>Trabajos de hoy</h2>
+            </div>
+          </div>
+          <AgendaWorkList workOrders={agendaToday} emptyText="No hay trabajos para esta fecha." onUpdateStatus={onUpdateStatus} />
+        </section>
+
+        <section className="agendaColumn">
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Seguimiento</p>
+              <h2>Atrasados</h2>
+            </div>
+          </div>
+          <AgendaWorkList workOrders={agendaOverdue} emptyText="No hay trabajos atrasados." onUpdateStatus={onUpdateStatus} compact />
+        </section>
+
+        <section className="agendaColumn">
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Proximos dias</p>
+              <h2>Semana</h2>
+            </div>
+          </div>
+          <AgendaWorkList workOrders={agendaWeek} emptyText="No hay trabajos en la semana." onUpdateStatus={onUpdateStatus} compact />
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function AgendaWorkList({
+  compact,
+  emptyText,
+  workOrders,
+  onUpdateStatus,
+}: {
+  compact?: boolean;
+  emptyText: string;
+  workOrders: WorkOrder[];
+  onUpdateStatus: (id: string, status: WorkOrderStatus) => void;
+}) {
+  if (!workOrders.length) {
+    return <p className="emptyPanel">{emptyText}</p>;
+  }
+
+  return (
+    <div className={compact ? "agendaList compactAgendaList" : "agendaList"}>
+      {workOrders.map((workOrder) => (
+        <article key={workOrder.id} className="agendaItem">
+          <div className="agendaTime">
+            <strong>{formatTime(workOrder.scheduledAt)}</strong>
+            <span>{formatShortDate(workOrder.scheduledAt)}</span>
+          </div>
+          <div className="agendaItemBody">
+            <span className={`statusPill ${workOrder.status.toLowerCase()}`}>
+              {workStatusLabels[workOrder.status]}
+            </span>
+            <h3>{workOrder.title}</h3>
+            <dl>
+              <div>
+                <dt>Cliente</dt>
+                <dd>{workOrder.customer.name}</dd>
+              </div>
+              <div>
+                <dt>Sitio</dt>
+                <dd>{workOrder.site?.name ?? "Sin sitio"}</dd>
+              </div>
+            </dl>
+            <p>{workOrder.notes || workOrder.site?.address || "Sin notas operativas"}</p>
+            <div className="workOrderActions">
+              <button
+                type="button"
+                className="secondaryButton"
+                onClick={() => onUpdateStatus(workOrder.id, "IN_PROGRESS")}
+                disabled={workOrder.status === "IN_PROGRESS" || workOrder.status === "COMPLETED"}
+              >
+                En curso
+              </button>
+              <button
+                type="button"
+                className="secondaryButton"
+                onClick={() => onUpdateStatus(workOrder.id, "COMPLETED")}
+                disabled={workOrder.status === "COMPLETED"}
+              >
+                Completar
+              </button>
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function WorkOrdersView({
+  customers,
+  loading,
+  selectedCustomerId,
+  sites,
+  workOrderError,
+  workOrderForm,
+  workOrderStats,
+  workOrders,
+  workSearch,
+  workStatus,
+  onFormChange,
+  onRefresh,
+  onSave,
+  onSearchChange,
+  onSelectCustomer,
+  onStatusChange,
+  onUpdateStatus,
+}: {
+  customers: Customer[];
+  loading: boolean;
+  selectedCustomerId: string | null;
+  sites: CustomerSite[];
+  workOrderError: string;
+  workOrderForm: WorkOrderPayload;
+  workOrderStats: Array<{ label: string; value: number }>;
+  workOrders: WorkOrder[];
+  workSearch: string;
+  workStatus: WorkOrderStatus | "ALL";
+  onFormChange: (form: WorkOrderPayload) => void;
+  onRefresh: () => void;
+  onSave: (event: FormEvent<HTMLFormElement>) => void;
+  onSearchChange: (value: string) => void;
+  onSelectCustomer: (customerId: string) => void;
+  onStatusChange: (value: WorkOrderStatus | "ALL") => void;
+  onUpdateStatus: (id: string, status: WorkOrderStatus) => void;
+}) {
+  return (
+    <section className="workOrdersModule">
+      <div className="summaryGrid customerStats" aria-label="Resumen de trabajos">
+        {workOrderStats.map((card) => (
+          <article key={card.label}>
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+          </article>
+        ))}
+      </div>
+
+      <div className="workOrdersLayout">
+        <form className="workOrderForm" onSubmit={onSave}>
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Orden operativa</p>
+              <h2>Nuevo trabajo</h2>
+            </div>
+          </div>
+
+          <div className="formGrid">
+            <label>
+              Cliente
+              <select
+                value={workOrderForm.customerId || selectedCustomerId || ""}
+                onChange={(event) => {
+                  onSelectCustomer(event.target.value);
+                  onFormChange({ ...workOrderForm, customerId: event.target.value, siteId: "" });
+                }}
+              >
+                <option value="">Seleccionar cliente</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Sitio
+              <select
+                value={workOrderForm.siteId}
+                onChange={(event) => onFormChange({ ...workOrderForm, siteId: event.target.value })}
+                disabled={!workOrderForm.customerId && !selectedCustomerId}
+              >
+                <option value="">Sin sitio especifico</option>
+                {sites.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="wideField">
+              Titulo
+              <input
+                value={workOrderForm.title}
+                onChange={(event) => onFormChange({ ...workOrderForm, title: event.target.value })}
+                placeholder="Instalacion CCTV, service alarma, cambio de equipo"
+              />
+            </label>
+            <label>
+              Tipo
+              <select
+                value={workOrderForm.type}
+                onChange={(event) => onFormChange({ ...workOrderForm, type: event.target.value as DeviceType })}
+              >
+                {Object.entries(deviceTypeLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Estado
+              <select
+                value={workOrderForm.status}
+                onChange={(event) =>
+                  onFormChange({ ...workOrderForm, status: event.target.value as WorkOrderStatus })
+                }
+              >
+                {Object.entries(workStatusLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="wideField">
+              Fecha y hora
+              <input
+                type="datetime-local"
+                value={workOrderForm.scheduledAt}
+                onChange={(event) => onFormChange({ ...workOrderForm, scheduledAt: event.target.value })}
+              />
+            </label>
+            <label className="wideField">
+              Notas
+              <textarea
+                value={workOrderForm.notes}
+                onChange={(event) => onFormChange({ ...workOrderForm, notes: event.target.value })}
+                placeholder="Tecnico asignado, materiales, alcance, referencias del cliente"
+              />
+            </label>
+          </div>
+
+          {workOrderError ? <p className="formError">{workOrderError}</p> : null}
+
+          <button type="submit" className="primaryButton" disabled={loading}>
+            <Plus size={18} />
+            Crear trabajo
+          </button>
+        </form>
+
+        <section className="workOrderDirectory">
+          <div className="directoryToolbar">
+            <label className="searchBox">
+              <Search size={18} />
+              <input
+                value={workSearch}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="Buscar por titulo, cliente, sitio o notas"
+              />
+            </label>
+            <select
+              value={workStatus}
+              onChange={(event) => onStatusChange(event.target.value as WorkOrderStatus | "ALL")}
+              aria-label="Filtrar por estado"
+            >
+              <option value="ALL">Todos</option>
+              {Object.entries(workStatusLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={onRefresh}>
+              <RefreshCw size={18} className={loading ? "spin" : ""} />
+              Filtrar
+            </button>
+          </div>
+
+          <div className="workOrderGrid">
+            {workOrders.map((workOrder) => (
+              <article key={workOrder.id} className="workOrderCard">
+                <div className="workOrderCardHeader">
+                  <span className={`statusPill ${workOrder.status.toLowerCase()}`}>
+                    {workStatusLabels[workOrder.status]}
+                  </span>
+                  <strong>{workOrder.title}</strong>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Cliente</dt>
+                    <dd>{workOrder.customer.name}</dd>
+                  </div>
+                  <div>
+                    <dt>Sitio</dt>
+                    <dd>{workOrder.site?.name ?? "Sin sitio"}</dd>
+                  </div>
+                  <div>
+                    <dt>Tipo</dt>
+                    <dd>{deviceTypeLabels[workOrder.type]}</dd>
+                  </div>
+                  <div>
+                    <dt>Agenda</dt>
+                    <dd>{formatDateTime(workOrder.scheduledAt)}</dd>
+                  </div>
+                </dl>
+                <p>{workOrder.notes || workOrder.site?.address || "Sin notas operativas"}</p>
+                <div className="workOrderActions">
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    onClick={() => onUpdateStatus(workOrder.id, "IN_PROGRESS")}
+                    disabled={workOrder.status === "IN_PROGRESS" || workOrder.status === "COMPLETED"}
+                  >
+                    En curso
+                  </button>
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    onClick={() => onUpdateStatus(workOrder.id, "COMPLETED")}
+                    disabled={workOrder.status === "COMPLETED"}
+                  >
+                    Completar
+                  </button>
+                </div>
+              </article>
+            ))}
+            {!workOrders.length ? <p className="emptyPanel">No hay trabajos para los filtros actuales.</p> : null}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function QuotesView({
+  customers,
+  loading,
+  quoteError,
+  quoteForm,
+  quoteSearch,
+  quoteStats,
+  quoteStatus,
+  quotes,
+  selectedCustomerId,
+  onAccept,
+  onFormChange,
+  onRefresh,
+  onSave,
+  onSearchChange,
+  onSelectCustomer,
+  onStatusChange,
+}: {
+  customers: Customer[];
+  loading: boolean;
+  quoteError: string;
+  quoteForm: QuotePayload;
+  quoteSearch: string;
+  quoteStats: Array<{ label: string; value: number | string }>;
+  quoteStatus: "ALL" | "PENDING" | "ACCEPTED";
+  quotes: Quote[];
+  selectedCustomerId: string | null;
+  onAccept: (id: string) => void;
+  onFormChange: (form: QuotePayload) => void;
+  onRefresh: () => void;
+  onSave: (event: FormEvent<HTMLFormElement>) => void;
+  onSearchChange: (value: string) => void;
+  onSelectCustomer: (customerId: string) => void;
+  onStatusChange: (value: "ALL" | "PENDING" | "ACCEPTED") => void;
+}) {
+  const subtotal = Number(quoteForm.subtotal) || 0;
+  const tax = quoteForm.tax === undefined || Number.isNaN(Number(quoteForm.tax)) ? 0 : Number(quoteForm.tax);
+  const total = subtotal + tax;
+
+  return (
+    <section className="quotesModule">
+      <div className="summaryGrid customerStats" aria-label="Resumen de presupuestos">
+        {quoteStats.map((card) => (
+          <article key={card.label}>
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+          </article>
+        ))}
+      </div>
+
+      <div className="quotesLayout">
+        <form className="quoteForm" onSubmit={onSave}>
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Comercial</p>
+              <h2>Nuevo presupuesto</h2>
+            </div>
+          </div>
+
+          <div className="formGrid">
+            <label>
+              Cliente
+              <select
+                value={quoteForm.customerId || selectedCustomerId || ""}
+                onChange={(event) => {
+                  onSelectCustomer(event.target.value);
+                  onFormChange({ ...quoteForm, customerId: event.target.value });
+                }}
+              >
+                <option value="">Seleccionar cliente</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Numero
+              <input
+                value={quoteForm.number}
+                onChange={(event) => onFormChange({ ...quoteForm, number: event.target.value })}
+                placeholder="Automatico"
+              />
+            </label>
+            <label className="wideField">
+              Titulo
+              <input
+                value={quoteForm.title}
+                onChange={(event) => onFormChange({ ...quoteForm, title: event.target.value })}
+                placeholder="Instalacion CCTV, kit alarma, mantenimiento anual"
+              />
+            </label>
+            <label>
+              Puntos / horas
+              <input
+                type="number"
+                min="0"
+                value={quoteForm.laborPoints}
+                onChange={(event) => onFormChange({ ...quoteForm, laborPoints: Number(event.target.value) })}
+              />
+            </label>
+            <label>
+              Subtotal
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={quoteForm.subtotal}
+                onChange={(event) => {
+                  const nextSubtotal = Number(event.target.value);
+                  onFormChange({
+                    ...quoteForm,
+                    subtotal: nextSubtotal,
+                    tax: Math.round(nextSubtotal * 22) / 100,
+                  });
+                }}
+              />
+            </label>
+            <label>
+              IVA
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={quoteForm.tax}
+                onChange={(event) => onFormChange({ ...quoteForm, tax: Number(event.target.value) })}
+              />
+            </label>
+            <div className="quoteTotalBox">
+              <span>Total</span>
+              <strong>{formatCurrency(total)}</strong>
+            </div>
+          </div>
+
+          {quoteError ? <p className="formError">{quoteError}</p> : null}
+
+          <button type="submit" className="primaryButton" disabled={loading}>
+            <Plus size={18} />
+            Crear presupuesto
+          </button>
+        </form>
+
+        <section className="quoteDirectory">
+          <div className="directoryToolbar">
+            <label className="searchBox">
+              <Search size={18} />
+              <input
+                value={quoteSearch}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="Buscar por numero, titulo o cliente"
+              />
+            </label>
+            <select
+              value={quoteStatus}
+              onChange={(event) => onStatusChange(event.target.value as "ALL" | "PENDING" | "ACCEPTED")}
+              aria-label="Filtrar por estado"
+            >
+              <option value="ALL">Todos</option>
+              <option value="PENDING">Pendientes</option>
+              <option value="ACCEPTED">Aceptados</option>
+            </select>
+            <button type="button" onClick={onRefresh}>
+              <RefreshCw size={18} className={loading ? "spin" : ""} />
+              Filtrar
+            </button>
+          </div>
+
+          <div className="quoteGrid">
+            {quotes.map((quote) => (
+              <article key={quote.id} className="quoteCard">
+                <div className="quoteCardHeader">
+                  <span className={`statusPill ${quote.acceptedAt ? "completed" : "scheduled"}`}>
+                    {quote.acceptedAt ? "Aceptado" : "Pendiente"}
+                  </span>
+                  <strong>{quote.number}</strong>
+                </div>
+                <h3>{quote.title}</h3>
+                <dl>
+                  <div>
+                    <dt>Cliente</dt>
+                    <dd>{quote.customer.name}</dd>
+                  </div>
+                  <div>
+                    <dt>Puntos</dt>
+                    <dd>{quote.laborPoints}</dd>
+                  </div>
+                  <div>
+                    <dt>Subtotal</dt>
+                    <dd>{formatCurrency(quote.subtotal)}</dd>
+                  </div>
+                  <div>
+                    <dt>Total</dt>
+                    <dd>{formatCurrency(quote.total)}</dd>
+                  </div>
+                </dl>
+                <div className="quoteActions">
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    onClick={() => onAccept(quote.id)}
+                    disabled={Boolean(quote.acceptedAt)}
+                  >
+                    <Save size={16} />
+                    Aceptar
+                  </button>
+                </div>
+              </article>
+            ))}
+            {!quotes.length ? <p className="emptyPanel">No hay presupuestos para los filtros actuales.</p> : null}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function PaymentsView({
+  customers,
+  loading,
+  paymentError,
+  paymentForm,
+  paymentSearch,
+  paymentStats,
+  paymentStatus,
+  payments,
+  selectedCustomerId,
+  onFormChange,
+  onMarkPaid,
+  onRefresh,
+  onSave,
+  onSearchChange,
+  onSelectCustomer,
+  onStatusChange,
+}: {
+  customers: Customer[];
+  loading: boolean;
+  paymentError: string;
+  paymentForm: PaymentPayload;
+  paymentSearch: string;
+  paymentStats: Array<{ label: string; value: number | string }>;
+  paymentStatus: "ALL" | "PENDING" | "PAID" | "OVERDUE";
+  payments: Payment[];
+  selectedCustomerId: string | null;
+  onFormChange: (form: PaymentPayload) => void;
+  onMarkPaid: (id: string) => void;
+  onRefresh: () => void;
+  onSave: (event: FormEvent<HTMLFormElement>) => void;
+  onSearchChange: (value: string) => void;
+  onSelectCustomer: (customerId: string) => void;
+  onStatusChange: (value: "ALL" | "PENDING" | "PAID" | "OVERDUE") => void;
+}) {
+  return (
+    <section className="paymentsModule">
+      <div className="summaryGrid customerStats" aria-label="Resumen de cobros">
+        {paymentStats.map((card) => (
+          <article key={card.label}>
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+          </article>
+        ))}
+      </div>
+
+      <div className="paymentsLayout">
+        <form className="paymentForm" onSubmit={onSave}>
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Finanzas</p>
+              <h2>Nuevo cobro</h2>
+            </div>
+          </div>
+
+          <div className="formGrid">
+            <label>
+              Cliente
+              <select
+                value={paymentForm.customerId || selectedCustomerId || ""}
+                onChange={(event) => {
+                  onSelectCustomer(event.target.value);
+                  onFormChange({ ...paymentForm, customerId: event.target.value });
+                }}
+              >
+                <option value="">Seleccionar cliente</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Importe
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={paymentForm.amount}
+                onChange={(event) => onFormChange({ ...paymentForm, amount: Number(event.target.value) })}
+              />
+            </label>
+            <label className="wideField">
+              Concepto
+              <input
+                value={paymentForm.concept}
+                onChange={(event) => onFormChange({ ...paymentForm, concept: event.target.value })}
+                placeholder="Entrega presupuesto, saldo instalacion, mantenimiento mensual"
+              />
+            </label>
+            <label>
+              Vencimiento
+              <input
+                type="date"
+                value={paymentForm.dueDate}
+                onChange={(event) => onFormChange({ ...paymentForm, dueDate: event.target.value })}
+              />
+            </label>
+            <label>
+              Fecha de pago
+              <input
+                type="date"
+                value={paymentForm.paidAt}
+                onChange={(event) => onFormChange({ ...paymentForm, paidAt: event.target.value })}
+              />
+            </label>
+          </div>
+
+          {paymentError ? <p className="formError">{paymentError}</p> : null}
+
+          <button type="submit" className="primaryButton" disabled={loading}>
+            <Plus size={18} />
+            Crear cobro
+          </button>
+        </form>
+
+        <section className="paymentDirectory">
+          <div className="directoryToolbar">
+            <label className="searchBox">
+              <Search size={18} />
+              <input
+                value={paymentSearch}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="Buscar por concepto o cliente"
+              />
+            </label>
+            <select
+              value={paymentStatus}
+              onChange={(event) => onStatusChange(event.target.value as "ALL" | "PENDING" | "PAID" | "OVERDUE")}
+              aria-label="Filtrar por estado"
+            >
+              <option value="ALL">Todos</option>
+              <option value="PENDING">Pendientes</option>
+              <option value="OVERDUE">Vencidos</option>
+              <option value="PAID">Pagados</option>
+            </select>
+            <button type="button" onClick={onRefresh}>
+              <RefreshCw size={18} className={loading ? "spin" : ""} />
+              Filtrar
+            </button>
+          </div>
+
+          <div className="paymentGrid">
+            {payments.map((payment) => (
+              <article key={payment.id} className="paymentCard">
+                <div className="paymentCardHeader">
+                  <span className={`statusPill ${paymentStatusClass(payment)}`}>
+                    {paymentStatusLabel(payment)}
+                  </span>
+                  <strong>{formatCurrency(payment.amount)}</strong>
+                </div>
+                <h3>{payment.concept}</h3>
+                <dl>
+                  <div>
+                    <dt>Cliente</dt>
+                    <dd>{payment.customer.name}</dd>
+                  </div>
+                  <div>
+                    <dt>Vence</dt>
+                    <dd>{formatShortDate(payment.dueDate)}</dd>
+                  </div>
+                  <div>
+                    <dt>Pago</dt>
+                    <dd>{payment.paidAt ? formatShortDate(payment.paidAt) : "Pendiente"}</dd>
+                  </div>
+                </dl>
+                <div className="paymentActions">
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    onClick={() => onMarkPaid(payment.id)}
+                    disabled={Boolean(payment.paidAt)}
+                  >
+                    <Save size={16} />
+                    Marcar pago
+                  </button>
+                </div>
+              </article>
+            ))}
+            {!payments.length ? <p className="emptyPanel">No hay cobros para los filtros actuales.</p> : null}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function VehiclesView({
+  loading,
+  vehicleError,
+  vehicleForm,
+  vehicleSearch,
+  vehicleStats,
+  vehicleStatus,
+  vehicles,
+  onFormChange,
+  onRefresh,
+  onSave,
+  onSearchChange,
+  onStatusChange,
+  onToggleActive,
+}: {
+  loading: boolean;
+  vehicleError: string;
+  vehicleForm: VehiclePayload;
+  vehicleSearch: string;
+  vehicleStats: Array<{ label: string; value: number }>;
+  vehicleStatus: "ALL" | "ACTIVE" | "INACTIVE";
+  vehicles: Vehicle[];
+  onFormChange: (form: VehiclePayload) => void;
+  onRefresh: () => void;
+  onSave: (event: FormEvent<HTMLFormElement>) => void;
+  onSearchChange: (value: string) => void;
+  onStatusChange: (value: "ALL" | "ACTIVE" | "INACTIVE") => void;
+  onToggleActive: (vehicle: Vehicle) => void;
+}) {
+  return (
+    <section className="vehiclesModule">
+      <div className="summaryGrid customerStats" aria-label="Resumen de vehiculos">
+        {vehicleStats.map((card) => (
+          <article key={card.label}>
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+          </article>
+        ))}
+      </div>
+
+      <div className="vehiclesLayout">
+        <form className="vehicleForm" onSubmit={onSave}>
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Flota</p>
+              <h2>Nuevo vehiculo</h2>
+            </div>
+          </div>
+
+          <div className="formGrid">
+            <label className="wideField">
+              Nombre
+              <input
+                value={vehicleForm.name}
+                onChange={(event) => onFormChange({ ...vehicleForm, name: event.target.value })}
+                placeholder="Movil 1, Tecnico zona este, Camioneta instalacion"
+              />
+            </label>
+            <label>
+              Matricula
+              <input
+                value={vehicleForm.plate}
+                onChange={(event) => onFormChange({ ...vehicleForm, plate: event.target.value })}
+                placeholder="ABC 1234"
+              />
+            </label>
+            <label>
+              ID Traccar
+              <input
+                value={vehicleForm.traccarDeviceId}
+                onChange={(event) => onFormChange({ ...vehicleForm, traccarDeviceId: event.target.value })}
+                placeholder="ID del dispositivo GPS"
+              />
+            </label>
+            <label className="toggleField wideField">
+              <input
+                type="checkbox"
+                checked={Boolean(vehicleForm.active)}
+                onChange={(event) => onFormChange({ ...vehicleForm, active: event.target.checked })}
+              />
+              Vehiculo activo
+            </label>
+          </div>
+
+          {vehicleError ? <p className="formError">{vehicleError}</p> : null}
+
+          <button type="submit" className="primaryButton" disabled={loading}>
+            <Plus size={18} />
+            Registrar vehiculo
+          </button>
+        </form>
+
+        <section className="vehicleDirectory">
+          <div className="directoryToolbar">
+            <label className="searchBox">
+              <Search size={18} />
+              <input
+                value={vehicleSearch}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="Buscar por nombre, matricula o ID Traccar"
+              />
+            </label>
+            <select
+              value={vehicleStatus}
+              onChange={(event) => onStatusChange(event.target.value as "ALL" | "ACTIVE" | "INACTIVE")}
+              aria-label="Filtrar por estado"
+            >
+              <option value="ALL">Todos</option>
+              <option value="ACTIVE">Activos</option>
+              <option value="INACTIVE">Inactivos</option>
+            </select>
+            <button type="button" onClick={onRefresh}>
+              <RefreshCw size={18} className={loading ? "spin" : ""} />
+              Filtrar
+            </button>
+          </div>
+
+          <div className="vehicleGrid">
+            {vehicles.map((vehicle) => (
+              <article key={vehicle.id} className="vehicleCard">
+                <div className="vehicleCardHeader">
+                  <span className={`statusPill ${vehicle.active ? "completed" : "inactive"}`}>
+                    {vehicle.active ? "Activo" : "Inactivo"}
+                  </span>
+                  <strong>{vehicle.name}</strong>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Matricula</dt>
+                    <dd>{vehicle.plate || "Sin matricula"}</dd>
+                  </div>
+                  <div>
+                    <dt>Traccar</dt>
+                    <dd>{vehicle.traccarDeviceId || "Sin vincular"}</dd>
+                  </div>
+                  <div>
+                    <dt>Actualizado</dt>
+                    <dd>{formatShortDate(vehicle.updatedAt)}</dd>
+                  </div>
+                </dl>
+                <div className="vehicleActions">
+                  <button type="button" className="secondaryButton" onClick={() => onToggleActive(vehicle)}>
+                    {vehicle.active ? "Desactivar" : "Activar"}
+                  </button>
+                </div>
+              </article>
+            ))}
+            {!vehicles.length ? <p className="emptyPanel">No hay vehiculos para los filtros actuales.</p> : null}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function GmailView({
+  gmailError,
+  gmailStats,
+  loading,
+  status,
+  sync,
+  onRefresh,
+}: {
+  gmailError: string;
+  gmailStats: Array<{ label: string; value: number | string }>;
+  loading: boolean;
+  status: GmailStatus;
+  sync: GmailSync;
+  onRefresh: () => void;
+}) {
+  return (
+    <section className="gmailModule">
+      <div className="summaryGrid customerStats" aria-label="Resumen de Gmail">
+        {gmailStats.map((card) => (
+          <article key={card.label}>
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+          </article>
+        ))}
+      </div>
+
+      <section className="gmailStatusPanel">
+        <div>
+          <p>Integracion</p>
+          <h2>{status.connected ? "Gmail conectado" : "Gmail pendiente de conectar"}</h2>
+          <span>
+            {status.connected
+              ? `Cuenta ${sync.emailAddress || "Gmail"} lista para sincronizar.`
+              : "Faltan credenciales OAuth en el entorno."}
+          </span>
+          <small className="syncStamp">
+            {sync.lastSyncAt ? `Ultima sincronizacion: ${formatDateTime(sync.lastSyncAt)}` : "Sin sincronizacion todavia"}
+          </small>
+        </div>
+        <button type="button" onClick={onRefresh}>
+          <RefreshCw size={18} className={loading ? "spin" : ""} />
+          Sincronizar
+        </button>
+      </section>
+
+      {gmailError ? <p className="formError">{gmailError}</p> : null}
+
+      <div className="gmailLayout">
+        <section className="gmailPanel">
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Checklist</p>
+              <h2>Configuracion OAuth</h2>
+            </div>
+          </div>
+          <div className="integrationChecklist">
+            {status.checks.map((check) => (
+              <article key={check.key}>
+                <span className={`statusPill ${check.configured ? "completed" : "scheduled"}`}>
+                  {check.configured ? "Listo" : "Pendiente"}
+                </span>
+                <div>
+                  <strong>{check.label}</strong>
+                  <small>{check.key}</small>
+                </div>
+              </article>
+            ))}
+            {!status.checks.length ? <p className="emptyPanel">No hay variables de Gmail definidas todavia.</p> : null}
+          </div>
+        </section>
+
+        <section className="gmailPanel">
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Operacion</p>
+              <h2>Correos recientes</h2>
+            </div>
+          </div>
+          <div className="gmailMessageList">
+            {sync.messages.map((message) => (
+              <article key={message.id} className={message.unread ? "unreadMail" : ""}>
+                <div>
+                  <strong>{message.subject}</strong>
+                  <span>{message.from || "Remitente desconocido"} · {formatMailDate(message.date)}</span>
+                </div>
+                <p>{message.snippet || "Sin vista previa disponible"}</p>
+                {message.important ? <em>Importante</em> : null}
+              </article>
+            ))}
+            {!sync.messages.length ? <p className="emptyPanel">Todavia no hay correos sincronizados.</p> : null}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function WhatsAppView({
+  loading,
+  status,
+  sync,
+  whatsAppError,
+  whatsAppStats,
+  onRefresh,
+}: {
+  loading: boolean;
+  status: WhatsAppStatus;
+  sync: WhatsAppSync;
+  whatsAppError: string;
+  whatsAppStats: Array<{ label: string; value: number | string }>;
+  onRefresh: () => void;
+}) {
+  return (
+    <section className="whatsAppModule">
+      <div className="summaryGrid customerStats" aria-label="Resumen de WhatsApp">
+        {whatsAppStats.map((card) => (
+          <article key={card.label}>
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+          </article>
+        ))}
+      </div>
+
+      <section className="integrationStatusPanel">
+        <div>
+          <p>Integracion</p>
+          <h2>{status.connected ? "WhatsApp conectado" : "OpenWA pendiente de conectar"}</h2>
+          <span>
+            {status.connected
+              ? `Sesion ${sync.session?.name ?? "OpenWA"} lista para operar mensajes.`
+              : "Falta configurar OpenWA, sesion o token de API."}
+          </span>
+          <small className="syncStamp">
+            {sync.lastSyncAt ? `Ultima sincronizacion: ${formatDateTime(sync.lastSyncAt)}` : "Sin sincronizacion todavia"}
+          </small>
+        </div>
+        <button type="button" onClick={onRefresh}>
+          <RefreshCw size={18} className={loading ? "spin" : ""} />
+          Sincronizar
+        </button>
+      </section>
+
+      {whatsAppError ? <p className="formError">{whatsAppError}</p> : null}
+
+      <div className="integrationLayout">
+        <section className="integrationPanel">
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Checklist</p>
+              <h2>Configuracion OpenWA</h2>
+            </div>
+          </div>
+          <div className="integrationChecklist">
+            {status.checks.map((check) => (
+              <article key={check.key}>
+                <span className={`statusPill ${check.configured ? "completed" : "scheduled"}`}>
+                  {check.configured ? "Listo" : "Pendiente"}
+                </span>
+                <div>
+                  <strong>{check.label}</strong>
+                  <small>{check.key}</small>
+                </div>
+              </article>
+            ))}
+            {!status.checks.length ? <p className="emptyPanel">No hay variables de OpenWA definidas todavia.</p> : null}
+          </div>
+        </section>
+
+        <section className="integrationPanel">
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Operacion</p>
+              <h2>Chats recientes</h2>
+            </div>
+          </div>
+          <div className="whatsAppChatList">
+            {sync.chats.map((chat) => (
+              <article key={chat.id} className={chat.unreadCount ? "unreadChat" : ""}>
+                <div>
+                  <strong>{chat.name || chat.id}</strong>
+                  <span>{chat.isGroup ? "Grupo" : "Chat"} · {formatWhatsAppTime(chat.timestamp)}</span>
+                </div>
+                <p>{chat.lastMessage || "Sin ultimo mensaje disponible"}</p>
+                {chat.unreadCount ? <em>{chat.unreadCount}</em> : null}
+              </article>
+            ))}
+            {!sync.chats.length ? <p className="emptyPanel">Todavia no hay chats sincronizados.</p> : null}
+          </div>
+        </section>
+
+        <section className="integrationPanel">
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Grupos</p>
+              <h2>Grupos sincronizados</h2>
+            </div>
+          </div>
+          <div className="whatsAppGroupGrid">
+            {sync.groups.slice(0, 12).map((group) => (
+              <article key={group.id}>
+                <MessageSquare size={19} />
+                <strong>{group.name || group.id}</strong>
+              </article>
+            ))}
+            {!sync.groups.length ? <p className="emptyPanel">Todavia no hay grupos sincronizados.</p> : null}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function DevicesView({
   customers,
   deviceError,
@@ -1267,4 +3424,193 @@ function cleanDevicePayload(form: DevicePayload): DevicePayload {
     installedAt: form.installedAt || undefined,
     notes: form.notes?.trim() || undefined,
   };
+}
+
+function cleanWorkOrderPayload(form: WorkOrderPayload): WorkOrderPayload {
+  return {
+    customerId: form.customerId,
+    siteId: form.siteId || undefined,
+    title: form.title.trim(),
+    type: form.type,
+    status: form.status,
+    scheduledAt: form.scheduledAt || undefined,
+    completedAt: form.completedAt || undefined,
+    notes: form.notes?.trim() || undefined,
+  };
+}
+
+function cleanQuotePayload(form: QuotePayload): QuotePayload {
+  return {
+    customerId: form.customerId,
+    number: form.number?.trim() || undefined,
+    title: form.title.trim(),
+    laborPoints: Number(form.laborPoints) || 0,
+    subtotal: Number(form.subtotal) || 0,
+    tax: form.tax === undefined ? undefined : Number(form.tax) || 0,
+  };
+}
+
+function cleanPaymentPayload(form: PaymentPayload): PaymentPayload {
+  return {
+    customerId: form.customerId,
+    concept: form.concept.trim(),
+    amount: Number(form.amount) || 0,
+    dueDate: form.dueDate || undefined,
+    paidAt: form.paidAt || undefined,
+  };
+}
+
+function cleanVehiclePayload(form: VehiclePayload): VehiclePayload {
+  return {
+    name: form.name.trim(),
+    plate: form.plate?.trim() || undefined,
+    traccarDeviceId: form.traccarDeviceId?.trim() || undefined,
+    active: form.active,
+  };
+}
+
+function isOverdue(payment: Payment) {
+  if (payment.paidAt || !payment.dueDate) {
+    return false;
+  }
+
+  return startOfDay(new Date(payment.dueDate)).getTime() < startOfDay(new Date()).getTime();
+}
+
+function paymentStatusLabel(payment: Payment) {
+  if (payment.paidAt) {
+    return "Pagado";
+  }
+
+  return isOverdue(payment) ? "Vencido" : "Pendiente";
+}
+
+function paymentStatusClass(payment: Payment) {
+  if (payment.paidAt) {
+    return "completed";
+  }
+
+  return isOverdue(payment) ? "cancelled" : "scheduled";
+}
+
+function toMoneyNumber(value: string | number) {
+  return typeof value === "number" ? value : Number(value);
+}
+
+function formatCurrency(value: string | number) {
+  const amount = toMoneyNumber(value);
+  return new Intl.NumberFormat("es-UY", {
+    style: "currency",
+    currency: "UYU",
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateInput(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) {
+    return startOfDay(new Date());
+  }
+
+  return new Date(year, month - 1, day);
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function isSameDay(value: string | Date | null | undefined, date: Date) {
+  if (!value) {
+    return false;
+  }
+
+  const source = value instanceof Date ? value : new Date(value);
+  return startOfDay(source).getTime() === startOfDay(date).getTime();
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return "Sin fecha";
+  }
+
+  return new Date(value).toLocaleString("es-UY", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
+function formatFullDate(date: Date) {
+  return date.toLocaleDateString("es-UY", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function formatShortWeekday(date: Date) {
+  return date.toLocaleDateString("es-UY", { weekday: "short" });
+}
+
+function formatShortDate(value?: string | null) {
+  if (!value) {
+    return "Sin fecha";
+  }
+
+  return new Date(value).toLocaleDateString("es-UY", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
+function formatTime(value?: string | null) {
+  if (!value) {
+    return "--:--";
+  }
+
+  return new Date(value).toLocaleTimeString("es-UY", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatWhatsAppTime(value?: number) {
+  if (!value) {
+    return "Sin fecha";
+  }
+
+  const milliseconds = value > 9999999999 ? value : value * 1000;
+  return new Date(milliseconds).toLocaleString("es-UY", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
+function formatMailDate(value?: string) {
+  if (!value) {
+    return "Sin fecha";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString("es-UY", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
 }

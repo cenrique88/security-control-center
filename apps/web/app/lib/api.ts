@@ -11,11 +11,49 @@ export type AuthResponse = {
 };
 
 export type DashboardSummary = {
+  lastUpdatedAt?: string;
+  totalCustomers?: number;
   activeCustomers: number;
+  prospectCustomers?: number;
+  inactiveCustomers?: number;
+  totalSites?: number;
+  totalWorkOrders?: number;
   scheduledJobs: number;
+  inProgressJobs?: number;
+  waitingJobs?: number;
+  completedJobs?: number;
+  totalQuotes?: number;
+  pendingQuotes?: number;
+  acceptedQuotes?: number;
+  quotePipeline?: number;
+  totalPayments?: number;
   pendingPayments: number;
+  overduePayments?: number;
+  pendingPaymentAmount?: number;
   installedDevices: number;
+  totalVehicles?: number;
   activeVehicles: number;
+  inactiveVehicles?: number;
+  integrations?: {
+    gmail: {
+      provider: string;
+      connected: boolean;
+      lastSyncAt?: string | null;
+      unread: number;
+      pendingReplies: number;
+      important: number;
+      activeChats: number;
+    };
+    whatsApp: {
+      provider: string;
+      connected: boolean;
+      lastSyncAt?: string | null;
+      unread: number;
+      pendingReplies: number;
+      important: number;
+      activeChats: number;
+    };
+  };
   monitoringItems: Array<{
     label: string;
     value: number | string;
@@ -117,6 +155,201 @@ export type DevicePayload = {
   ipAddress?: string;
   installedAt?: string;
   notes?: string;
+};
+
+export type WorkOrderStatus =
+  | "SCHEDULED"
+  | "IN_PROGRESS"
+  | "WAITING_CUSTOMER"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export type WorkOrder = {
+  id: string;
+  customerId: string;
+  siteId?: string | null;
+  title: string;
+  type: DeviceType;
+  status: WorkOrderStatus;
+  scheduledAt?: string | null;
+  completedAt?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  customer: {
+    id: string;
+    name: string;
+    phone?: string | null;
+  };
+  site?: {
+    id: string;
+    name: string;
+    address: string;
+  } | null;
+};
+
+export type WorkOrderPayload = {
+  customerId: string;
+  siteId?: string;
+  title: string;
+  type: DeviceType;
+  status?: WorkOrderStatus;
+  scheduledAt?: string;
+  completedAt?: string;
+  notes?: string;
+};
+
+export type Quote = {
+  id: string;
+  customerId: string;
+  number: string;
+  title: string;
+  laborPoints: number;
+  subtotal: string | number;
+  tax: string | number;
+  total: string | number;
+  acceptedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  customer: {
+    id: string;
+    name: string;
+    phone?: string | null;
+    email?: string | null;
+  };
+};
+
+export type QuotePayload = {
+  customerId: string;
+  number?: string;
+  title: string;
+  laborPoints?: number;
+  subtotal: number;
+  tax?: number;
+};
+
+export type Payment = {
+  id: string;
+  customerId: string;
+  concept: string;
+  amount: string | number;
+  dueDate?: string | null;
+  paidAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  customer: {
+    id: string;
+    name: string;
+    phone?: string | null;
+    email?: string | null;
+  };
+};
+
+export type PaymentPayload = {
+  customerId: string;
+  concept: string;
+  amount: number;
+  dueDate?: string;
+  paidAt?: string;
+};
+
+export type Vehicle = {
+  id: string;
+  name: string;
+  plate?: string | null;
+  traccarDeviceId?: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type VehiclePayload = {
+  name: string;
+  plate?: string;
+  traccarDeviceId?: string;
+  active?: boolean;
+};
+
+export type GmailStatus = {
+  provider: string;
+  connected: boolean;
+  lastSyncAt?: string | null;
+  unread: number;
+  important: number;
+  pendingReplies: number;
+  checks: Array<{
+    key: string;
+    label: string;
+    configured: boolean;
+  }>;
+};
+
+export type GmailMessage = {
+  id: string;
+  threadId: string;
+  from: string;
+  subject: string;
+  date: string;
+  snippet: string;
+  unread: boolean;
+  important: boolean;
+};
+
+export type GmailSync = {
+  provider: string;
+  connected: boolean;
+  lastSyncAt: string;
+  emailAddress: string;
+  unread: number;
+  important: number;
+  pendingReplies: number;
+  messagesTotal: number;
+  threadsTotal: number;
+  messages: GmailMessage[];
+};
+
+export type WhatsAppStatus = {
+  provider: string;
+  connected: boolean;
+  lastSyncAt?: string | null;
+  unread: number;
+  pendingReplies: number;
+  activeChats: number;
+  checks: Array<{
+    key: string;
+    label: string;
+    configured: boolean;
+  }>;
+};
+
+export type WhatsAppChat = {
+  id: string;
+  name?: string;
+  isGroup?: boolean;
+  unreadCount?: number;
+  timestamp?: number;
+  lastMessage?: string;
+};
+
+export type WhatsAppSync = {
+  provider: string;
+  connected: boolean;
+  lastSyncAt: string;
+  unread: number;
+  pendingReplies: number;
+  activeChats: number;
+  session?: {
+    id: string;
+    name: string;
+    status?: string;
+    phone?: string;
+    pushName?: string;
+    connectedAt?: string | null;
+    lastActive?: string | null;
+  };
+  stats?: Record<string, unknown>;
+  chats: WhatsAppChat[];
+  groups: WhatsAppChat[];
 };
 
 function getApiUrl() {

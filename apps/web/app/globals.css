@@ -59,9 +59,14 @@ button:disabled {
   padding: 24px;
   background:
     linear-gradient(rgba(17, 24, 39, 0.78), rgba(17, 24, 39, 0.58)),
-    url("https://images.unsplash.com/photo-1557597774-9d273605dfa9?auto=format&fit=crop&w=1800&q=80");
+    /* url("https://images.unsplash.com/photo-1557597774-9d273605dfa9?auto=format&fit=crop&w=1800&q=80"); */
+    url("../../../apps/web/public/background2.png");
   background-position: center;
   background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  background-blend-mode: overlay;
+
 }
 
 .authPanel {
@@ -211,12 +216,9 @@ button:disabled {
 }
 
 .brandLogo {
-  width: 58px;
-  height: 58px;
-  border-radius: 8px;
-  object-fit: cover;
-  border: 1px solid rgba(20, 184, 166, 0.45);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
 }
 
 .brand strong,
@@ -431,6 +433,41 @@ button:disabled {
   gap: 18px;
 }
 
+.workOrdersModule {
+  display: grid;
+  gap: 18px;
+}
+
+.agendaModule {
+  display: grid;
+  gap: 18px;
+}
+
+.quotesModule {
+  display: grid;
+  gap: 18px;
+}
+
+.paymentsModule {
+  display: grid;
+  gap: 18px;
+}
+
+.vehiclesModule {
+  display: grid;
+  gap: 18px;
+}
+
+.gmailModule {
+  display: grid;
+  gap: 18px;
+}
+
+.whatsAppModule {
+  display: grid;
+  gap: 18px;
+}
+
 .customerStats {
   margin-bottom: 0;
 }
@@ -606,32 +643,84 @@ button:disabled {
   align-items: start;
 }
 
+.workOrdersLayout {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.quotesLayout {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.paymentsLayout {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.vehiclesLayout {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
 .deviceForm,
-.deviceDirectory {
+.deviceDirectory,
+.workOrderForm,
+.workOrderDirectory,
+.quoteForm,
+.quoteDirectory,
+.paymentForm,
+.paymentDirectory,
+.vehicleForm,
+.vehicleDirectory {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
 }
 
-.deviceForm {
+.deviceForm,
+.workOrderForm,
+.quoteForm,
+.paymentForm,
+.vehicleForm {
   display: grid;
   gap: 16px;
   padding: 18px;
 }
 
-.deviceDirectory {
+.deviceDirectory,
+.workOrderDirectory,
+.quoteDirectory,
+.paymentDirectory,
+.vehicleDirectory {
   min-width: 0;
   overflow: hidden;
 }
 
-.deviceGrid {
+.deviceGrid,
+.workOrderGrid,
+.quoteGrid,
+.paymentGrid,
+.vehicleGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   padding: 14px;
 }
 
-.deviceCard {
+.deviceCard,
+.workOrderCard,
+.quoteCard,
+.paymentCard,
+.vehicleCard {
   display: grid;
   gap: 12px;
   padding: 14px;
@@ -640,39 +729,602 @@ button:disabled {
   background: #f8fafc;
 }
 
-.deviceCardHeader {
+.deviceCardHeader,
+.workOrderCardHeader,
+.quoteCardHeader,
+.paymentCardHeader,
+.vehicleCardHeader {
   display: grid;
   gap: 8px;
 }
 
-.deviceCardHeader strong {
+.deviceCardHeader strong,
+.workOrderCardHeader strong,
+.quoteCardHeader strong,
+.paymentCardHeader strong,
+.vehicleCardHeader strong {
   font-size: 17px;
 }
 
-.deviceCard dl {
+.deviceCard dl,
+.workOrderCard dl,
+.quoteCard dl,
+.paymentCard dl,
+.vehicleCard dl {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin: 0;
 }
 
-.deviceCard dt {
+.deviceCard dt,
+.workOrderCard dt,
+.quoteCard dt,
+.paymentCard dt,
+.vehicleCard dt {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
 }
 
-.deviceCard dd {
+.deviceCard dd,
+.workOrderCard dd,
+.quoteCard dd,
+.paymentCard dd,
+.vehicleCard dd {
   margin: 3px 0 0;
   overflow-wrap: anywhere;
 }
 
-.deviceCard p {
+.deviceCard p,
+.workOrderCard p {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
+}
+
+.quoteCard h3,
+.paymentCard h3 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.workOrderActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.quoteActions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.paymentActions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.vehicleActions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.toggleField {
+  display: flex !important;
+  align-items: center;
+  gap: 10px !important;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #eef3f6;
+  color: var(--accent-strong) !important;
+}
+
+.toggleField input {
+  width: 18px;
+  height: 18px;
+}
+
+.gmailStatusPanel,
+.integrationStatusPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.gmailStatusPanel p,
+.integrationStatusPanel p {
+  margin: 0 0 4px;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.gmailStatusPanel h2,
+.integrationStatusPanel h2 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.gmailStatusPanel span,
+.integrationStatusPanel span {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.syncStamp {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.gmailStatusPanel button,
+.integrationStatusPanel button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  font-weight: 800;
+}
+
+.gmailLayout,
+.integrationLayout {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.gmailPanel,
+.integrationPanel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.integrationChecklist {
+  display: grid;
+  gap: 10px;
+}
+
+.integrationChecklist article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.integrationChecklist strong,
+.integrationChecklist small {
+  display: block;
+}
+
+.integrationChecklist small {
+  margin-top: 3px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.gmailWorkflowGrid,
+.integrationWorkflowGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.gmailWorkflowGrid article,
+.integrationWorkflowGrid article {
+  display: grid;
+  gap: 10px;
+  min-height: 150px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.gmailWorkflowGrid svg,
+.integrationWorkflowGrid svg {
+  color: var(--accent-strong);
+}
+
+.gmailWorkflowGrid strong,
+.integrationWorkflowGrid strong {
+  font-size: 16px;
+}
+
+.gmailWorkflowGrid span,
+.integrationWorkflowGrid span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.gmailMessageList {
+  display: grid;
+  gap: 10px;
+}
+
+.gmailMessageList article {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.gmailMessageList article.unreadMail {
+  border-color: rgba(15, 118, 110, 0.35);
+  background: #ecfdf5;
+}
+
+.gmailMessageList strong,
+.gmailMessageList span {
+  display: block;
+}
+
+.gmailMessageList span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.gmailMessageList p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.gmailMessageList em {
+  justify-self: start;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.whatsAppChatList {
+  display: grid;
+  gap: 10px;
+}
+
+.whatsAppChatList article {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 13px 46px 13px 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.whatsAppChatList article.unreadChat {
+  border-color: rgba(15, 118, 110, 0.35);
+  background: #ecfdf5;
+}
+
+.whatsAppChatList strong,
+.whatsAppChatList span {
+  display: block;
+}
+
+.whatsAppChatList span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.whatsAppChatList p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.whatsAppChatList em {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.whatsAppGroupGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.whatsAppGroupGrid article {
+  display: grid;
+  gap: 8px;
+  min-height: 86px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.whatsAppGroupGrid svg {
+  color: var(--accent-strong);
+}
+
+.whatsAppGroupGrid strong {
+  overflow-wrap: anywhere;
+}
+
+.quoteTotalBox {
+  display: grid;
+  align-content: center;
+  min-height: 76px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #eef3f6;
+}
+
+.quoteTotalBox span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.quoteTotalBox strong {
+  margin-top: 5px;
+  font-size: 24px;
+}
+
+.agendaToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.agendaToolbar p {
+  margin: 0 0 4px;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.agendaToolbar h2 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: 0;
+  text-transform: capitalize;
+}
+
+.agendaControls {
+  display: grid;
+  grid-template-columns: 160px 160px auto;
+  gap: 10px;
+}
+
+.agendaControls input,
+.agendaControls select {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.agendaControls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  font-weight: 800;
+}
+
+.agendaWeekStrip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.agendaWeekStrip button {
+  display: grid;
+  gap: 5px;
+  min-height: 82px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  text-align: left;
+}
+
+.agendaWeekStrip button.selectedDay {
+  border-color: rgba(15, 118, 110, 0.5);
+  background: #ecfdf5;
+}
+
+.agendaWeekStrip span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.agendaWeekStrip strong {
+  font-size: 24px;
+}
+
+.agendaWeekStrip em {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  border-radius: 999px;
+  background: #eef3f6;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.agendaLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.8fr) minmax(280px, 0.8fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.agendaColumn {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.agendaList {
+  display: grid;
+  gap: 12px;
+}
+
+.agendaItem {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.agendaTime {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-height: 64px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #eef3f6;
+}
+
+.agendaTime strong {
+  font-size: 18px;
+}
+
+.agendaTime span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agendaItemBody {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.agendaItemBody h3 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.agendaItemBody dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 0;
+}
+
+.agendaItemBody dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.agendaItemBody dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.agendaItemBody p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.compactAgendaList .agendaItem {
+  grid-template-columns: 1fr;
 }
 
 .siteList {
@@ -833,6 +1485,31 @@ button:disabled {
   color: #991b1b;
 }
 
+.statusPill.scheduled {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.statusPill.in_progress {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.statusPill.waiting_customer {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.statusPill.completed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.statusPill.cancelled {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .emptyTable {
   color: var(--muted);
   text-align: center !important;
@@ -878,8 +1555,8 @@ button:disabled {
   }
 
   .brandLogo {
-    width: 48px;
-    height: 48px;
+    width: 54px;
+    height: 54px;
   }
 
   .nav {
@@ -911,11 +1588,85 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .workOrdersLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .quotesLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .paymentsLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .vehiclesLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .gmailStatusPanel,
+  .integrationStatusPanel {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .gmailLayout,
+  .integrationLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .gmailWorkflowGrid,
+  .integrationWorkflowGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .whatsAppGroupGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .agendaToolbar {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .agendaControls {
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .agendaControls button {
+    grid-column: 1 / -1;
+  }
+
+  .agendaWeekStrip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .agendaLayout {
+    grid-template-columns: 1fr;
+  }
+
   .siteList {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .deviceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .workOrderGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .quoteGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .paymentGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .vehicleGrid {
     grid-template-columns: 1fr;
   }
 
@@ -967,12 +1718,24 @@ button:disabled {
   .customerDirectory,
   .sitesPanel,
   .deviceForm,
-  .deviceDirectory {
+  .deviceDirectory,
+  .workOrderForm,
+  .workOrderDirectory,
+  .quoteForm,
+  .quoteDirectory,
+  .paymentForm,
+  .paymentDirectory,
+  .vehicleForm,
+  .vehicleDirectory {
     border-radius: 8px;
   }
 
   .customerForm,
-  .deviceForm {
+  .deviceForm,
+  .workOrderForm,
+  .quoteForm,
+  .paymentForm,
+  .vehicleForm {
     padding: 14px;
   }
 
@@ -984,13 +1747,52 @@ button:disabled {
     padding: 12px;
   }
 
-  .deviceCard dl {
+  .workOrderGrid {
+    padding: 12px;
+  }
+
+  .quoteGrid {
+    padding: 12px;
+  }
+
+  .paymentGrid {
+    padding: 12px;
+  }
+
+  .vehicleGrid {
+    padding: 12px;
+  }
+
+  .deviceCard dl,
+  .workOrderCard dl,
+  .quoteCard dl,
+  .paymentCard dl,
+  .vehicleCard dl,
+  .agendaItem,
+  .agendaItemBody dl,
+  .workOrderActions {
+    grid-template-columns: 1fr;
+  }
+
+  .agendaColumn,
+  .agendaToolbar,
+  .gmailPanel,
+  .gmailStatusPanel,
+  .integrationPanel,
+  .integrationStatusPanel {
+    padding: 14px;
+  }
+
+  .agendaControls,
+  .agendaWeekStrip {
     grid-template-columns: 1fr;
   }
 
   .geoButton,
   .secondaryButton,
   .iconTextButton,
+  .gmailStatusPanel button,
+  .integrationStatusPanel button,
   .directoryToolbar button,
   .primaryButton {
     width: 100%;
