@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsOptional, IsString, Min } from "class-validator";
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Min } from "class-validator";
 
 enum ServiceTypeDto {
   CCTV = "CCTV",
@@ -37,12 +37,39 @@ export class CreateInventoryItemDto {
   minStock?: number;
 
   @IsOptional()
+  @IsBoolean()
+  managedStock?: boolean;
+
+  @IsOptional()
   @IsString()
   location?: string;
 
   @IsOptional()
   @IsString()
   supplier?: string;
+
+  @IsOptional()
+  @IsString()
+  supplierCategory?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  costPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  taxAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  priceWithTax?: number;
+
+  @IsOptional()
+  @IsString()
+  currency?: string;
 
   @IsOptional()
   @IsString()

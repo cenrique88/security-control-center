@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Car,
   ClipboardList,
+  Copy,
   DollarSign,
   Edit3,
   LogOut,
@@ -25,6 +26,7 @@ import {
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  ApiError,
   apiRequest,
   AuthUser,
   Customer,
@@ -192,7 +194,12 @@ const fallbackGmailStatus: GmailStatus = {
   unread: 0,
   important: 0,
   pendingReplies: 0,
-  checks: [],
+  checks: [
+    { key: "GMAIL_CLIENT_ID", label: "Client ID", configured: false },
+    { key: "GMAIL_CLIENT_SECRET", label: "Client secret", configured: false },
+    { key: "GMAIL_REDIRECT_URI", label: "Redirect URI", configured: false },
+    { key: "GMAIL_REFRESH_TOKEN", label: "Refresh token", configured: false },
+  ],
 };
 
 const emptyGmailSync: GmailSync = {
@@ -215,7 +222,12 @@ const fallbackWhatsAppStatus: WhatsAppStatus = {
   unread: 0,
   pendingReplies: 0,
   activeChats: 0,
-  checks: [],
+  checks: [
+    { key: "OPENWA_API_URL", label: "OpenWA API URL", configured: false },
+    { key: "OPENWA_SESSION", label: "Sesion", configured: false },
+    { key: "OPENWA_API_KEY", label: "API key", configured: false },
+    { key: "OPENWA_WEBHOOK_SECRET", label: "Webhook secret", configured: false },
+  ],
 };
 
 const emptyWhatsAppSync: WhatsAppSync = {
@@ -294,6 +306,8 @@ export default function Home() {
   const [activeModule, setActiveModule] = useState("Dashboard");
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authRedirecting, setAuthRedirecting] = useState(false);
   const [summary, setSummary] = useState<DashboardSummary>(fallbackSummary);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [sites, setSites] = useState<CustomerSite[]>([]);
@@ -304,6 +318,7 @@ export default function Home() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [inventoryCatalogMatches, setInventoryCatalogMatches] = useState<InventoryItem[]>([]);
   const [gmailStatus, setGmailStatus] = useState<GmailStatus>(fallbackGmailStatus);
   const [gmailSync, setGmailSync] = useState<GmailSync>(emptyGmailSync);
   const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus>(fallbackWhatsAppStatus);
@@ -319,6 +334,8 @@ export default function Home() {
   const [inventoryMovementForm, setInventoryMovementForm] =
     useState<InventoryMovementPayload>(emptyInventoryMovementForm);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
+  const [editingWorkOrderId, setEditingWorkOrderId] = useState<string | null>(null);
+  const [editingInventoryItemId, setEditingInventoryItemId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [deviceSearch, setDeviceSearch] = useState("");
   const [deviceType, setDeviceType] = useState<DeviceType | "ALL">("ALL");
@@ -334,6 +351,8 @@ export default function Home() {
   const [vehicleStatus, setVehicleStatus] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryCategory, setInventoryCategory] = useState<DeviceType | "ALL">("ALL");
+  const [inventorySupplier, setInventorySupplier] = useState("ALL");
+  const [inventoryMode, setInventoryMode] = useState<"stock" | "catalog" | "all">("stock");
   const [inventoryStockFilter, setInventoryStockFilter] = useState<"ALL" | "LOW">("ALL");
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerStatus, setCustomerStatus] = useState<CustomerStatus | "ALL">("ALL");
@@ -588,9 +607,9 @@ export default function Home() {
   const inventoryStats = useMemo(
     () => [
       { label: "Articulos", value: inventoryItems.length },
-      { label: "Stock bajo", value: inventoryItems.filter((item) => item.stock <= item.minStock).length },
-      { label: "Sin stock", value: inventoryItems.filter((item) => item.stock === 0).length },
-      { label: "Movimientos", value: inventoryItems.reduce((sum, item) => sum + item.movements.length, 0) },
+      { label: "Catalogo", value: inventoryItems.filter((item) => !item.managedStock).length },
+      { label: "Stock bajo", value: inventoryItems.filter((item) => item.managedStock && item.stock <= item.minStock).length },
+      { label: "Sin stock", value: inventoryItems.filter((item) => item.managedStock && item.stock === 0).length },
     ],
     [inventoryItems],
   );
@@ -625,13 +644,18 @@ export default function Home() {
     const storedToken = localStorage.getItem("sscc_token");
     const storedUser = localStorage.getItem("sscc_user");
 
-    if (!storedToken || !storedUser) {
-      router.replace("/login");
+    if (!storedToken || !storedUser || isExpiredJwt(storedToken)) {
+      redirectToLogin();
       return;
     }
 
-    setToken(storedToken);
-    setUser(JSON.parse(storedUser) as AuthUser);
+    try {
+      setToken(storedToken);
+      setUser(JSON.parse(storedUser) as AuthUser);
+      setAuthChecked(true);
+    } catch {
+      redirectToLogin();
+    }
   }, [router]);
 
   useEffect(() => {
@@ -681,6 +705,18 @@ export default function Home() {
   }, [activeModule, token]);
 
   useEffect(() => {
+    if (!authRedirecting) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      window.location.assign("/login");
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [authRedirecting]);
+
+  useEffect(() => {
     if (!token || activeModule !== "Dashboard") {
       return;
     }
@@ -692,6 +728,39 @@ export default function Home() {
 
     return () => window.clearInterval(interval);
   }, [activeModule, token]);
+
+  useEffect(() => {
+    if (!token || activeModule !== "Trabajos") {
+      return;
+    }
+
+    void loadInventory(token, { mode: "stock", category: "ALL", supplier: "ALL", search: "" });
+  }, [activeModule, token]);
+
+  useEffect(() => {
+    if (!token || activeModule !== "Almacen") {
+      setInventoryCatalogMatches([]);
+      return;
+    }
+
+    const query = inventoryForm.name.trim();
+    if (query.length < 2) {
+      setInventoryCatalogMatches([]);
+      return;
+    }
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ mode: "all", search: query });
+        const data = await apiRequest<InventoryItem[]>(`/api/inventory?${params.toString()}`, { token });
+        setInventoryCatalogMatches(data.slice(0, 8));
+      } catch {
+        setInventoryCatalogMatches([]);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [activeModule, inventoryForm.name, token]);
 
   async function loadSummary(activeToken = token, silent = false) {
     if (!activeToken) {
@@ -918,7 +987,10 @@ export default function Home() {
     }
   }
 
-  async function loadInventory(activeToken = token) {
+  async function loadInventory(
+    activeToken = token,
+    options?: { mode?: "stock" | "catalog" | "all"; category?: DeviceType | "ALL"; supplier?: string; search?: string },
+  ) {
     if (!activeToken) {
       return;
     }
@@ -927,12 +999,20 @@ export default function Home() {
     setInventoryError("");
     try {
       const params = new URLSearchParams();
-      if (inventorySearch.trim()) {
-        params.set("search", inventorySearch.trim());
+      const search = options?.search ?? inventorySearch;
+      const category = options?.category ?? inventoryCategory;
+      const supplier = options?.supplier ?? inventorySupplier;
+      const mode = options?.mode ?? inventoryMode;
+      if (search.trim()) {
+        params.set("search", search.trim());
       }
-      if (inventoryCategory !== "ALL") {
-        params.set("category", inventoryCategory);
+      if (category !== "ALL") {
+        params.set("category", category);
       }
+      if (supplier !== "ALL") {
+        params.set("supplier", supplier);
+      }
+      params.set("mode", mode);
       if (inventoryStockFilter === "LOW") {
         params.set("lowStock", "true");
       }
@@ -993,9 +1073,12 @@ export default function Home() {
         token: activeToken,
       });
       setGmailStatus(data);
-    } catch {
+    } catch (error) {
+      if (handleAuthError(error)) {
+        return;
+      }
       setGmailStatus(fallbackGmailStatus);
-      setGmailError("No se pudo consultar el estado de Gmail");
+      setGmailError(`No se pudo consultar el estado de Gmail: ${getErrorMessage(error)}`);
     } finally {
       setGmailLoading(false);
     }
@@ -1022,9 +1105,15 @@ export default function Home() {
         unread: data.unread,
         important: data.important,
         pendingReplies: data.pendingReplies,
+        checks: currentStatus.checks.some((check) => check.configured)
+          ? currentStatus.checks
+          : fallbackGmailStatus.checks.map((check) => ({ ...check, configured: true })),
       }));
-    } catch {
-      setGmailError("No se pudieron sincronizar los datos de Gmail");
+    } catch (error) {
+      if (handleAuthError(error)) {
+        return;
+      }
+      setGmailError(`No se pudieron sincronizar los datos de Gmail: ${getErrorMessage(error)}`);
     } finally {
       if (!silent) {
         setGmailLoading(false);
@@ -1044,9 +1133,12 @@ export default function Home() {
         token: activeToken,
       });
       setWhatsAppStatus(data);
-    } catch {
+    } catch (error) {
+      if (handleAuthError(error)) {
+        return;
+      }
       setWhatsAppStatus(fallbackWhatsAppStatus);
-      setWhatsAppError("No se pudo consultar el estado de WhatsApp");
+      setWhatsAppError(`No se pudo consultar el estado de WhatsApp: ${getErrorMessage(error)}`);
     } finally {
       setWhatsAppLoading(false);
     }
@@ -1073,9 +1165,15 @@ export default function Home() {
         unread: data.unread,
         pendingReplies: data.pendingReplies,
         activeChats: data.activeChats,
+        checks: currentStatus.checks.some((check) => check.configured)
+          ? currentStatus.checks
+          : fallbackWhatsAppStatus.checks.map((check) => ({ ...check, configured: true })),
       }));
-    } catch {
-      setWhatsAppError("No se pudieron sincronizar los datos de WhatsApp");
+    } catch (error) {
+      if (handleAuthError(error)) {
+        return;
+      }
+      setWhatsAppError(`No se pudieron sincronizar los datos de WhatsApp: ${getErrorMessage(error)}`);
     } finally {
       if (!silent) {
         setWhatsAppLoading(false);
@@ -1169,6 +1267,45 @@ export default function Home() {
     }
   }
 
+  function duplicateDevice(device: InstalledDevice) {
+    setSelectedCustomerId(device.site.customer.id);
+    void loadSites(device.site.customer.id, token);
+    setDeviceForm({
+      siteId: device.siteId,
+      type: device.type,
+      installedAt: device.installedAt ? toDateInputValue(new Date(device.installedAt)) : "",
+      brand: device.brand ?? "",
+      model: device.model ?? "",
+      serial: "",
+      ipAddress: "",
+      notes: device.notes ?? "",
+    });
+    setDeviceError("Equipo duplicado en el formulario. Completa serie/IP y guarda el nuevo registro.");
+  }
+
+  function editWorkOrder(workOrder: WorkOrder) {
+    setSelectedCustomerId(workOrder.customerId);
+    void loadSites(workOrder.customerId, token);
+    setEditingWorkOrderId(workOrder.id);
+    setWorkOrderForm({
+      customerId: workOrder.customerId,
+      siteId: workOrder.siteId ?? "",
+      title: workOrder.title,
+      type: workOrder.type,
+      status: workOrder.status,
+      scheduledAt: workOrder.scheduledAt ? toDateTimeLocalValue(new Date(workOrder.scheduledAt)) : "",
+      completedAt: workOrder.completedAt ?? "",
+      notes: workOrder.notes ?? "",
+    });
+    setWorkOrderError("");
+  }
+
+  function cancelWorkOrderEdit() {
+    setEditingWorkOrderId(null);
+    setWorkOrderForm({ ...emptyWorkOrderForm, customerId: selectedCustomerId ?? "" });
+    setWorkOrderError("");
+  }
+
   async function saveWorkOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) {
@@ -1184,15 +1321,23 @@ export default function Home() {
     setWorkOrdersLoading(true);
     setWorkOrderError("");
     try {
-      await apiRequest<WorkOrder>("/api/work-orders", {
+      const payload = cleanWorkOrderPayload({ ...workOrderForm, customerId });
+      if (payload.status === "COMPLETED") {
+        payload.completedAt = payload.completedAt || new Date().toISOString();
+      } else if (editingWorkOrderId) {
+        payload.completedAt = "";
+      }
+
+      await apiRequest<WorkOrder>(editingWorkOrderId ? `/api/work-orders/${editingWorkOrderId}` : "/api/work-orders", {
         token,
-        method: "POST",
-        body: JSON.stringify(cleanWorkOrderPayload({ ...workOrderForm, customerId })),
+        method: editingWorkOrderId ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
       });
+      setEditingWorkOrderId(null);
       setWorkOrderForm({ ...emptyWorkOrderForm, customerId: selectedCustomerId ?? "" });
       await Promise.all([loadWorkOrders(token), loadAgenda(token), loadCustomers(token), loadSummary(token)]);
     } catch {
-      setWorkOrderError("No se pudo guardar el trabajo");
+      setWorkOrderError(editingWorkOrderId ? "No se pudo actualizar el trabajo" : "No se pudo guardar el trabajo");
     } finally {
       setWorkOrdersLoading(false);
     }
@@ -1298,15 +1443,16 @@ export default function Home() {
     setInventoryLoading(true);
     setInventoryError("");
     try {
-      await apiRequest<InventoryItem>("/api/inventory", {
+      await apiRequest<InventoryItem>(editingInventoryItemId ? `/api/inventory/${editingInventoryItemId}` : "/api/inventory", {
         token,
-        method: "POST",
+        method: editingInventoryItemId ? "PATCH" : "POST",
         body: JSON.stringify(cleanInventoryPayload(inventoryForm)),
       });
+      setEditingInventoryItemId(null);
       setInventoryForm(emptyInventoryForm);
       await Promise.all([loadInventory(token), loadSummary(token)]);
     } catch {
-      setInventoryError("No se pudo guardar el articulo");
+      setInventoryError(editingInventoryItemId ? "No se pudo actualizar el articulo" : "No se pudo guardar el articulo");
     } finally {
       setInventoryLoading(false);
     }
@@ -1340,6 +1486,189 @@ export default function Home() {
       setInventoryError("No se pudo registrar el movimiento");
     } finally {
       setInventoryLoading(false);
+    }
+  }
+
+  async function quickInventoryMovement(itemId: string, type: InventoryMovementType, quantity: number) {
+    if (!token) {
+      return;
+    }
+
+    if (!itemId || quantity < 0) {
+      setInventoryError("Selecciona un articulo y una cantidad valida");
+      return;
+    }
+
+    setInventoryLoading(true);
+    setInventoryError("");
+    try {
+      await apiRequest("/api/inventory/movements", {
+        token,
+        method: "POST",
+        body: JSON.stringify({
+          itemId,
+          type,
+          quantity,
+          reason: type === "IN" ? "Entrada al almacen" : "Ajuste manual de stock",
+        }),
+      });
+      await Promise.all([loadInventory(token), loadSummary(token)]);
+    } catch (error) {
+      setInventoryError(`No se pudo ajustar el stock: ${getErrorMessage(error)}`);
+    } finally {
+      setInventoryLoading(false);
+    }
+  }
+
+  function editInventoryItem(item: InventoryItem) {
+    setEditingInventoryItemId(item.id);
+    setInventoryForm({
+      sku: item.sku ?? "",
+      name: item.name,
+      category: item.category ?? "",
+      unit: item.unit,
+      stock: item.stock,
+      minStock: item.minStock,
+      managedStock: item.managedStock,
+      location: item.location ?? "",
+      supplier: item.supplier ?? "",
+      supplierCategory: item.supplierCategory ?? "",
+      costPrice: typeof item.costPrice === "number" ? item.costPrice : item.costPrice ? Number(item.costPrice) : undefined,
+      taxAmount: typeof item.taxAmount === "number" ? item.taxAmount : item.taxAmount ? Number(item.taxAmount) : undefined,
+      priceWithTax: typeof item.priceWithTax === "number" ? item.priceWithTax : item.priceWithTax ? Number(item.priceWithTax) : undefined,
+      currency: item.currency ?? "USD",
+      notes: item.notes ?? "",
+    });
+    setInventoryError("");
+  }
+
+  function cancelInventoryEdit() {
+    setEditingInventoryItemId(null);
+    setInventoryForm(emptyInventoryForm);
+    setInventoryError("");
+  }
+
+  async function deleteInventoryItem(item: InventoryItem) {
+    if (!token) {
+      return;
+    }
+
+    if (!window.confirm(`Eliminar ${item.name} del almacen?`)) {
+      return;
+    }
+
+    setInventoryLoading(true);
+    setInventoryError("");
+    try {
+      await apiRequest(`/api/inventory/${item.id}`, {
+        token,
+        method: "DELETE",
+      });
+      if (editingInventoryItemId === item.id) {
+        cancelInventoryEdit();
+      }
+      await Promise.all([loadInventory(token), loadSummary(token)]);
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setInventoryError(
+        message.toLowerCase().includes("inventory item has movements")
+          ? "No se puede eliminar el articulo porque tiene movimientos. Elimina o revierte esos movimientos primero."
+          : `No se pudo eliminar el articulo: ${message}`,
+      );
+    } finally {
+      setInventoryLoading(false);
+    }
+  }
+
+  async function deleteInventoryMovement(movementId: string) {
+    if (!token) {
+      return;
+    }
+
+    if (!window.confirm("Eliminar este movimiento y revertir el stock?")) {
+      return;
+    }
+
+    setInventoryLoading(true);
+    setInventoryError("");
+    try {
+      await apiRequest(`/api/inventory/movements/${movementId}`, {
+        token,
+        method: "DELETE",
+      });
+      await Promise.all([loadInventory(token), loadSummary(token)]);
+    } catch (error) {
+      setInventoryError(`No se pudo eliminar el movimiento: ${getErrorMessage(error)}`);
+    } finally {
+      setInventoryLoading(false);
+    }
+  }
+
+  async function addWorkOrderMaterial(workOrderId: string, itemId: string, quantity: number, installAsDevice: boolean) {
+    if (!token) {
+      return;
+    }
+
+    if (!workOrderId || !itemId || quantity <= 0) {
+      setWorkOrderError("Selecciona un articulo y una cantidad mayor a cero");
+      return;
+    }
+
+    setWorkOrdersLoading(true);
+    setWorkOrderError("");
+    try {
+      await apiRequest(`/api/work-orders/${workOrderId}/materials`, {
+        token,
+        method: "POST",
+        body: JSON.stringify({
+          itemId,
+          quantity,
+          installAsDevice,
+        }),
+      });
+      await Promise.all([
+        loadWorkOrders(token),
+        loadInventory(token, { mode: "stock", category: "ALL", supplier: "ALL", search: "" }),
+        loadDevices(token),
+        loadSummary(token),
+      ]);
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setWorkOrderError(
+        message.toLowerCase().includes("stock cannot be negative")
+          ? "No se pudo agregar el material al trabajo: no hay stock suficiente para esa cantidad"
+          : message.toLowerCase().includes("work order site is required")
+            ? "No se pudo agregar el material al trabajo: selecciona un sitio en la orden para registrar equipos instalados"
+          : `No se pudo agregar el material al trabajo: ${message}`,
+      );
+      await loadInventory(token, { mode: "stock", category: "ALL", supplier: "ALL", search: "" });
+    } finally {
+      setWorkOrdersLoading(false);
+    }
+  }
+
+  async function removeWorkOrderMaterial(movementId: string) {
+    if (!token) {
+      return;
+    }
+
+    setWorkOrdersLoading(true);
+    setWorkOrderError("");
+    try {
+      await apiRequest(`/api/inventory/movements/${movementId}`, {
+        token,
+        method: "DELETE",
+      });
+      await Promise.all([
+        loadWorkOrders(token),
+        loadInventory(token, { mode: "stock", category: "ALL", supplier: "ALL", search: "" }),
+        loadDevices(token),
+        loadSummary(token),
+      ]);
+    } catch (error) {
+      setWorkOrderError(`No se pudo eliminar el material del trabajo: ${getErrorMessage(error)}`);
+    } finally {
+      setWorkOrdersLoading(false);
     }
   }
 
@@ -1526,13 +1855,39 @@ export default function Home() {
   }
 
   function logout() {
+    redirectToLogin();
+  }
+
+  function handleAuthError(error: unknown) {
+    if (!(error instanceof ApiError) || error.status !== 401) {
+      return false;
+    }
+
+    setToken(null);
+    setUser(null);
+    redirectToLogin();
+    return true;
+  }
+
+  function redirectToLogin() {
     localStorage.removeItem("sscc_token");
     localStorage.removeItem("sscc_user");
+    setAuthChecked(true);
+    setAuthRedirecting(true);
     router.replace("/login");
   }
 
-  if (!user) {
+  if (!authChecked) {
     return <main className="loadingScreen">Preparando SSCC...</main>;
+  }
+
+  if (!user || authRedirecting) {
+    return (
+      <main className="loadingScreen">
+        <span>Redirigiendo al login...</span>
+        <a href="/login">Ingresar</a>
+      </main>
+    );
   }
 
   return (
@@ -1744,7 +2099,9 @@ export default function Home() {
           />
         ) : activeModule === "Trabajos" ? (
           <WorkOrdersView
+            editingWorkOrderId={editingWorkOrderId}
             customers={customers}
+            inventoryItems={inventoryItems}
             loading={workOrdersLoading}
             selectedCustomerId={selectedCustomerId}
             sites={sites}
@@ -1754,8 +2111,12 @@ export default function Home() {
             workOrders={workOrders}
             workSearch={workSearch}
             workStatus={workStatus}
+            onAddMaterial={addWorkOrderMaterial}
+            onCancelEdit={cancelWorkOrderEdit}
+            onEditWorkOrder={editWorkOrder}
             onFormChange={setWorkOrderForm}
             onRefresh={() => loadWorkOrders()}
+            onRemoveMaterial={removeWorkOrderMaterial}
             onSave={saveWorkOrder}
             onSearchChange={setWorkSearch}
             onSelectCustomer={selectCustomer}
@@ -1819,24 +2180,35 @@ export default function Home() {
         ) : activeModule === "Almacen" ? (
           <InventoryView
             devices={devices}
+            editingInventoryItemId={editingInventoryItemId}
             inventoryCategory={inventoryCategory}
+            inventoryCatalogMatches={inventoryCatalogMatches}
             inventoryError={inventoryError}
             inventoryForm={inventoryForm}
             inventoryItems={inventoryItems}
+            inventoryMode={inventoryMode}
             inventoryMovementForm={inventoryMovementForm}
             inventorySearch={inventorySearch}
             inventoryStats={inventoryStats}
             inventoryStockFilter={inventoryStockFilter}
+            inventorySupplier={inventorySupplier}
             loading={inventoryLoading}
             workOrders={workOrders}
+            onCancelEdit={cancelInventoryEdit}
+            onEditItem={editInventoryItem}
+            onDeleteItem={deleteInventoryItem}
+            onDeleteMovement={deleteInventoryMovement}
             onFormChange={setInventoryForm}
+            onQuickMovement={quickInventoryMovement}
             onMovementFormChange={setInventoryMovementForm}
             onMovementSave={saveInventoryMovement}
             onRefresh={() => loadInventory()}
             onSave={saveInventoryItem}
             onSearchChange={setInventorySearch}
             onCategoryChange={setInventoryCategory}
+            onModeChange={setInventoryMode}
             onStockFilterChange={setInventoryStockFilter}
+            onSupplierChange={setInventorySupplier}
           />
         ) : activeModule === "Vehiculos" ? (
           <VehiclesView
@@ -1885,6 +2257,7 @@ export default function Home() {
             selectedCustomerId={selectedCustomerId}
             sites={sites}
             onDeviceFormChange={setDeviceForm}
+            onDuplicateDevice={duplicateDevice}
             onRefresh={() => loadDevices()}
             onSave={saveDevice}
             onSearchChange={setDeviceSearch}
@@ -2481,7 +2854,9 @@ function AgendaWorkList({
 }
 
 function WorkOrdersView({
+  editingWorkOrderId,
   customers,
+  inventoryItems,
   loading,
   selectedCustomerId,
   sites,
@@ -2491,15 +2866,21 @@ function WorkOrdersView({
   workOrders,
   workSearch,
   workStatus,
+  onAddMaterial,
+  onCancelEdit,
+  onEditWorkOrder,
   onFormChange,
   onRefresh,
+  onRemoveMaterial,
   onSave,
   onSearchChange,
   onSelectCustomer,
   onStatusChange,
   onUpdateStatus,
 }: {
+  editingWorkOrderId: string | null;
   customers: Customer[];
+  inventoryItems: InventoryItem[];
   loading: boolean;
   selectedCustomerId: string | null;
   sites: CustomerSite[];
@@ -2509,14 +2890,42 @@ function WorkOrdersView({
   workOrders: WorkOrder[];
   workSearch: string;
   workStatus: WorkOrderStatus | "ALL";
+  onAddMaterial: (workOrderId: string, itemId: string, quantity: number, installAsDevice: boolean) => Promise<void>;
+  onCancelEdit: () => void;
+  onEditWorkOrder: (workOrder: WorkOrder) => void;
   onFormChange: (form: WorkOrderPayload) => void;
   onRefresh: () => void;
+  onRemoveMaterial: (movementId: string) => Promise<void>;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
   onSearchChange: (value: string) => void;
   onSelectCustomer: (customerId: string) => void;
   onStatusChange: (value: WorkOrderStatus | "ALL") => void;
   onUpdateStatus: (id: string, status: WorkOrderStatus) => void;
 }) {
+  const [materialForms, setMaterialForms] = useState<Record<string, { query: string; itemId: string; quantity: number; open: boolean; installAsDevice: boolean }>>({});
+
+  function materialForm(workOrderId: string) {
+    return materialForms[workOrderId] ?? { query: "", itemId: "", quantity: 1, open: false, installAsDevice: true };
+  }
+
+  function updateMaterialForm(workOrderId: string, nextForm: { query: string; itemId: string; quantity: number; open: boolean; installAsDevice: boolean }) {
+    setMaterialForms((current) => ({ ...current, [workOrderId]: nextForm }));
+  }
+
+  function materialResults(form: { query: string }) {
+    const query = form.query.trim().toLowerCase();
+    const source = inventoryItems.filter((item) => item.managedStock && item.stock > 0);
+    const matches = query
+      ? source.filter((item) =>
+          [item.name, item.sku, item.supplier, item.supplierCategory]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(query)),
+        )
+      : source;
+
+    return matches.slice(0, 6);
+  }
+
   return (
     <section className="workOrdersModule">
       <div className="summaryGrid customerStats" aria-label="Resumen de trabajos">
@@ -2532,9 +2941,15 @@ function WorkOrdersView({
         <form className="workOrderForm" onSubmit={onSave}>
           <div className="sectionHeader compactHeader">
             <div>
-              <p>Orden operativa</p>
-              <h2>Nuevo trabajo</h2>
+              <p>{editingWorkOrderId ? "Actualizar orden" : "Orden operativa"}</p>
+              <h2>{editingWorkOrderId ? "Editar trabajo" : "Nuevo trabajo"}</h2>
             </div>
+            {editingWorkOrderId ? (
+              <button type="button" className="secondaryButton" onClick={onCancelEdit}>
+                <X size={17} />
+                Cancelar
+              </button>
+            ) : null}
           </div>
 
           <div className="formGrid">
@@ -2627,8 +3042,8 @@ function WorkOrdersView({
           {workOrderError ? <p className="formError">{workOrderError}</p> : null}
 
           <button type="submit" className="primaryButton" disabled={loading}>
-            <Plus size={18} />
-            Crear trabajo
+            {editingWorkOrderId ? <Save size={18} /> : <Plus size={18} />}
+            {editingWorkOrderId ? "Guardar cambios" : "Crear trabajo"}
           </button>
         </form>
 
@@ -2661,7 +3076,14 @@ function WorkOrdersView({
           </div>
 
           <div className="workOrderGrid">
-            {workOrders.map((workOrder) => (
+            {workOrders.map((workOrder) => {
+              const form = materialForm(workOrder.id);
+              const results = materialResults(form);
+              const movements = workOrder.inventoryMovements ?? [];
+              const selectedItem = inventoryItems.find((item) => item.id === form.itemId);
+              const quantityExceedsStock = Boolean(selectedItem && form.quantity > selectedItem.stock);
+
+              return (
               <article key={workOrder.id} className="workOrderCard">
                 <div className="workOrderCardHeader">
                   <span className={`statusPill ${workOrder.status.toLowerCase()}`}>
@@ -2688,7 +3110,111 @@ function WorkOrdersView({
                   </div>
                 </dl>
                 <p>{workOrder.notes || workOrder.site?.address || "Sin notas operativas"}</p>
+                <div className="workOrderMaterials">
+                  <div className="workOrderMaterialsHeader">
+                    <strong>Materiales y equipos</strong>
+                    <span>{movements.length} items</span>
+                  </div>
+                  {movements.length ? (
+                    <div className="workOrderMaterialList">
+                      {movements.map((movement) => (
+                        <div key={movement.id} className="workOrderMaterialItem">
+                          <span>
+                            {movement.item?.name ?? "Articulo"} x{movement.quantity} {movement.item?.unit ?? ""}
+                          </span>
+                          <button type="button" onClick={() => onRemoveMaterial(movement.id)} disabled={loading}>
+                            Eliminar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>Sin materiales cargados.</p>
+                  )}
+                  <div className="workOrderMaterialForm">
+                    <div className="autocompleteField">
+                      <input
+                        value={form.query}
+                        onChange={(event) => updateMaterialForm(workOrder.id, { ...form, query: event.target.value, itemId: "", open: true })}
+                        onFocus={() => updateMaterialForm(workOrder.id, { ...form, open: true })}
+                        onBlur={() => window.setTimeout(() => updateMaterialForm(workOrder.id, { ...materialForm(workOrder.id), open: false }), 120)}
+                        placeholder="Buscar articulo para descontar"
+                        autoComplete="off"
+                      />
+                      {form.open ? (
+                        <div className="autocompleteResults">
+                          {results.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                            onClick={() =>
+                              updateMaterialForm(workOrder.id, {
+                                ...form,
+                                query: item.name,
+                                itemId: item.id,
+                                quantity: Math.min(form.quantity, item.stock || 1),
+                                open: false,
+                              })
+                            }
+                            >
+                              <strong>{item.name}</strong>
+                              <span>
+                                {[item.sku ? `SKU ${item.sku}` : "", item.supplier, `${item.stock} ${item.unit}`].filter(Boolean).join(" - ")}
+                              </span>
+                            </button>
+                          ))}
+                          {!results.length ? <p>No hay articulos de stock real.</p> : null}
+                        </div>
+                      ) : null}
+                    </div>
+                    <input
+                      type="number"
+                      min="1"
+                      max={selectedItem?.stock}
+                      value={form.quantity}
+                      onChange={(event) => {
+                        const nextQuantity = Math.max(1, Number(event.target.value) || 1);
+                        updateMaterialForm(workOrder.id, {
+                          ...form,
+                          quantity: selectedItem ? Math.min(nextQuantity, selectedItem.stock) : nextQuantity,
+                        });
+                      }}
+                      aria-label="Cantidad"
+                    />
+                    <button
+                      type="button"
+                      className="secondaryButton"
+                      disabled={loading || !form.itemId || quantityExceedsStock || (form.installAsDevice && !workOrder.siteId)}
+                      onClick={async () => {
+                        await onAddMaterial(workOrder.id, form.itemId, form.quantity, form.installAsDevice);
+                        updateMaterialForm(workOrder.id, { query: "", itemId: "", quantity: 1, open: false, installAsDevice: form.installAsDevice });
+                      }}
+                    >
+                      Agregar
+                    </button>
+                  </div>
+                  {selectedItem ? (
+                    <p>
+                      Disponible: {selectedItem.stock} {selectedItem.unit}
+                    </p>
+                  ) : null}
+                  <label className="materialInstallToggle">
+                    <input
+                      type="checkbox"
+                      checked={form.installAsDevice}
+                      onChange={(event) => updateMaterialForm(workOrder.id, { ...form, installAsDevice: event.target.checked })}
+                      disabled={!workOrder.siteId}
+                    />
+                    Registrar como equipo instalado
+                  </label>
+                  {!workOrder.siteId && form.installAsDevice ? <p>Selecciona un sitio en la orden para crear equipos instalados.</p> : null}
+                </div>
                 <div className="workOrderActions">
+                  <button type="button" className="secondaryButton" onClick={() => onEditWorkOrder(workOrder)}>
+                    <Edit3 size={16} />
+                    Editar
+                  </button>
                   <button
                     type="button"
                     className="secondaryButton"
@@ -2707,7 +3233,8 @@ function WorkOrdersView({
                   </button>
                 </div>
               </article>
-            ))}
+              );
+            })}
             {!workOrders.length ? <p className="emptyPanel">No hay trabajos para los filtros actuales.</p> : null}
           </div>
         </section>
@@ -3278,45 +3805,102 @@ function VehiclesView({
 
 function InventoryView({
   devices,
+  editingInventoryItemId,
   inventoryCategory,
+  inventoryCatalogMatches,
   inventoryError,
   inventoryForm,
   inventoryItems,
+  inventoryMode,
   inventoryMovementForm,
   inventorySearch,
   inventoryStats,
   inventoryStockFilter,
+  inventorySupplier,
   loading,
   workOrders,
+  onCancelEdit,
   onCategoryChange,
+  onDeleteItem,
+  onDeleteMovement,
+  onEditItem,
   onFormChange,
+  onModeChange,
   onMovementFormChange,
   onMovementSave,
+  onQuickMovement,
   onRefresh,
   onSave,
   onSearchChange,
   onStockFilterChange,
+  onSupplierChange,
 }: {
   devices: InstalledDevice[];
+  editingInventoryItemId: string | null;
   inventoryCategory: DeviceType | "ALL";
+  inventoryCatalogMatches: InventoryItem[];
   inventoryError: string;
   inventoryForm: InventoryItemPayload;
   inventoryItems: InventoryItem[];
+  inventoryMode: "stock" | "catalog" | "all";
   inventoryMovementForm: InventoryMovementPayload;
   inventorySearch: string;
   inventoryStats: Array<{ label: string; value: number | string }>;
   inventoryStockFilter: "ALL" | "LOW";
+  inventorySupplier: string;
   loading: boolean;
   workOrders: WorkOrder[];
+  onCancelEdit: () => void;
   onCategoryChange: (value: DeviceType | "ALL") => void;
+  onDeleteItem: (item: InventoryItem) => void;
+  onDeleteMovement: (movementId: string) => void;
+  onEditItem: (item: InventoryItem) => void;
   onFormChange: (form: InventoryItemPayload) => void;
+  onModeChange: (value: "stock" | "catalog" | "all") => void;
   onMovementFormChange: (form: InventoryMovementPayload) => void;
   onMovementSave: (event: FormEvent<HTMLFormElement>) => void;
+  onQuickMovement: (itemId: string, type: InventoryMovementType, quantity: number) => Promise<void>;
   onRefresh: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
   onSearchChange: (value: string) => void;
   onStockFilterChange: (value: "ALL" | "LOW") => void;
+  onSupplierChange: (value: string) => void;
 }) {
+  const [movementItemQuery, setMovementItemQuery] = useState("");
+  const [movementPickerOpen, setMovementPickerOpen] = useState(false);
+  const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
+  const [stockForms, setStockForms] = useState<Record<string, { entry: number; exact: number }>>({});
+  const suppliers = Array.from(
+    new Set(["Microfal", ...(inventoryItems.map((item) => item.supplier).filter(Boolean) as string[])]),
+  ).sort();
+  const selectedMovementItem = inventoryItems.find((item) => item.id === inventoryMovementForm.itemId);
+  const movementItemResults = useMemo(() => {
+    const query = movementItemQuery.trim().toLowerCase();
+    const matches = query
+      ? inventoryItems.filter((item) =>
+          [item.name, item.sku, item.supplier, item.supplierCategory]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(query)),
+        )
+      : inventoryItems;
+
+    return matches.slice(0, 8);
+  }, [inventoryItems, movementItemQuery]);
+
+  useEffect(() => {
+    if (selectedMovementItem && movementItemQuery !== selectedMovementItem.name) {
+      setMovementItemQuery(selectedMovementItem.name);
+    }
+  }, [inventoryMovementForm.itemId, selectedMovementItem]);
+
+  function stockForm(item: InventoryItem) {
+    return stockForms[item.id] ?? { entry: 1, exact: item.stock };
+  }
+
+  function updateStockForm(itemId: string, nextForm: { entry: number; exact: number }) {
+    setStockForms((current) => ({ ...current, [itemId]: nextForm }));
+  }
+
   return (
     <section className="workOrdersModule">
       <div className="summaryGrid customerStats" aria-label="Resumen de almacen">
@@ -3333,9 +3917,15 @@ function InventoryView({
           <form className="workOrderForm" onSubmit={onSave}>
             <div className="sectionHeader compactHeader">
               <div>
-                <p>Alta de stock</p>
-                <h2>Nuevo articulo</h2>
+                <p>{editingInventoryItemId ? "Actualizar stock" : "Alta de stock"}</p>
+                <h2>{editingInventoryItemId ? "Editar articulo" : "Nuevo articulo"}</h2>
               </div>
+              {editingInventoryItemId ? (
+                <button type="button" className="secondaryButton" onClick={onCancelEdit}>
+                  <X size={17} />
+                  Cancelar
+                </button>
+              ) : null}
             </div>
             <div className="formGrid">
               <label>
@@ -3358,11 +3948,41 @@ function InventoryView({
               </label>
               <label className="wideField">
                 Nombre
-                <input
-                  value={inventoryForm.name}
-                  onChange={(event) => onFormChange({ ...inventoryForm, name: event.target.value })}
-                  placeholder="Camara IP, bateria, DVR, cable UTP"
-                />
+                <div className="autocompleteField">
+                  <input
+                    value={inventoryForm.name}
+                    onChange={(event) => {
+                      onFormChange({ ...inventoryForm, name: event.target.value });
+                      setCatalogPickerOpen(true);
+                    }}
+                    onFocus={() => setCatalogPickerOpen(true)}
+                    onBlur={() => window.setTimeout(() => setCatalogPickerOpen(false), 120)}
+                    placeholder="Buscar en catalogo o escribir articulo nuevo"
+                    autoComplete="off"
+                  />
+                  {catalogPickerOpen && inventoryCatalogMatches.length ? (
+                    <div className="autocompleteResults">
+                      {inventoryCatalogMatches.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            onEditItem(item);
+                            setCatalogPickerOpen(false);
+                          }}
+                        >
+                          <strong>{item.name}</strong>
+                          <span>
+                            {[item.sku ? `SKU ${item.sku}` : "", item.supplier, item.supplierCategory, item.managedStock ? `Stock ${item.stock}` : "Catalogo"]
+                              .filter(Boolean)
+                              .join(" - ")}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </label>
               <label>
                 Stock inicial
@@ -3408,7 +4028,7 @@ function InventoryView({
             </div>
             <button className="primaryButton" type="submit" disabled={loading}>
               <Save size={18} />
-              Guardar articulo
+              {editingInventoryItemId ? "Guardar cambios" : "Guardar articulo"}
             </button>
           </form>
 
@@ -3422,17 +4042,46 @@ function InventoryView({
             <div className="formGrid">
               <label className="wideField">
                 Articulo
-                <select
-                  value={inventoryMovementForm.itemId}
-                  onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, itemId: event.target.value })}
-                >
-                  <option value="">Seleccionar articulo</option>
-                  {inventoryItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} ({item.stock} {item.unit})
-                    </option>
-                  ))}
-                </select>
+                <div className="autocompleteField">
+                  <input
+                    value={movementItemQuery}
+                    onChange={(event) => {
+                      setMovementItemQuery(event.target.value);
+                      setMovementPickerOpen(true);
+                      if (inventoryMovementForm.itemId) {
+                        onMovementFormChange({ ...inventoryMovementForm, itemId: "" });
+                      }
+                    }}
+                    onFocus={() => setMovementPickerOpen(true)}
+                    onBlur={() => window.setTimeout(() => setMovementPickerOpen(false), 120)}
+                    placeholder="Buscar por nombre, SKU o importador"
+                    autoComplete="off"
+                  />
+                  {movementPickerOpen ? (
+                    <div className="autocompleteResults">
+                      {movementItemResults.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            onMovementFormChange({ ...inventoryMovementForm, itemId: item.id });
+                            setMovementItemQuery(item.name);
+                            setMovementPickerOpen(false);
+                          }}
+                        >
+                          <strong>{item.name}</strong>
+                          <span>
+                            {[item.sku ? `SKU ${item.sku}` : "", item.supplier, item.managedStock ? `${item.stock} ${item.unit}` : "Catalogo"]
+                              .filter(Boolean)
+                              .join(" - ")}
+                          </span>
+                        </button>
+                      ))}
+                      {!movementItemResults.length ? <p>No hay articulos relacionados.</p> : null}
+                    </div>
+                  ) : null}
+                </div>
               </label>
               <label>
                 Tipo
@@ -3518,6 +4167,19 @@ function InventoryView({
                 </option>
               ))}
             </select>
+            <select value={inventorySupplier} onChange={(event) => onSupplierChange(event.target.value)} aria-label="Filtrar por importador">
+              <option value="ALL">Importadores</option>
+              {suppliers.map((supplier) => (
+                <option key={supplier} value={supplier}>
+                  {supplier}
+                </option>
+              ))}
+            </select>
+            <select value={inventoryMode} onChange={(event) => onModeChange(event.target.value as "stock" | "catalog" | "all")} aria-label="Vista de almacen">
+              <option value="stock">Stock real</option>
+              <option value="catalog">Catalogo</option>
+              <option value="all">Todo</option>
+            </select>
             <select value={inventoryStockFilter} onChange={(event) => onStockFilterChange(event.target.value as "ALL" | "LOW")}>
               <option value="ALL">Todo stock</option>
               <option value="LOW">Stock bajo</option>
@@ -3529,19 +4191,32 @@ function InventoryView({
           </div>
           {inventoryError ? <p className="formError">{inventoryError}</p> : null}
           <div className="workOrderGrid">
-            {inventoryItems.map((item) => (
+            {inventoryItems.map((item) => {
+              const form = stockForm(item);
+
+              return (
               <article key={item.id} className="workOrderCard">
                 <div className="workOrderCardHeader">
-                  <span className={`statusPill ${item.stock <= item.minStock ? "waiting_customer" : "completed"}`}>
-                    {item.stock <= item.minStock ? "Stock bajo" : "Disponible"}
+                  <span className={`statusPill ${!item.managedStock ? "scheduled" : item.stock <= item.minStock ? "waiting_customer" : "completed"}`}>
+                    {!item.managedStock ? "Catalogo" : item.stock <= item.minStock ? "Stock bajo" : "Disponible"}
                   </span>
                   <strong>{item.name}</strong>
+                </div>
+                <div className="workOrderActions">
+                  <button type="button" className="secondaryButton" onClick={() => onEditItem(item)}>
+                    <Edit3 size={16} />
+                    Editar
+                  </button>
+                  <button type="button" className="secondaryButton dangerButton" onClick={() => onDeleteItem(item)} disabled={loading}>
+                    <X size={16} />
+                    Eliminar
+                  </button>
                 </div>
                 <dl>
                   <div>
                     <dt>Stock</dt>
                     <dd>
-                      {item.stock} {item.unit}
+                      {item.managedStock ? `${item.stock} ${item.unit}` : "Sin ingresar"}
                     </dd>
                   </div>
                   <div>
@@ -3556,17 +4231,69 @@ function InventoryView({
                     <dt>Ubicacion</dt>
                     <dd>{item.location || "Sin ubicacion"}</dd>
                   </div>
+                  <div>
+                    <dt>Proveedor</dt>
+                    <dd>{item.supplier || "Sin proveedor"}</dd>
+                  </div>
+                  <div>
+                    <dt>Precio IVA inc.</dt>
+                    <dd>{formatPrice(item.priceWithTax, item.currency)}</dd>
+                  </div>
                 </dl>
-                <p>{item.sku || item.supplier || item.notes || "Sin datos adicionales"}</p>
+                <p>{[item.sku ? `SKU ${item.sku}` : "", item.supplierCategory, item.notes].filter(Boolean).join(" · ") || "Sin datos adicionales"}</p>
+                <div className="stockQuickActions">
+                  <div>
+                    <label>
+                      Entrada
+                      <input
+                        type="number"
+                        min="1"
+                        value={form.entry}
+                        onChange={(event) => updateStockForm(item.id, { ...form, entry: Math.max(1, Number(event.target.value) || 1) })}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="secondaryButton"
+                      disabled={loading || form.entry <= 0}
+                      onClick={() => onQuickMovement(item.id, "IN", form.entry)}
+                    >
+                      Sumar
+                    </button>
+                  </div>
+                  <div>
+                    <label>
+                      Stock exacto
+                      <input
+                        type="number"
+                        min="0"
+                        value={form.exact}
+                        onChange={(event) => updateStockForm(item.id, { ...form, exact: Math.max(0, Number(event.target.value) || 0) })}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="secondaryButton"
+                      disabled={loading || form.exact < 0}
+                      onClick={() => onQuickMovement(item.id, "ADJUST", form.exact)}
+                    >
+                      Ajustar
+                    </button>
+                  </div>
+                </div>
                 <div className="movementList">
                   {item.movements.map((movement) => (
                     <span key={movement.id}>
                       {movement.type} {movement.quantity} - stock {movement.stockAfter}
+                      <button type="button" onClick={() => onDeleteMovement(movement.id)} disabled={loading} aria-label="Eliminar movimiento">
+                        <X size={12} />
+                      </button>
                     </span>
                   ))}
                 </div>
               </article>
-            ))}
+              );
+            })}
             {!inventoryItems.length ? <p className="emptyPanel">No hay articulos para los filtros actuales.</p> : null}
           </div>
         </section>
@@ -3799,6 +4526,7 @@ function DevicesView({
   selectedCustomerId,
   sites,
   onDeviceFormChange,
+  onDuplicateDevice,
   onRefresh,
   onSave,
   onSearchChange,
@@ -3816,6 +4544,7 @@ function DevicesView({
   selectedCustomerId: string | null;
   sites: CustomerSite[];
   onDeviceFormChange: (form: DevicePayload) => void;
+  onDuplicateDevice: (device: InstalledDevice) => void;
   onRefresh: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
   onSearchChange: (value: string) => void;
@@ -3978,7 +4707,13 @@ function DevicesView({
             {devices.map((device) => (
               <article key={device.id} className="deviceCard">
                 <div className="deviceCardHeader">
-                  <span className="statusPill prospect">{deviceTypeLabels[device.type]}</span>
+                  <div className="deviceCardActions">
+                    <span className="statusPill prospect">{deviceTypeLabels[device.type]}</span>
+                    <button type="button" className="duplicateButton" onClick={() => onDuplicateDevice(device)}>
+                      <Copy size={15} />
+                      Duplicar
+                    </button>
+                  </div>
                   <strong>{[device.brand, device.model].filter(Boolean).join(" ") || "Equipo sin marca"}</strong>
                 </div>
                 <dl>
@@ -4095,8 +4830,14 @@ function cleanInventoryPayload(form: InventoryItemPayload): InventoryItemPayload
     unit: form.unit?.trim() || "u",
     stock: Number(form.stock) || 0,
     minStock: Number(form.minStock) || 0,
+    managedStock: form.managedStock ?? true,
     location: form.location?.trim() || undefined,
     supplier: form.supplier?.trim() || undefined,
+    supplierCategory: form.supplierCategory?.trim() || undefined,
+    costPrice: form.costPrice,
+    taxAmount: form.taxAmount,
+    priceWithTax: form.priceWithTax,
+    currency: form.currency?.trim() || undefined,
     notes: form.notes?.trim() || undefined,
   };
 }
@@ -4149,11 +4890,33 @@ function formatCurrency(value: string | number) {
   }).format(Number.isFinite(amount) ? amount : 0);
 }
 
+function formatPrice(value?: string | number | null, currency?: string | null) {
+  if (value === null || value === undefined || value === "") {
+    return "Sin precio";
+  }
+
+  const amount = toMoneyNumber(value);
+  return new Intl.NumberFormat("es-UY", {
+    style: "currency",
+    currency: currency || "USD",
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(amount) ? amount : 0);
+}
+
 function toDateInputValue(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function toDateTimeLocalValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
 function parseDateInput(value: string) {
@@ -4193,6 +4956,27 @@ function formatDateTime(value?: string | null) {
     dateStyle: "short",
     timeStyle: "short",
   });
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error && error.message ? error.message : "intentalo de nuevo";
+}
+
+function isExpiredJwt(token: string) {
+  const [, payload] = token.split(".");
+
+  if (!payload) {
+    return true;
+  }
+
+  try {
+    const normalizedPayload = payload.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(payload.length / 4) * 4, "=");
+    const decodedPayload = JSON.parse(atob(normalizedPayload)) as { exp?: number };
+
+    return typeof decodedPayload.exp === "number" && decodedPayload.exp * 1000 <= Date.now();
+  } catch {
+    return true;
+  }
 }
 
 function formatFullDate(date: Date) {

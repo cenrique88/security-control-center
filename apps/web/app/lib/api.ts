@@ -10,6 +10,16 @@ export type AuthResponse = {
   accessToken: string;
 };
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export type DashboardSummary = {
   lastUpdatedAt?: string;
   totalCustomers?: number;
@@ -192,6 +202,7 @@ export type WorkOrder = {
     name: string;
     address: string;
   } | null;
+  inventoryMovements?: InventoryMovement[];
 };
 
 export type WorkOrderPayload = {
@@ -288,6 +299,12 @@ export type InventoryMovement = {
   workOrderId?: string | null;
   installedDeviceId?: string | null;
   createdAt: string;
+  item?: {
+    id: string;
+    sku?: string | null;
+    name: string;
+    unit: string;
+  } | null;
   workOrder?: {
     id: string;
     title: string;
@@ -312,8 +329,14 @@ export type InventoryItem = {
   unit: string;
   stock: number;
   minStock: number;
+  managedStock: boolean;
   location?: string | null;
   supplier?: string | null;
+  supplierCategory?: string | null;
+  costPrice?: string | number | null;
+  taxAmount?: string | number | null;
+  priceWithTax?: string | number | null;
+  currency?: string | null;
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -327,8 +350,14 @@ export type InventoryItemPayload = {
   unit?: string;
   stock?: number;
   minStock?: number;
+  managedStock?: boolean;
   location?: string;
   supplier?: string;
+  supplierCategory?: string;
+  costPrice?: number;
+  taxAmount?: number;
+  priceWithTax?: number;
+  currency?: string;
   notes?: string;
 };
 
@@ -459,9 +488,29 @@ export async function apiRequest<T>(
   });
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || "Request failed");
+    const message = await readErrorMessage(response);
+    throw new ApiError(message, response.status);
   }
 
   return response.json() as Promise<T>;
+}
+
+async function readErrorMessage(response: Response) {
+  const fallback = `Request failed (${response.status})`;
+  const text = await response.text();
+
+  if (!text) {
+    return fallback;
+  }
+
+  try {
+    const data = JSON.parse(text) as { message?: string | string[]; error?: string };
+    if (Array.isArray(data.message)) {
+      return data.message.join(", ");
+    }
+
+    return data.message || data.error || text;
+  } catch {
+    return text;
+  }
 }

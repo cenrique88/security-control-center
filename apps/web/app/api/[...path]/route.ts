@@ -31,12 +31,21 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
     }
   }
 
-  const response = await fetch(targetUrl, {
-    method: request.method,
-    headers,
-    body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.text(),
-    cache: "no-store",
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(targetUrl, {
+      method: request.method,
+      headers,
+      body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.text(),
+      cache: "no-store",
+    });
+  } catch {
+    return NextResponse.json(
+      { message: "No se pudo contactar el backend del CRM. Verifica que la API este encendida." },
+      { status: 502 },
+    );
+  }
 
   return new NextResponse(response.body, {
     status: response.status,

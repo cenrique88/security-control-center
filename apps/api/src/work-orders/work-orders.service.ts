@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, ServiceType, WorkOrderStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { AddWorkOrderMaterialDto } from "./dto/add-work-order-material.dto";
 import { CreateWorkOrderDto } from "./dto/create-work-order.dto";
 import { UpdateWorkOrderDto } from "./dto/update-work-order.dto";
 
@@ -109,6 +110,114 @@ export class WorkOrdersService {
     });
   }
 
+  async addMaterial(id: string, dto: AddWorkOrderMaterialDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const workOrder = await tx.workOrder.findUnique({
+        where: { id },
+        select: { id: true, title: true, type: true, siteId: true },
+      });
+
+      if (!workOrder) {
+        throw new NotFoundException("Work order not found");
+      }
+
+      const item = await tx.inventoryItem.findUnique({
+        where: { id: dto.itemId },
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          category: true,
+          supplier: true,
+          stock: true,
+        },
+      });
+
+      if (!item) {
+        throw new NotFoundException("Inventory item not found");
+      }
+
+      if (dto.installAsDevice && !workOrder.siteId) {
+        throw new BadRequestException("Work order site is required to install devices");
+      }
+
+      const stockAfter = item.stock - dto.quantity;
+      if (stockAfter < 0) {
+        throw new BadRequestException("Stock cannot be negative");
+      }
+
+      await tx.inventoryItem.update({
+        where: { id: item.id },
+        data: { stock: stockAfter, managedStock: true },
+      });
+
+      if (!dto.installAsDevice) {
+        return tx.inventoryMovement.create({
+          data: {
+            itemId: item.id,
+            type: "OUT",
+            quantity: dto.quantity,
+            stockAfter,
+            reason: "Asignado a orden de trabajo",
+            workOrderId: workOrder.id,
+          },
+          include: {
+            item: true,
+            workOrder: {
+              select: {
+                id: true,
+                title: true,
+                customer: { select: { id: true, name: true } },
+              },
+            },
+            installedDevice: true,
+          },
+        });
+      }
+
+      const movements = [];
+      for (let index = 0; index < dto.quantity; index += 1) {
+        const device = await tx.installedDevice.create({
+          data: {
+            siteId: workOrder.siteId!,
+            type: item.category ?? workOrder.type,
+            brand: this.cleanOptional(item.supplier ?? undefined),
+            model: item.name,
+            installedAt: new Date(),
+            notes: [workOrder.title, item.sku ? `SKU ${item.sku}` : ""].filter(Boolean).join(" - "),
+          },
+        });
+
+        movements.push(
+          await tx.inventoryMovement.create({
+            data: {
+              itemId: item.id,
+              type: "OUT",
+              quantity: 1,
+              stockAfter: item.stock - index - 1,
+              reason: "Asignado a orden de trabajo e instalado como equipo",
+              workOrderId: workOrder.id,
+              installedDeviceId: device.id,
+            },
+            include: {
+              item: true,
+              workOrder: {
+                select: {
+                  id: true,
+                  title: true,
+                  customer: { select: { id: true, name: true } },
+                },
+              },
+              installedDevice: true,
+            },
+          }),
+        );
+      }
+
+      return movements;
+    });
+  }
+
   private includeRelations() {
     return {
       customer: {
@@ -123,6 +232,19 @@ export class WorkOrdersService {
           id: true,
           name: true,
           address: true,
+        },
+      },
+      inventoryMovements: {
+        orderBy: { createdAt: "desc" },
+        include: {
+          item: {
+            select: {
+              id: true,
+              sku: true,
+              name: true,
+              unit: true,
+            },
+          },
         },
       },
     } satisfies Prisma.WorkOrderInclude;

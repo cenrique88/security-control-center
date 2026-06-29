@@ -8,6 +8,8 @@ type InventoryFilters = {
   search?: string;
   category?: ServiceType;
   lowStock?: string;
+  supplier?: string;
+  mode?: "catalog" | "stock" | "all";
 };
 
 @Injectable()
@@ -21,7 +23,18 @@ export class InventoryService {
       where.category = filters.category;
     }
 
+    if (filters.supplier?.trim()) {
+      where.supplier = filters.supplier.trim();
+    }
+
+    if (filters.mode === "catalog") {
+      where.managedStock = false;
+    } else if (filters.mode !== "all") {
+      where.managedStock = true;
+    }
+
     if (filters.lowStock === "true") {
+      where.managedStock = true;
       where.stock = { lte: this.prisma.inventoryItem.fields.minStock };
     }
 
@@ -32,6 +45,7 @@ export class InventoryService {
         { name: { contains: query, mode: "insensitive" } },
         { location: { contains: query, mode: "insensitive" } },
         { supplier: { contains: query, mode: "insensitive" } },
+        { supplierCategory: { contains: query, mode: "insensitive" } },
         { notes: { contains: query, mode: "insensitive" } },
       ];
     }
@@ -58,9 +72,50 @@ export class InventoryService {
         unit: this.cleanOptional(dto.unit) ?? "u",
         stock: dto.stock ?? 0,
         minStock: dto.minStock ?? 0,
+        managedStock: dto.managedStock ?? true,
         location: this.cleanNullable(dto.location),
         supplier: this.cleanNullable(dto.supplier),
+        supplierCategory: this.cleanNullable(dto.supplierCategory),
+        costPrice: dto.costPrice,
+        taxAmount: dto.taxAmount,
+        priceWithTax: dto.priceWithTax,
+        currency: this.cleanOptional(dto.currency) ?? "USD",
         notes: this.cleanNullable(dto.notes),
+      },
+      include: {
+        movements: {
+          take: 5,
+          orderBy: { createdAt: "desc" },
+          include: this.movementInclude(),
+        },
+      },
+    });
+  }
+
+  async updateItem(id: string, dto: CreateInventoryItemDto) {
+    const current = await this.prisma.inventoryItem.findUnique({ where: { id }, select: { id: true } });
+    if (!current) {
+      throw new NotFoundException("Inventory item not found");
+    }
+
+    return this.prisma.inventoryItem.update({
+      where: { id },
+      data: {
+        sku: dto.sku === undefined ? undefined : this.cleanNullable(dto.sku),
+        name: dto.name?.trim(),
+        category: dto.category === undefined ? undefined : dto.category ? (dto.category as ServiceType) : null,
+        unit: this.cleanOptional(dto.unit),
+        stock: dto.stock,
+        minStock: dto.minStock,
+        managedStock: dto.managedStock,
+        location: dto.location === undefined ? undefined : this.cleanNullable(dto.location),
+        supplier: dto.supplier === undefined ? undefined : this.cleanNullable(dto.supplier),
+        supplierCategory: dto.supplierCategory === undefined ? undefined : this.cleanNullable(dto.supplierCategory),
+        costPrice: dto.costPrice,
+        taxAmount: dto.taxAmount,
+        priceWithTax: dto.priceWithTax,
+        currency: this.cleanOptional(dto.currency),
+        notes: dto.notes === undefined ? undefined : this.cleanNullable(dto.notes),
       },
       include: {
         movements: {
@@ -102,7 +157,7 @@ export class InventoryService {
 
       await tx.inventoryItem.update({
         where: { id: item.id },
-        data: { stock: stockAfter },
+        data: { stock: stockAfter, managedStock: true },
       });
 
       return tx.inventoryMovement.create({
@@ -123,10 +178,75 @@ export class InventoryService {
     });
   }
 
+  async deleteMovement(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const movement = await tx.inventoryMovement.findUnique({
+        where: { id },
+        include: { item: true },
+      });
+
+      if (!movement) {
+        throw new NotFoundException("Inventory movement not found");
+      }
+
+      const stockAfterDelete =
+        movement.type === "OUT"
+          ? movement.item.stock + movement.quantity
+          : movement.type === "IN"
+            ? movement.item.stock - movement.quantity
+            : movement.item.stock;
+
+      if (stockAfterDelete < 0) {
+        throw new BadRequestException("Stock cannot be negative");
+      }
+
+      await tx.inventoryItem.update({
+        where: { id: movement.itemId },
+        data: { stock: stockAfterDelete, managedStock: true },
+      });
+
+      const deletedMovement = await tx.inventoryMovement.delete({
+        where: { id },
+        include: {
+          item: true,
+          ...this.movementInclude(),
+        },
+      });
+
+      if (movement.installedDeviceId) {
+        await tx.installedDevice.delete({ where: { id: movement.installedDeviceId } });
+      }
+
+      return deletedMovement;
+    });
+  }
+
+  async deleteItem(id: string) {
+    const item = await this.prisma.inventoryItem.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        _count: {
+          select: { movements: true },
+        },
+      },
+    });
+
+    if (!item) {
+      throw new NotFoundException("Inventory item not found");
+    }
+
+    if (item._count.movements > 0) {
+      throw new BadRequestException("Inventory item has movements");
+    }
+
+    return this.prisma.inventoryItem.delete({ where: { id } });
+  }
+
   async summary() {
     const [items, outOfStock, movements] = await Promise.all([
-      this.prisma.inventoryItem.findMany({ select: { id: true, stock: true, minStock: true } }),
-      this.prisma.inventoryItem.count({ where: { stock: 0 } }),
+      this.prisma.inventoryItem.findMany({ where: { managedStock: true }, select: { id: true, stock: true, minStock: true } }),
+      this.prisma.inventoryItem.count({ where: { managedStock: true, stock: 0 } }),
       this.prisma.inventoryMovement.count(),
     ]);
 

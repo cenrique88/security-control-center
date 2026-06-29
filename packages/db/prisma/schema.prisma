@@ -120,19 +120,25 @@ model InstalledDevice {
 }
 
 model InventoryItem {
-  id          String              @id @default(cuid())
-  sku         String?             @unique
-  name        String
-  category    ServiceType?
-  unit        String              @default("u")
-  stock       Int                 @default(0)
-  minStock    Int                 @default(0)
-  location    String?
-  supplier    String?
-  notes       String?
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-  movements   InventoryMovement[]
+  id               String              @id @default(cuid())
+  sku              String?             @unique
+  name             String
+  category         ServiceType?
+  unit             String              @default("u")
+  stock            Int                 @default(0)
+  minStock         Int                 @default(0)
+  managedStock     Boolean             @default(true)
+  location         String?
+  supplier         String?
+  supplierCategory String?
+  costPrice        Decimal?            @db.Decimal(12, 2)
+  taxAmount        Decimal?            @db.Decimal(12, 2)
+  priceWithTax     Decimal?            @db.Decimal(12, 2)
+  currency         String?             @default("USD")
+  notes            String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  movements        InventoryMovement[]
 }
 
 model InventoryMovement {
