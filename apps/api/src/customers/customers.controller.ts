@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CustomersService } from "./customers.service";
+import { CreateCustomerDocumentDto } from "./dto/create-customer-document.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
 import { CreateSiteDto } from "./dto/create-site.dto";
 import { UpdateCustomerDto } from "./dto/update-customer.dto";
@@ -28,6 +29,11 @@ export class CustomersController {
     return this.customersService.update(id, dto);
   }
 
+  @Get(":id/profile")
+  profile(@Param("id") id: string) {
+    return this.customersService.profile(id);
+  }
+
   @Get(":id/sites")
   listSites(@Param("id") id: string) {
     return this.customersService.listSites(id);
@@ -36,5 +42,10 @@ export class CustomersController {
   @Post(":id/sites")
   createSite(@Param("id") id: string, @Body() dto: CreateSiteDto) {
     return this.customersService.createSite(id, dto);
+  }
+
+  @Post(":id/documents")
+  createDocument(@Param("id") id: string, @Body() dto: CreateCustomerDocumentDto) {
+    return this.customersService.createDocument(id, dto);
   }
 }

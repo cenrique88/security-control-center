@@ -114,7 +114,19 @@ export class WorkOrdersService {
     return this.prisma.$transaction(async (tx) => {
       const workOrder = await tx.workOrder.findUnique({
         where: { id },
-        select: { id: true, title: true, type: true, siteId: true },
+        select: {
+          id: true,
+          title: true,
+          type: true,
+          siteId: true,
+          customerId: true,
+          customer: {
+            select: {
+              name: true,
+              address: true,
+            },
+          },
+        },
       });
 
       if (!workOrder) {
@@ -135,10 +147,6 @@ export class WorkOrdersService {
 
       if (!item) {
         throw new NotFoundException("Inventory item not found");
-      }
-
-      if (dto.installAsDevice && !workOrder.siteId) {
-        throw new BadRequestException("Work order site is required to install devices");
       }
 
       const stockAfter = item.stock - dto.quantity;
@@ -175,11 +183,14 @@ export class WorkOrdersService {
         });
       }
 
+      const targetSiteId = dto.installAsDevice
+        ? await this.ensureWorkOrderSite(tx, workOrder)
+        : workOrder.siteId;
       const movements = [];
       for (let index = 0; index < dto.quantity; index += 1) {
         const device = await tx.installedDevice.create({
           data: {
-            siteId: workOrder.siteId!,
+            siteId: targetSiteId!,
             type: item.category ?? workOrder.type,
             brand: this.cleanOptional(item.supplier ?? undefined),
             model: item.name,
@@ -224,6 +235,7 @@ export class WorkOrdersService {
         select: {
           id: true,
           name: true,
+          email: true,
           phone: true,
         },
       },
@@ -243,6 +255,15 @@ export class WorkOrdersService {
               sku: true,
               name: true,
               unit: true,
+            },
+          },
+          installedDevice: {
+            select: {
+              id: true,
+              brand: true,
+              model: true,
+              serial: true,
+              ipAddress: true,
             },
           },
         },
@@ -270,6 +291,48 @@ export class WorkOrdersService {
     if (site.customerId !== customerId) {
       throw new BadRequestException("Site does not belong to customer");
     }
+  }
+
+  private async ensureWorkOrderSite(
+    tx: Prisma.TransactionClient,
+    workOrder: {
+      id: string;
+      siteId: string | null;
+      customerId: string;
+      customer: { name: string; address: string | null };
+    },
+  ) {
+    if (workOrder.siteId) {
+      return workOrder.siteId;
+    }
+
+    const siteName = workOrder.customer.name.trim();
+    const existingSite = await tx.site.findFirst({
+      where: {
+        customerId: workOrder.customerId,
+        name: { equals: siteName, mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+
+    const site =
+      existingSite ??
+      (await tx.site.create({
+        data: {
+          customerId: workOrder.customerId,
+          name: siteName,
+          address: workOrder.customer.address?.trim() || "Direccion principal",
+          notes: "Sitio predeterminado creado automaticamente",
+        },
+        select: { id: true },
+      }));
+
+    await tx.workOrder.update({
+      where: { id: workOrder.id },
+      data: { siteId: site.id },
+    });
+
+    return site.id;
   }
 
   private cleanOptional(value?: string) {

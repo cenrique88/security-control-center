@@ -31,6 +31,10 @@ export class CreateCustomerDto {
   address?: string;
 
   @IsOptional()
+  @IsString()
+  logoUrl?: string;
+
+  @IsOptional()
   @IsEnum(CustomerStatusDto)
   status?: CustomerStatusDto;
 

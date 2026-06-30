@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { InventoryMovementType, Prisma, ServiceType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateInventoryItemDto } from "./dto/create-inventory-item.dto";
@@ -35,7 +35,7 @@ export class InventoryService {
 
     if (filters.lowStock === "true") {
       where.managedStock = true;
-      where.stock = { lte: this.prisma.inventoryItem.fields.minStock };
+      where.stock = 0;
     }
 
     if (filters.search?.trim()) {
@@ -50,46 +50,61 @@ export class InventoryService {
       ];
     }
 
-    return this.prisma.inventoryItem.findMany({
-      where,
-      orderBy: [{ updatedAt: "desc" }],
-      include: {
-        movements: {
-          take: 5,
-          orderBy: { createdAt: "desc" },
-          include: this.movementInclude(),
+    try {
+      const items = await this.prisma.inventoryItem.findMany({
+        where,
+        orderBy: [{ updatedAt: "desc" }],
+        include: {
+          movements: {
+            take: 5,
+            orderBy: { createdAt: "desc" },
+            include: this.movementInclude(),
+          },
         },
-      },
-    });
+      });
+
+      const installedByItem = await this.installedQuantityByItem(items.map((item) => item.id));
+
+      return items.map((item) => ({
+        ...item,
+        installedQuantity: installedByItem.get(item.id) ?? 0,
+      }));
+    } catch (error) {
+      this.handleDatabaseError(error);
+    }
   }
 
   async createItem(dto: CreateInventoryItemDto) {
-    return this.prisma.inventoryItem.create({
-      data: {
-        sku: this.cleanNullable(dto.sku),
-        name: dto.name.trim(),
-        category: dto.category as ServiceType | undefined,
-        unit: this.cleanOptional(dto.unit) ?? "u",
-        stock: dto.stock ?? 0,
-        minStock: dto.minStock ?? 0,
-        managedStock: dto.managedStock ?? true,
-        location: this.cleanNullable(dto.location),
-        supplier: this.cleanNullable(dto.supplier),
-        supplierCategory: this.cleanNullable(dto.supplierCategory),
-        costPrice: dto.costPrice,
-        taxAmount: dto.taxAmount,
-        priceWithTax: dto.priceWithTax,
-        currency: this.cleanOptional(dto.currency) ?? "USD",
-        notes: this.cleanNullable(dto.notes),
-      },
-      include: {
-        movements: {
-          take: 5,
-          orderBy: { createdAt: "desc" },
-          include: this.movementInclude(),
+    try {
+      return await this.prisma.inventoryItem.create({
+        data: {
+          sku: this.cleanNullable(dto.sku),
+          name: dto.name.trim(),
+          category: dto.category as ServiceType | undefined,
+          unit: this.cleanOptional(dto.unit) ?? "u",
+          stock: dto.stock ?? 0,
+          minStock: dto.minStock ?? 0,
+          managedStock: dto.managedStock ?? true,
+          location: this.cleanNullable(dto.location),
+          supplier: this.cleanNullable(dto.supplier),
+          supplierCategory: this.cleanNullable(dto.supplierCategory),
+          costPrice: dto.costPrice,
+          taxAmount: dto.taxAmount,
+          priceWithTax: dto.priceWithTax,
+          currency: this.cleanOptional(dto.currency) ?? "USD",
+          notes: this.cleanNullable(dto.notes),
         },
-      },
-    });
+        include: {
+          movements: {
+            take: 5,
+            orderBy: { createdAt: "desc" },
+            include: this.movementInclude(),
+          },
+        },
+      });
+    } catch (error) {
+      this.handleDatabaseError(error);
+    }
   }
 
   async updateItem(id: string, dto: CreateInventoryItemDto) {
@@ -98,33 +113,37 @@ export class InventoryService {
       throw new NotFoundException("Inventory item not found");
     }
 
-    return this.prisma.inventoryItem.update({
-      where: { id },
-      data: {
-        sku: dto.sku === undefined ? undefined : this.cleanNullable(dto.sku),
-        name: dto.name?.trim(),
-        category: dto.category === undefined ? undefined : dto.category ? (dto.category as ServiceType) : null,
-        unit: this.cleanOptional(dto.unit),
-        stock: dto.stock,
-        minStock: dto.minStock,
-        managedStock: dto.managedStock,
-        location: dto.location === undefined ? undefined : this.cleanNullable(dto.location),
-        supplier: dto.supplier === undefined ? undefined : this.cleanNullable(dto.supplier),
-        supplierCategory: dto.supplierCategory === undefined ? undefined : this.cleanNullable(dto.supplierCategory),
-        costPrice: dto.costPrice,
-        taxAmount: dto.taxAmount,
-        priceWithTax: dto.priceWithTax,
-        currency: this.cleanOptional(dto.currency),
-        notes: dto.notes === undefined ? undefined : this.cleanNullable(dto.notes),
-      },
-      include: {
-        movements: {
-          take: 5,
-          orderBy: { createdAt: "desc" },
-          include: this.movementInclude(),
+    try {
+      return await this.prisma.inventoryItem.update({
+        where: { id },
+        data: {
+          sku: dto.sku === undefined ? undefined : this.cleanNullable(dto.sku),
+          name: dto.name?.trim(),
+          category: dto.category === undefined ? undefined : dto.category ? (dto.category as ServiceType) : null,
+          unit: this.cleanOptional(dto.unit),
+          stock: dto.stock,
+          minStock: dto.minStock,
+          managedStock: dto.managedStock,
+          location: dto.location === undefined ? undefined : this.cleanNullable(dto.location),
+          supplier: dto.supplier === undefined ? undefined : this.cleanNullable(dto.supplier),
+          supplierCategory: dto.supplierCategory === undefined ? undefined : this.cleanNullable(dto.supplierCategory),
+          costPrice: dto.costPrice,
+          taxAmount: dto.taxAmount,
+          priceWithTax: dto.priceWithTax,
+          currency: this.cleanOptional(dto.currency),
+          notes: dto.notes === undefined ? undefined : this.cleanNullable(dto.notes),
         },
-      },
-    });
+        include: {
+          movements: {
+            take: 5,
+            orderBy: { createdAt: "desc" },
+            include: this.movementInclude(),
+          },
+        },
+      });
+    } catch (error) {
+      this.handleDatabaseError(error);
+    }
   }
 
   async createMovement(dto: CreateInventoryMovementDto) {
@@ -205,6 +224,7 @@ export class InventoryService {
         data: { stock: stockAfterDelete, managedStock: true },
       });
 
+      const installedDeviceId = movement.installedDeviceId;
       const deletedMovement = await tx.inventoryMovement.delete({
         where: { id },
         include: {
@@ -213,8 +233,16 @@ export class InventoryService {
         },
       });
 
-      if (movement.installedDeviceId) {
-        await tx.installedDevice.delete({ where: { id: movement.installedDeviceId } });
+      if (installedDeviceId) {
+        const remainingMovements = await tx.inventoryMovement.count({
+          where: { installedDeviceId },
+        });
+
+        if (remainingMovements === 0) {
+          await tx.installedDevice.deleteMany({
+            where: { id: installedDeviceId },
+          });
+        }
       }
 
       return deletedMovement;
@@ -244,18 +272,49 @@ export class InventoryService {
   }
 
   async summary() {
-    const [items, outOfStock, movements] = await Promise.all([
-      this.prisma.inventoryItem.findMany({ where: { managedStock: true }, select: { id: true, stock: true, minStock: true } }),
+    const [items, outOfStock, movements, installed] = await Promise.all([
+      this.prisma.inventoryItem.findMany({ where: { managedStock: true }, select: { id: true, stock: true } }),
       this.prisma.inventoryItem.count({ where: { managedStock: true, stock: 0 } }),
       this.prisma.inventoryMovement.count(),
+      this.prisma.inventoryMovement.aggregate({
+        where: {
+          type: "OUT",
+          installedDeviceId: { not: null },
+        },
+        _sum: {
+          quantity: true,
+        },
+      }),
     ]);
 
     return {
       totalItems: items.length,
-      lowStock: items.filter((item) => item.stock <= item.minStock).length,
+      lowStock: outOfStock,
       outOfStock,
       movements,
+      installed: installed._sum.quantity ?? 0,
+      availableStock: items.reduce((total, item) => total + item.stock, 0),
     };
+  }
+
+  private async installedQuantityByItem(itemIds: string[]) {
+    if (!itemIds.length) {
+      return new Map<string, number>();
+    }
+
+    const grouped = await this.prisma.inventoryMovement.groupBy({
+      by: ["itemId"],
+      where: {
+        itemId: { in: itemIds },
+        type: "OUT",
+        installedDeviceId: { not: null },
+      },
+      _sum: {
+        quantity: true,
+      },
+    });
+
+    return new Map(grouped.map((item) => [item.itemId, item._sum.quantity ?? 0]));
   }
 
   private movementInclude() {
@@ -295,6 +354,21 @@ export class InventoryService {
     if (!device) {
       throw new NotFoundException("Installed device not found");
     }
+  }
+
+  private handleDatabaseError(error: unknown): never {
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+    const message = error instanceof Error ? error.message : "";
+
+    if (code === "P2002") {
+      throw new ConflictException("Ya existe un articulo con ese SKU");
+    }
+
+    if (message.includes("Can't reach database server") || message.includes("ECONNREFUSED")) {
+      throw new ServiceUnavailableException("Base de datos no disponible");
+    }
+
+    throw error;
   }
 
   private cleanOptional(value?: string) {

@@ -15,7 +15,13 @@ export class DevicesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(filters: DeviceFilters) {
-    const where: Prisma.InstalledDeviceWhereInput = {};
+    const where: Prisma.InstalledDeviceWhereInput = {
+      inventoryMovements: {
+        some: {
+          workOrderId: { not: null },
+        },
+      },
+    };
 
     if (filters.siteId) {
       where.siteId = filters.siteId;
@@ -39,6 +45,7 @@ export class DevicesService {
         { notes: { contains: query, mode: "insensitive" } },
         { site: { name: { contains: query, mode: "insensitive" } } },
         { site: { customer: { name: { contains: query, mode: "insensitive" } } } },
+        { inventoryMovements: { some: { workOrder: { title: { contains: query, mode: "insensitive" } } } } },
       ];
     }
 
@@ -55,6 +62,25 @@ export class DevicesService {
               select: {
                 id: true,
                 name: true,
+              },
+            },
+          },
+        },
+        inventoryMovements: {
+          where: { workOrderId: { not: null } },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            workOrderId: true,
+            createdAt: true,
+            workOrder: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+                scheduledAt: true,
+                completedAt: true,
               },
             },
           },
@@ -90,6 +116,25 @@ export class DevicesService {
               select: {
                 id: true,
                 name: true,
+              },
+            },
+          },
+        },
+        inventoryMovements: {
+          where: { workOrderId: { not: null } },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            workOrderId: true,
+            createdAt: true,
+            workOrder: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+                scheduledAt: true,
+                completedAt: true,
               },
             },
           },

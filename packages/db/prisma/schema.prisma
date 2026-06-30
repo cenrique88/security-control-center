@@ -57,12 +57,14 @@ model User {
 
 model Customer {
   id          String         @id @default(cuid())
+  reference   String         @unique
   name        String
   legalName   String?
   taxId       String?
   email       String?
   phone       String?
   address     String?
+  logoUrl     String?
   status      CustomerStatus @default(PROSPECT)
   notes       String?
   createdAt   DateTime       @default(now())
@@ -71,6 +73,20 @@ model Customer {
   sites       Site[]
   quotes      Quote[]
   payments    Payment[]
+  documents   CustomerDocument[]
+}
+
+model CustomerDocument {
+  id         String   @id @default(cuid())
+  customerId String
+  name       String
+  mimeType   String?
+  size       Int?
+  dataUrl    String
+  createdAt  DateTime @default(now())
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
 }
 
 model Site {

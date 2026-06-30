@@ -7,3 +7,4 @@ coverage/
 .turbo/
 *.log
 DockerDesktopInstaller.exe
+backups/*.dump

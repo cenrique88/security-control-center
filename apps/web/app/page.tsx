@@ -8,12 +8,14 @@ import {
   Copy,
   DollarSign,
   Edit3,
+  FileText,
   LogOut,
   Mail,
   MapPin,
   MessageSquare,
   Package,
   Plus,
+  Printer,
   RefreshCw,
   Save,
   Search,
@@ -24,12 +26,15 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   apiRequest,
   AuthUser,
   Customer,
+  CustomerDocument,
+  CustomerDocumentPayload,
+  CustomerProfile,
   CustomerPayload,
   CustomerSite,
   CustomerStatus,
@@ -39,6 +44,7 @@ import {
   GmailSync,
   GmailStatus,
   InventoryItem,
+  InventoryMovement,
   InventoryItemPayload,
   InventoryMovementPayload,
   InventoryMovementType,
@@ -111,6 +117,7 @@ const emptyCustomerForm: CustomerPayload = {
   email: "",
   phone: "",
   address: "",
+  logoUrl: "",
   status: "PROSPECT",
   notes: "",
 };
@@ -173,6 +180,7 @@ const emptyInventoryForm: InventoryItemPayload = {
   unit: "u",
   stock: 0,
   minStock: 0,
+  managedStock: true,
   location: "",
   supplier: "",
   notes: "",
@@ -382,15 +390,29 @@ export default function Home() {
   const [whatsAppError, setWhatsAppError] = useState("");
   const [locating, setLocating] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [workOrderDocument, setWorkOrderDocument] = useState<WorkOrder | null>(null);
+  const [customerProfile, setCustomerProfile] = useState<CustomerProfile | null>(null);
+  const [customerProfileLoading, setCustomerProfileLoading] = useState(false);
+  const [customerProfileError, setCustomerProfileError] = useState("");
+  const [focusedWorkOrderId, setFocusedWorkOrderId] = useState<string | null>(null);
 
   const summaryCards = useMemo(
     () => [
       { label: "Clientes", value: summary.totalCustomers ?? summary.activeCustomers },
       { label: "Clientes activos", value: summary.activeCustomers },
       { label: "Trabajos programados", value: summary.scheduledJobs },
-      { label: "Equipos instalados", value: summary.installedDevices },
+      {
+        label: "Equipos por mes",
+        value: summary.installedDevicesThisMonth ?? summary.installedDevices,
+        detail: `${summary.installedDevices ?? 0} equipos instalados en total`,
+      },
+      {
+        label: "Instalados desde almacen",
+        value: summary.inventory?.installed ?? 0,
+        detail: `${summary.inventory?.availableStock ?? 0} unidades disponibles`,
+      },
       { label: "Cobros pendientes", value: summary.pendingPayments },
-      { label: "Stock bajo", value: summary.inventory?.lowStock ?? 0 },
+      { label: "Sin stock", value: summary.inventory?.outOfStock ?? 0 },
       { label: "A cobrar", value: formatCurrency(summary.pendingPaymentAmount ?? 0) },
       { label: "Gmail no leidos", value: summary.integrations?.gmail.unread ?? 0 },
       { label: "WhatsApp no leidos", value: summary.integrations?.whatsApp.unread ?? 0 },
@@ -409,13 +431,13 @@ export default function Home() {
     addNotification(
       {
         id: "inventory-low",
-        title: "Stock bajo",
+        title: "Sin stock",
         detail: `${summary.inventory?.outOfStock ?? 0} articulos sin stock.`,
         module: "Almacen",
         severity: "warning",
-        value: summary.inventory?.lowStock ?? 0,
+        value: summary.inventory?.outOfStock ?? 0,
       },
-      Boolean(summary.inventory?.lowStock),
+      Boolean(summary.inventory?.outOfStock),
     );
 
     addNotification(
@@ -608,7 +630,8 @@ export default function Home() {
     () => [
       { label: "Articulos", value: inventoryItems.length },
       { label: "Catalogo", value: inventoryItems.filter((item) => !item.managedStock).length },
-      { label: "Stock bajo", value: inventoryItems.filter((item) => item.managedStock && item.stock <= item.minStock).length },
+      { label: "Instalados", value: inventoryItems.reduce((total, item) => total + (item.installedQuantity ?? 0), 0) },
+      { label: "Disponibles", value: inventoryItems.reduce((total, item) => total + (item.managedStock ? item.stock : 0), 0) },
       { label: "Sin stock", value: inventoryItems.filter((item) => item.managedStock && item.stock === 0).length },
     ],
     [inventoryItems],
@@ -734,7 +757,7 @@ export default function Home() {
       return;
     }
 
-    void loadInventory(token, { mode: "stock", category: "ALL", supplier: "ALL", search: "" });
+    void loadInventory(token, { mode: "all", category: "ALL", supplier: "ALL", search: "" });
   }, [activeModule, token]);
 
   useEffect(() => {
@@ -1026,8 +1049,8 @@ export default function Home() {
         ...currentForm,
         itemId: currentForm.itemId || data[0]?.id || "",
       }));
-    } catch {
-      setInventoryError("No se pudo cargar el almacen");
+    } catch (error) {
+      setInventoryError(`No se pudo cargar el almacen: ${getErrorMessage(error)}`);
     } finally {
       setInventoryLoading(false);
     }
@@ -1451,8 +1474,10 @@ export default function Home() {
       setEditingInventoryItemId(null);
       setInventoryForm(emptyInventoryForm);
       await Promise.all([loadInventory(token), loadSummary(token)]);
-    } catch {
-      setInventoryError(editingInventoryItemId ? "No se pudo actualizar el articulo" : "No se pudo guardar el articulo");
+    } catch (error) {
+      setInventoryError(
+        `${editingInventoryItemId ? "No se pudo actualizar el articulo" : "No se pudo guardar el articulo"}: ${getErrorMessage(error)}`,
+      );
     } finally {
       setInventoryLoading(false);
     }
@@ -1482,8 +1507,8 @@ export default function Home() {
         itemId: currentForm.itemId,
       }));
       await Promise.all([loadInventory(token), loadSummary(token)]);
-    } catch {
-      setInventoryError("No se pudo registrar el movimiento");
+    } catch (error) {
+      setInventoryError(`No se pudo registrar el movimiento: ${getErrorMessage(error)}`);
     } finally {
       setInventoryLoading(false);
     }
@@ -1628,7 +1653,7 @@ export default function Home() {
       });
       await Promise.all([
         loadWorkOrders(token),
-        loadInventory(token, { mode: "stock", category: "ALL", supplier: "ALL", search: "" }),
+        loadInventory(token, { mode: "all", category: "ALL", supplier: "ALL", search: "" }),
         loadDevices(token),
         loadSummary(token),
       ]);
@@ -1641,27 +1666,34 @@ export default function Home() {
             ? "No se pudo agregar el material al trabajo: selecciona un sitio en la orden para registrar equipos instalados"
           : `No se pudo agregar el material al trabajo: ${message}`,
       );
-      await loadInventory(token, { mode: "stock", category: "ALL", supplier: "ALL", search: "" });
+      await loadInventory(token, { mode: "all", category: "ALL", supplier: "ALL", search: "" });
     } finally {
       setWorkOrdersLoading(false);
     }
   }
 
-  async function removeWorkOrderMaterial(movementId: string) {
+  async function removeWorkOrderMaterial(movementIds: string | string[]) {
     if (!token) {
+      return;
+    }
+
+    const ids = Array.isArray(movementIds) ? movementIds : [movementIds];
+    if (!ids.length) {
       return;
     }
 
     setWorkOrdersLoading(true);
     setWorkOrderError("");
     try {
-      await apiRequest(`/api/inventory/movements/${movementId}`, {
-        token,
-        method: "DELETE",
-      });
+      for (const movementId of ids) {
+        await apiRequest(`/api/inventory/movements/${movementId}`, {
+          token,
+          method: "DELETE",
+        });
+      }
       await Promise.all([
         loadWorkOrders(token),
-        loadInventory(token, { mode: "stock", category: "ALL", supplier: "ALL", search: "" }),
+        loadInventory(token, { mode: "all", category: "ALL", supplier: "ALL", search: "" }),
         loadDevices(token),
         loadSummary(token),
       ]);
@@ -1761,6 +1793,9 @@ export default function Home() {
 
   function editCustomer(customer: Customer) {
     selectCustomer(customer.id);
+    setCustomerProfile(null);
+    setCustomerProfileError("");
+    setActiveModule("Clientes");
     setEditingCustomerId(customer.id);
     setCustomerForm({
       name: customer.name,
@@ -1769,6 +1804,7 @@ export default function Home() {
       email: customer.email ?? "",
       phone: customer.phone ?? "",
       address: customer.address ?? "",
+      logoUrl: customer.logoUrl ?? "",
       status: customer.status,
       notes: customer.notes ?? "",
     });
@@ -1784,6 +1820,74 @@ export default function Home() {
     void loadWorkOrders(token, customerId);
     void loadQuotes(token, customerId);
     void loadPayments(token, customerId);
+  }
+
+  async function openCustomerProfile(customer: Customer) {
+    if (!token) {
+      return;
+    }
+
+    selectCustomer(customer.id);
+    setCustomerProfile(null);
+    setCustomerProfileError("");
+    setCustomerProfileLoading(true);
+    try {
+      const profile = await apiRequest<CustomerProfile>(`/api/customers/${customer.id}/profile`, { token });
+      setCustomerProfile(profile);
+    } catch (error) {
+      setCustomerProfileError(`No se pudo cargar la ficha del cliente: ${getErrorMessage(error)}`);
+    } finally {
+      setCustomerProfileLoading(false);
+    }
+  }
+
+  async function addCustomerDocument(customerId: string, payload: CustomerDocumentPayload) {
+    if (!token) {
+      return;
+    }
+
+    const document = await apiRequest<CustomerDocument>(`/api/customers/${customerId}/documents`, {
+      token,
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    setCustomerProfile((current) =>
+      current && current.customer.id === customerId ? { ...current, documents: [document, ...current.documents] } : current,
+    );
+  }
+
+  async function openWorkOrderFromCustomerProfile(workOrder: WorkOrder) {
+    if (!token) {
+      return;
+    }
+
+    setCustomerProfile(null);
+    setCustomerProfileError("");
+    setActiveModule("Trabajos");
+    setFocusedWorkOrderId(workOrder.id);
+    setWorkSearch("");
+    setWorkStatus("ALL");
+    setSelectedCustomerId(workOrder.customerId);
+    setWorkOrderForm((currentForm) => ({ ...currentForm, customerId: workOrder.customerId, siteId: "" }));
+    setWorkOrdersLoading(true);
+    setWorkOrderError("");
+    try {
+      const params = new URLSearchParams({ customerId: workOrder.customerId });
+      const data = await apiRequest<WorkOrder[]>(`/api/work-orders?${params.toString()}`, { token });
+      setWorkOrders(data);
+      await Promise.all([
+        loadSites(workOrder.customerId, token),
+        loadInventory(token, { mode: "stock", category: "ALL", supplier: "ALL", search: "" }),
+      ]);
+      window.setTimeout(() => {
+        document.getElementById(`work-order-${workOrder.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 80);
+    } catch (error) {
+      setWorkOrderError(`No se pudo abrir la orden de trabajo: ${getErrorMessage(error)}`);
+    } finally {
+      setWorkOrdersLoading(false);
+    }
   }
 
   function cancelCustomerEdit() {
@@ -1877,6 +1981,22 @@ export default function Home() {
     router.replace("/login");
   }
 
+  function printWorkOrderDocument() {
+    window.print();
+  }
+
+  function shareWorkOrderByWhatsApp(workOrder: WorkOrder) {
+    const text = encodeURIComponent(buildWorkOrderShareText(workOrder));
+    const phone = toWhatsAppPhone(workOrder.customer.phone);
+    window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, "_blank");
+  }
+
+  function shareWorkOrderByMail(workOrder: WorkOrder) {
+    const subject = encodeURIComponent(`Orden de trabajo - ${workOrder.title}`);
+    const body = encodeURIComponent(buildWorkOrderShareText(workOrder));
+    window.location.href = `mailto:${workOrder.customer.email ?? ""}?subject=${subject}&body=${body}`;
+  }
+
   if (!authChecked) {
     return <main className="loadingScreen">Preparando SSCC...</main>;
   }
@@ -1891,6 +2011,7 @@ export default function Home() {
   }
 
   return (
+    <>
     <main className="shell">
       <aside className="sidebar" aria-label="Modulos">
         <div className="brand">
@@ -1941,124 +2062,112 @@ export default function Home() {
             </h1>
             <span className="connectionStatus">{status}</span>
           </div>
-          <div className="topbarActions">
-            <button
-              type="button"
-              title="Actualizar"
-              aria-label="Actualizar"
-              onClick={() =>
-                activeModule === "Clientes"
-                  ? loadCustomers()
-                  : activeModule === "Trabajos"
-                    ? loadWorkOrders()
-                    : activeModule === "Agenda"
-                      ? loadAgenda()
-                      : activeModule === "Presupuestos"
-                        ? loadQuotes()
-                        : activeModule === "Cobros"
-                          ? loadPayments()
-                        : activeModule === "Almacen"
-                          ? loadInventory()
-                        : activeModule === "Equipos"
-                          ? loadDevices()
-                          : activeModule === "Vehiculos"
-                            ? loadVehicles()
-                            : activeModule === "Gmail"
-                              ? syncGmail()
-                              : activeModule === "WhatsApp"
-                                ? syncWhatsApp()
-                            : loadSummary()
-              }
-            >
-              <RefreshCw
-                size={20}
-                className={
-                  loading ||
-                  customersLoading ||
-                  devicesLoading ||
-                  workOrdersLoading ||
-                  agendaLoading ||
-                  quotesLoading ||
-                  paymentsLoading ||
-                  inventoryLoading ||
-                  vehiclesLoading ||
-                  gmailLoading ||
-                  whatsAppLoading
-                    ? "spin"
-                    : ""
-                }
-              />
-            </button>
-            <div className="notificationsMenu">
+          <div className="topbarRight">
+            <span className="operatorName">{user.name}</span>
+            <div className="topbarActions">
               <button
                 type="button"
-                title="Notificaciones"
-                aria-label="Notificaciones"
-                className={notifications.length ? "hasNotifications" : ""}
-                onClick={() => setNotificationsOpen((current) => !current)}
+                title="Actualizar"
+                aria-label="Actualizar"
+                onClick={() =>
+                  activeModule === "Clientes"
+                    ? loadCustomers()
+                    : activeModule === "Trabajos"
+                      ? loadWorkOrders()
+                      : activeModule === "Agenda"
+                        ? loadAgenda()
+                        : activeModule === "Presupuestos"
+                          ? loadQuotes()
+                          : activeModule === "Cobros"
+                            ? loadPayments()
+                          : activeModule === "Almacen"
+                            ? loadInventory()
+                          : activeModule === "Equipos"
+                            ? loadDevices()
+                            : activeModule === "Vehiculos"
+                              ? loadVehicles()
+                              : activeModule === "Gmail"
+                                ? syncGmail()
+                                : activeModule === "WhatsApp"
+                                  ? syncWhatsApp()
+                              : loadSummary()
+                }
               >
-                <Bell size={20} />
-                {notifications.length ? (
-                  <span className="notificationBadge">{criticalNotifications || notifications.length}</span>
-                ) : null}
+                <RefreshCw
+                  size={20}
+                  className={
+                    loading ||
+                    customersLoading ||
+                    devicesLoading ||
+                    workOrdersLoading ||
+                    agendaLoading ||
+                    quotesLoading ||
+                    paymentsLoading ||
+                    inventoryLoading ||
+                    vehiclesLoading ||
+                    gmailLoading ||
+                    whatsAppLoading
+                      ? "spin"
+                      : ""
+                  }
+                />
               </button>
-              {notificationsOpen ? (
-                <section className="notificationsPanel" aria-label="Notificaciones activas">
-                  <div className="notificationsHeader">
-                    <div>
-                      <strong>Notificaciones</strong>
-                      <span>{notifications.length ? `${notifications.length} alertas activas` : "Sin alertas activas"}</span>
+              <div className="notificationsMenu">
+                <button
+                  type="button"
+                  title="Notificaciones"
+                  aria-label="Notificaciones"
+                  className={notifications.length ? "hasNotifications" : ""}
+                  onClick={() => setNotificationsOpen((current) => !current)}
+                >
+                  <Bell size={20} />
+                  {notifications.length ? (
+                    <span className="notificationBadge">{criticalNotifications || notifications.length}</span>
+                  ) : null}
+                </button>
+                {notificationsOpen ? (
+                  <section className="notificationsPanel" aria-label="Notificaciones activas">
+                    <div className="notificationsHeader">
+                      <div>
+                        <strong>Notificaciones</strong>
+                        <span>{notifications.length ? `${notifications.length} alertas activas` : "Sin alertas activas"}</span>
+                      </div>
+                      <button type="button" aria-label="Cerrar notificaciones" onClick={() => setNotificationsOpen(false)}>
+                        <X size={16} />
+                      </button>
                     </div>
-                    <button type="button" aria-label="Cerrar notificaciones" onClick={() => setNotificationsOpen(false)}>
-                      <X size={16} />
-                    </button>
-                  </div>
-                  <div className="notificationsList">
-                    {notifications.map((notification) => (
-                      <article key={notification.id} className={`notificationItem ${notification.severity}`}>
-                        <div>
-                          <span>{notification.title}</span>
-                          <strong>{notification.value}</strong>
-                          <p>{notification.detail}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveModule(notification.module);
-                            setNotificationsOpen(false);
-                          }}
-                        >
-                          Ver
-                        </button>
-                      </article>
-                    ))}
-                    {!notifications.length ? (
-                      <p className="emptyNotifications">Todo al dia por ahora.</p>
-                    ) : null}
-                  </div>
-                </section>
-              ) : null}
+                    <div className="notificationsList">
+                      {notifications.map((notification) => (
+                        <article key={notification.id} className={`notificationItem ${notification.severity}`}>
+                          <div>
+                            <span>{notification.title}</span>
+                            <strong>{notification.value}</strong>
+                            <p>{notification.detail}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveModule(notification.module);
+                              setNotificationsOpen(false);
+                            }}
+                          >
+                            Ver
+                          </button>
+                        </article>
+                      ))}
+                      {!notifications.length ? (
+                        <p className="emptyNotifications">Todo al dia por ahora.</p>
+                      ) : null}
+                    </div>
+                  </section>
+                ) : null}
+              </div>
+              <button type="button" title="Cerrar sesion" aria-label="Cerrar sesion" onClick={logout}>
+                <LogOut size={20} />
+              </button>
             </div>
-            <button type="button" title="Cerrar sesion" aria-label="Cerrar sesion" onClick={logout}>
-              <LogOut size={20} />
-            </button>
           </div>
         </header>
-
-        <section className="operatorStrip" aria-label="Usuario activo">
-          <div>
-            <span>Operador</span>
-            <strong>{user.name}</strong>
-          </div>
-          <div>
-            <span>Email</span>
-            <strong>{user.email}</strong>
-          </div>
-          <div>
-            <span>Rol</span>
-            <strong>{user.role}</strong>
-          </div>
-        </section>
 
         {activeModule === "Dashboard" ? (
           <DashboardView
@@ -2072,6 +2181,9 @@ export default function Home() {
             customers={customers}
             customerError={customerError}
             customerForm={customerForm}
+            customerProfile={customerProfile}
+            customerProfileError={customerProfileError}
+            customerProfileLoading={customerProfileLoading}
             customerSearch={customerSearch}
             customerStats={customerStats}
             customerStatus={customerStatus}
@@ -2085,9 +2197,16 @@ export default function Home() {
             sites={sites}
             sitesLoading={sitesLoading}
             onCancelEdit={cancelCustomerEdit}
+            onCloseProfile={() => {
+              setCustomerProfile(null);
+              setCustomerProfileError("");
+            }}
             onEditCustomer={editCustomer}
             onFormChange={setCustomerForm}
             onLocate={captureCustomerLocation}
+            onAddDocument={addCustomerDocument}
+            onOpenProfile={openCustomerProfile}
+            onOpenWorkOrder={openWorkOrderFromCustomerProfile}
             onRefresh={() => loadCustomers()}
             onSave={saveCustomer}
             onSearchChange={setCustomerSearch}
@@ -2111,6 +2230,7 @@ export default function Home() {
             workOrders={workOrders}
             workSearch={workSearch}
             workStatus={workStatus}
+            focusedWorkOrderId={focusedWorkOrderId}
             onAddMaterial={addWorkOrderMaterial}
             onCancelEdit={cancelWorkOrderEdit}
             onEditWorkOrder={editWorkOrder}
@@ -2120,6 +2240,7 @@ export default function Home() {
             onSave={saveWorkOrder}
             onSearchChange={setWorkSearch}
             onSelectCustomer={selectCustomer}
+            onOpenDocument={setWorkOrderDocument}
             onStatusChange={setWorkStatus}
             onUpdateStatus={updateWorkOrderStatus}
           />
@@ -2267,6 +2388,160 @@ export default function Home() {
         )}
       </section>
     </main>
+    {workOrderDocument ? (
+      <WorkOrderDocumentModal
+        workOrder={workOrderDocument}
+        onClose={() => setWorkOrderDocument(null)}
+        onMail={shareWorkOrderByMail}
+        onPrint={printWorkOrderDocument}
+        onWhatsApp={shareWorkOrderByWhatsApp}
+      />
+    ) : null}
+    </>
+  );
+}
+
+function WorkOrderDocumentModal({
+  workOrder,
+  onClose,
+  onMail,
+  onPrint,
+  onWhatsApp,
+}: {
+  workOrder: WorkOrder;
+  onClose: () => void;
+  onMail: (workOrder: WorkOrder) => void;
+  onPrint: () => void;
+  onWhatsApp: (workOrder: WorkOrder) => void;
+}) {
+  const movements = groupWorkOrderMaterials(workOrder.inventoryMovements ?? []);
+  const documentNumber = workOrder.id.slice(0, 8).toUpperCase();
+
+  return (
+    <div className="documentOverlay">
+      <div className="documentToolbar">
+        <div>
+          <strong>Orden de trabajo #{documentNumber}</strong>
+          <span>{workOrder.customer.name}</span>
+        </div>
+        <div className="documentToolbarActions">
+          <button type="button" className="secondaryButton" onClick={onPrint}>
+            <Printer size={16} />
+            PDF / Imprimir
+          </button>
+          <button type="button" className="secondaryButton" onClick={() => onWhatsApp(workOrder)}>
+            <MessageSquare size={16} />
+            WhatsApp
+          </button>
+          <button type="button" className="secondaryButton" onClick={() => onMail(workOrder)}>
+            <Mail size={16} />
+            Mail
+          </button>
+          <button type="button" className="iconButton" onClick={onClose} aria-label="Cerrar orden">
+            <X size={18} />
+          </button>
+        </div>
+      </div>
+
+      <section className="workOrderDocumentSheet printableWorkOrder">
+        <header className="documentHeader">
+          <div className="documentBrand">
+            <img src="/security-solutions-logo.png" alt="Security Solutions" />
+            <div>
+              <strong>Security Solutions</strong>
+              <span>Su seguridad es nuestra prioridad</span>
+            </div>
+          </div>
+          <div className="documentNumberBox">
+            <span>Orden de trabajo</span>
+            <strong>#{documentNumber}</strong>
+            <small>{formatDateTime(workOrder.completedAt ?? workOrder.updatedAt)}</small>
+          </div>
+        </header>
+
+        <div className="documentTitleBlock">
+          <div>
+            <span>{deviceTypeLabels[workOrder.type]}</span>
+            <h1>{workOrder.title}</h1>
+          </div>
+          <em>{workStatusLabels[workOrder.status]}</em>
+        </div>
+
+        <section className="documentInfoGrid">
+          <article>
+            <span>Cliente</span>
+            <strong>{workOrder.customer.name}</strong>
+            <p>{workOrder.customer.phone || "Telefono no cargado"}</p>
+            <p>{workOrder.customer.email || "Email no cargado"}</p>
+          </article>
+          <article>
+            <span>Sitio</span>
+            <strong>{workOrder.site?.name ?? "Sin sitio especifico"}</strong>
+            <p>{workOrder.site?.address ?? "Direccion no cargada"}</p>
+          </article>
+          <article>
+            <span>Agenda</span>
+            <strong>{formatDateTime(workOrder.scheduledAt)}</strong>
+            <p>Finalizado: {formatDateTime(workOrder.completedAt ?? workOrder.updatedAt)}</p>
+          </article>
+        </section>
+
+        <section className="documentSection">
+          <h2>Trabajo realizado</h2>
+          <p>{workOrder.notes || "Trabajo finalizado segun lo solicitado por el cliente."}</p>
+        </section>
+
+        <section className="documentSection">
+          <h2>Materiales y equipos instalados</h2>
+          <div className="documentTableWrap">
+            <table className="documentTable">
+              <thead>
+                <tr>
+                  <th>Articulo</th>
+                  <th>SKU</th>
+                  <th>Cant.</th>
+                  <th>Equipo / serie</th>
+                </tr>
+              </thead>
+              <tbody>
+                {movements.map((movement) => (
+                  <tr key={movement.key}>
+                    <td>{movement.name}</td>
+                    <td>{movement.sku || "-"}</td>
+                    <td>
+                      {movement.quantity} {movement.unit}
+                    </td>
+                    <td>{movement.deviceDetails.length ? movement.deviceDetails.join(" / ") : "-"}</td>
+                  </tr>
+                ))}
+                {!movements.length ? (
+                  <tr>
+                    <td colSpan={4}>Sin materiales cargados en esta orden.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="documentSignatures">
+          <div>
+            <span>Firma tecnico</span>
+          </div>
+          <div>
+            <span>Firma cliente</span>
+          </div>
+          <div>
+            <span>Aclaracion / CI</span>
+          </div>
+        </section>
+
+        <footer className="documentFooter">
+          <span>Security Solutions Control Center</span>
+          <span>seguridadsoluciones2024@gmail.com</span>
+        </footer>
+      </section>
+    </div>
   );
 }
 
@@ -2278,7 +2553,7 @@ function DashboardView({
 }: {
   loading: boolean;
   summary: DashboardSummary;
-  summaryCards: Array<{ label: string; value: number | string }>;
+  summaryCards: Array<{ label: string; value: number | string; detail?: string }>;
   onRefresh: () => void;
 }) {
   return (
@@ -2288,6 +2563,7 @@ function DashboardView({
           <article key={card.label}>
             <span>{card.label}</span>
             <strong>{card.value}</strong>
+            {card.detail ? <small>{card.detail}</small> : null}
           </article>
         ))}
       </section>
@@ -2328,10 +2604,21 @@ function formatDashboardValue(item: { label: string; value: number | string }) {
   return item.value;
 }
 
+function sortWorkOrdersByDate(workOrders: WorkOrder[]) {
+  return [...workOrders].sort((left, right) => {
+    const leftTime = new Date(left.completedAt ?? left.scheduledAt ?? left.updatedAt ?? left.createdAt).getTime();
+    const rightTime = new Date(right.completedAt ?? right.scheduledAt ?? right.updatedAt ?? right.createdAt).getTime();
+    return rightTime - leftTime;
+  });
+}
+
 function CustomersView({
   customers,
   customerError,
   customerForm,
+  customerProfile,
+  customerProfileError,
+  customerProfileLoading,
   customerSearch,
   customerStats,
   customerStatus,
@@ -2345,9 +2632,13 @@ function CustomersView({
   sites,
   sitesLoading,
   onCancelEdit,
+  onCloseProfile,
   onEditCustomer,
   onFormChange,
   onLocate,
+  onAddDocument,
+  onOpenProfile,
+  onOpenWorkOrder,
   onRefresh,
   onSave,
   onSearchChange,
@@ -2360,6 +2651,9 @@ function CustomersView({
   customers: Customer[];
   customerError: string;
   customerForm: CustomerPayload;
+  customerProfile: CustomerProfile | null;
+  customerProfileError: string;
+  customerProfileLoading: boolean;
   customerSearch: string;
   customerStats: Array<{ label: string; value: number }>;
   customerStatus: CustomerStatus | "ALL";
@@ -2373,9 +2667,13 @@ function CustomersView({
   sites: CustomerSite[];
   sitesLoading: boolean;
   onCancelEdit: () => void;
+  onCloseProfile: () => void;
   onEditCustomer: (customer: Customer) => void;
   onFormChange: (form: CustomerPayload) => void;
   onLocate: () => void;
+  onAddDocument: (customerId: string, payload: CustomerDocumentPayload) => Promise<void>;
+  onOpenProfile: (customer: Customer) => void;
+  onOpenWorkOrder: (workOrder: WorkOrder) => void;
   onRefresh: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
   onSearchChange: (value: string) => void;
@@ -2385,6 +2683,36 @@ function CustomersView({
   onSiteSave: (event: FormEvent<HTMLFormElement>) => void;
   onStatusChange: (value: CustomerStatus | "ALL") => void;
 }) {
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+
+  function selectLogoFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (file.type !== "image/png") {
+      window.alert("Selecciona un archivo PNG.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 4 * 1024 * 1024) {
+      window.alert("El logo PNG no puede superar los 4 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        onFormChange({ ...customerForm, logoUrl: reader.result });
+      }
+      event.target.value = "";
+    };
+    reader.readAsDataURL(file);
+  }
+
   return (
     <section className="customersModule">
       <div className="summaryGrid customerStats" aria-label="Resumen de clientes">
@@ -2483,6 +2811,39 @@ function CustomersView({
               />
             </label>
             <label className="wideField">
+              <span className="fieldLabelRow">
+                Logo PNG
+                <button type="button" className="geoButton" onClick={() => logoInputRef.current?.click()}>
+                  <FileText size={16} />
+                  Seleccionar
+                </button>
+              </span>
+              <div className="logoPickerRow">
+                <input
+                  value={customerForm.logoUrl}
+                  onChange={(event) => onFormChange({ ...customerForm, logoUrl: event.target.value })}
+                  placeholder="/logos/cliente.png o https://..."
+                />
+                {customerForm.logoUrl ? (
+                  <button type="button" className="secondaryButton" onClick={() => onFormChange({ ...customerForm, logoUrl: "" })}>
+                    Quitar
+                  </button>
+                ) : null}
+              </div>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/png"
+                className="hiddenFileInput"
+                onChange={selectLogoFile}
+              />
+              {customerForm.logoUrl ? (
+                <div className="customerLogoPreview">
+                  <img src={customerForm.logoUrl} alt="Vista previa del logo" />
+                </div>
+              ) : null}
+            </label>
+            <label className="wideField">
               Notas
               <textarea
                 value={customerForm.notes}
@@ -2507,7 +2868,7 @@ function CustomersView({
               <input
                 value={customerSearch}
                 onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="Buscar por nombre, RUT, email o telefono"
+                placeholder="Buscar por referencia, nombre, RUT, email o telefono"
               />
             </label>
             <select
@@ -2534,9 +2895,9 @@ function CustomersView({
                 <tr>
                   <th>Cliente</th>
                   <th>Contacto</th>
-                  <th>Estado</th>
-                  <th>Sitios</th>
-                  <th>Trabajos</th>
+                  <th className="centerColumn">Estado</th>
+                  <th className="centerColumn">Sitios</th>
+                  <th className="centerColumn">Trabajos</th>
                   <th aria-label="Acciones" />
                 </tr>
               </thead>
@@ -2545,23 +2906,23 @@ function CustomersView({
                   <tr
                     key={customer.id}
                     className={customer.id === selectedCustomerId ? "selectedRow" : ""}
-                    onClick={() => onSelectCustomer(customer.id)}
+                    onClick={() => onOpenProfile(customer)}
                   >
                     <td data-label="Cliente">
                       <strong>{customer.name}</strong>
-                      <span>{customer.legalName || customer.taxId || "Sin razon social"}</span>
+                      <span>{[customer.reference, customer.legalName || customer.taxId || "Sin razon social"].filter(Boolean).join(" - ")}</span>
                     </td>
                     <td data-label="Contacto">
                       <strong>{customer.phone || "Sin telefono"}</strong>
                       <span>{customer.email || customer.address || "Sin contacto"}</span>
                     </td>
-                    <td data-label="Estado">
+                    <td data-label="Estado" className="centerColumn">
                       <span className={`statusPill ${customer.status.toLowerCase()}`}>
                         {statusLabels[customer.status]}
                       </span>
                     </td>
-                    <td data-label="Sitios">{customer._count.sites}</td>
-                    <td data-label="Trabajos">{customer._count.workOrders}</td>
+                    <td data-label="Sitios" className="centerColumn countCell">{customer._count.sites}</td>
+                    <td data-label="Trabajos" className="centerColumn countCell">{customer._count.workOrders}</td>
                     <td data-label="Acciones">
                       <button
                         type="button"
@@ -2601,62 +2962,344 @@ function CustomersView({
             </button>
           </div>
 
-          <form className="siteForm" onSubmit={onSiteSave}>
-            <label>
-              Nombre del sitio
-              <input
-                value={siteForm.name}
-                onChange={(event) => onSiteFormChange({ ...siteForm, name: event.target.value })}
-                placeholder="Casa central, deposito, sucursal Pocitos"
-                disabled={!selectedCustomer}
-              />
-            </label>
-            <label>
-              Direccion
-              <input
-                value={siteForm.address}
-                onChange={(event) => onSiteFormChange({ ...siteForm, address: event.target.value })}
-                placeholder="Direccion de instalacion"
-                disabled={!selectedCustomer}
-              />
-            </label>
-            <label className="wideField">
-              Notas
-              <textarea
-                value={siteForm.notes}
-                onChange={(event) => onSiteFormChange({ ...siteForm, notes: event.target.value })}
-                placeholder="Accesos, horarios, referente en sitio"
-                disabled={!selectedCustomer}
-              />
-            </label>
-            {siteError ? <p className="formError">{siteError}</p> : null}
-            <button type="submit" className="primaryButton" disabled={!selectedCustomer || sitesLoading}>
-              <Plus size={18} />
-              Agregar sitio
-            </button>
-          </form>
+          <div className="sitesPanelBody">
+            <form className="siteForm" onSubmit={onSiteSave}>
+              <label>
+                Nombre
+                <input
+                  value={siteForm.name}
+                  onChange={(event) => onSiteFormChange({ ...siteForm, name: event.target.value })}
+                  placeholder={selectedCustomer?.name ?? "Sitio"}
+                  disabled={!selectedCustomer}
+                />
+              </label>
+              <label>
+                Direccion
+                <input
+                  value={siteForm.address}
+                  onChange={(event) => onSiteFormChange({ ...siteForm, address: event.target.value })}
+                  placeholder="Direccion de instalacion"
+                  disabled={!selectedCustomer}
+                />
+              </label>
+              <label>
+                Notas
+                <input
+                  value={siteForm.notes}
+                  onChange={(event) => onSiteFormChange({ ...siteForm, notes: event.target.value })}
+                  placeholder="Acceso, horario, referente"
+                  disabled={!selectedCustomer}
+                />
+              </label>
+              {siteError ? <p className="formError">{siteError}</p> : null}
+              <button type="submit" className="primaryButton" disabled={!selectedCustomer || sitesLoading}>
+                <Plus size={18} />
+                Agregar sitio
+              </button>
+            </form>
 
-          <div className="siteList">
-            {sites.map((site) => (
-              <article key={site.id} className="siteCard">
-                <div>
-                  <strong>{site.name}</strong>
-                  <span>{site.address}</span>
-                </div>
-                <p>{site.notes || "Sin notas operativas"}</p>
-                <div className="siteMeta">
-                  <span>{site._count.equipment} equipos</span>
-                  <span>{site._count.workOrders} trabajos</span>
-                </div>
-              </article>
-            ))}
-            {selectedCustomer && !sites.length ? (
-              <p className="emptyPanel">Este cliente todavia no tiene sitios cargados.</p>
-            ) : null}
+            <div className="siteList">
+              {sites.map((site) => (
+                <article key={site.id} className="siteCard">
+                  <div>
+                    <strong>{site.name}</strong>
+                    <span>{site.address}</span>
+                  </div>
+                  <p>{site.notes || "Sin notas operativas"}</p>
+                  <div className="siteMeta">
+                    <span>{site._count.equipment} equipos</span>
+                    <span>{site._count.workOrders} trabajos</span>
+                  </div>
+                </article>
+              ))}
+              {selectedCustomer && !sites.length ? (
+                <p className="emptyPanel">Este cliente todavia no tiene sitios cargados.</p>
+              ) : null}
+            </div>
           </div>
         </section>
       </div>
+      {(customerProfile || customerProfileLoading || customerProfileError) ? (
+        <CustomerProfileModal
+          error={customerProfileError}
+          loading={customerProfileLoading}
+          profile={customerProfile}
+          onClose={onCloseProfile}
+          onEdit={onEditCustomer}
+          onAddDocument={onAddDocument}
+          onOpenWorkOrder={onOpenWorkOrder}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function CustomerProfileModal({
+  error,
+  loading,
+  profile,
+  onClose,
+  onEdit,
+  onAddDocument,
+  onOpenWorkOrder,
+}: {
+  error: string;
+  loading: boolean;
+  profile: CustomerProfile | null;
+  onClose: () => void;
+  onEdit: (customer: Customer) => void;
+  onAddDocument: (customerId: string, payload: CustomerDocumentPayload) => Promise<void>;
+  onOpenWorkOrder: (workOrder: WorkOrder) => void;
+}) {
+  const customer = profile?.customer;
+  const orderedWorkOrders = profile ? sortWorkOrdersByDate(profile.workOrders) : [];
+  const documentInputRef = useRef<HTMLInputElement | null>(null);
+  const [documentUploading, setDocumentUploading] = useState(false);
+
+  async function selectCustomerDocument(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || !customer) {
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      window.alert("El documento no puede superar los 8 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      if (typeof reader.result !== "string") {
+        return;
+      }
+
+      setDocumentUploading(true);
+      try {
+        await onAddDocument(customer.id, {
+          name: file.name,
+          mimeType: file.type || "application/octet-stream",
+          size: file.size,
+          dataUrl: reader.result,
+        });
+      } catch (error) {
+        window.alert(`No se pudo agregar el documento: ${getErrorMessage(error)}`);
+      } finally {
+        setDocumentUploading(false);
+        event.target.value = "";
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function openCustomerDocument(document: CustomerDocument) {
+    const target = document.dataUrl || document.url;
+    if (!target) {
+      window.alert("Este documento no tiene archivo asociado.");
+      return;
+    }
+
+    window.open(target, "_blank", "noopener,noreferrer");
+  }
+
+  return (
+    <div className="deviceDetailOverlay customerProfileOverlay" onClick={onClose}>
+      <section className="customerProfileModal" aria-label="Ficha del cliente" onClick={(event) => event.stopPropagation()}>
+        <header className="deviceDetailHeader">
+          <div>
+            <span>Ficha de cliente</span>
+            <h2>{customer?.name ?? "Cargando cliente"}</h2>
+            <p>
+              {customer
+                ? [customer.reference, customer.legalName, customer.taxId, statusLabels[customer.status]].filter(Boolean).join(" - ")
+                : "Preparando informacion operativa"}
+            </p>
+          </div>
+          <div className="customerProfileHeaderSide">
+            {customer ? (
+              <div className="customerProfileLogoBox">
+                {customer.logoUrl ? (
+                  <img src={customer.logoUrl} alt={`Logo ${customer.name}`} />
+                ) : (
+                  <div>
+                    <strong>{customer.name.slice(0, 2).toUpperCase()}</strong>
+                    <span>{customer.reference}</span>
+                  </div>
+                )}
+              </div>
+            ) : null}
+            <div className="documentToolbarActions">
+              {customer ? (
+                <button type="button" className="secondaryButton" onClick={() => onEdit(customer)}>
+                  <Edit3 size={16} />
+                  Editar
+                </button>
+              ) : null}
+              <button type="button" className="iconButton" onClick={onClose} aria-label="Cerrar ficha">
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {loading ? <p className="emptyPanel">Cargando ficha completa...</p> : null}
+        {error ? <p className="formError">{error}</p> : null}
+
+        {profile ? (
+          <div className="customerProfileBody">
+            <section className="customerProfileSection">
+              <h3>Datos del cliente</h3>
+              <dl className="customerProfileGrid">
+                <div>
+                  <dt>Referencia</dt>
+                  <dd>{profile.customer.reference}</dd>
+                </div>
+                <div>
+                  <dt>Telefono</dt>
+                  <dd>{profile.customer.phone || "Sin telefono"}</dd>
+                </div>
+                <div>
+                  <dt>Email</dt>
+                  <dd>{profile.customer.email || "Sin email"}</dd>
+                </div>
+                <div>
+                  <dt>Direccion</dt>
+                  <dd>{profile.customer.address || "Sin direccion"}</dd>
+                </div>
+                <div>
+                  <dt>Notas</dt>
+                  <dd>{profile.customer.notes || "Sin notas"}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="customerProfileSection">
+              <h3>Sitios</h3>
+              <div className="customerProfileList">
+                {profile.sites.map((site) => (
+                  <article key={site.id}>
+                    <strong>{site.name}</strong>
+                    <span>{site.address}</span>
+                    <small>{site._count.equipment} equipos - {site._count.workOrders} trabajos</small>
+                  </article>
+                ))}
+                {!profile.sites.length ? <p className="emptyPanel">Sin sitios cargados.</p> : null}
+              </div>
+            </section>
+
+            <section className="customerProfileSection wideProfileSection">
+              <h3>Ordenes realizadas</h3>
+              <div className="customerProfileTableWrap">
+                <table className="customerProfileOrdersTable">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Orden</th>
+                      <th>Sitio</th>
+                      <th>Estado</th>
+                      <th>Equipos / Materiales</th>
+                      <th aria-label="Accion" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orderedWorkOrders.map((workOrder) => {
+                      const materials = groupWorkOrderMaterials(workOrder.inventoryMovements ?? []);
+                      return (
+                        <tr key={workOrder.id} onClick={() => onOpenWorkOrder(workOrder)}>
+                          <td data-label="Fecha">
+                            <strong>{formatShortDate(workOrder.completedAt ?? workOrder.scheduledAt ?? workOrder.updatedAt)}</strong>
+                            <span>{formatTime(workOrder.completedAt ?? workOrder.scheduledAt)}</span>
+                          </td>
+                          <td data-label="Orden">
+                            <strong>{workOrder.title}</strong>
+                            <span>{deviceTypeLabels[workOrder.type]}</span>
+                          </td>
+                          <td data-label="Sitio">
+                            <strong>{workOrder.site?.name ?? "Sin sitio"}</strong>
+                            <span>{workOrder.site?.address ?? "Sin direccion"}</span>
+                          </td>
+                          <td data-label="Estado">
+                            <span className={`statusPill ${workOrder.status.toLowerCase()}`}>
+                              {workStatusLabels[workOrder.status]}
+                            </span>
+                          </td>
+                          <td data-label="Equipos / Materiales">
+                            <span>{materials.length ? materials.map((item) => `${item.name} x${item.quantity}`).join(" / ") : "Sin materiales"}</span>
+                          </td>
+                          <td data-label="Accion">
+                            <button
+                              type="button"
+                              className="iconTextButton"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onOpenWorkOrder(workOrder);
+                              }}
+                            >
+                              Ver
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!orderedWorkOrders.length ? (
+                      <tr>
+                        <td colSpan={6} className="emptyTable">Sin ordenes cargadas.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="customerProfileSection">
+              <h3>Equipos instalados</h3>
+              <div className="customerProfileList">
+                {groupInstalledDevices(profile.equipment).map((group) => (
+                  <article key={group.key}>
+                    <strong>{group.model} x{group.quantity}</strong>
+                    <span>{[group.brand || "Sin marca", deviceTypeLabels[group.type]].join(" - ")}</span>
+                    <small>{group.serialCount ? `${group.serialCount} series registradas` : "Sin series"}</small>
+                  </article>
+                ))}
+                {!profile.equipment.length ? <p className="emptyPanel">Sin equipos instalados vinculados.</p> : null}
+              </div>
+            </section>
+
+            <section className="customerProfileSection">
+              <div className="customerProfileSectionHeader">
+                <h3>Documentos adjuntos</h3>
+                <button type="button" className="secondaryButton" onClick={() => documentInputRef.current?.click()} disabled={!customer || documentUploading}>
+                  <FileText size={16} />
+                  {documentUploading ? "Agregando" : "Agregar documento"}
+                </button>
+              </div>
+              <input
+                ref={documentInputRef}
+                type="file"
+                className="hiddenFileInput"
+                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.txt,image/*,application/pdf"
+                onChange={selectCustomerDocument}
+              />
+              <div className="customerProfileList">
+                {profile.documents.map((document) => (
+                  <button
+                    key={document.id}
+                    type="button"
+                    className="customerProfileDocumentButton"
+                    onClick={() => openCustomerDocument(document)}
+                  >
+                    <strong>{document.name}</strong>
+                    <span>{document.mimeType || document.type || "Documento"}</span>
+                    <small>{document.createdAt ? formatDateTime(document.createdAt) : "Sin fecha"}</small>
+                  </button>
+                ))}
+                {!profile.documents.length ? <p className="emptyPanel">Todavia no hay documentos adjuntos.</p> : null}
+              </div>
+            </section>
+          </div>
+        ) : null}
+      </section>
+    </div>
   );
 }
 
@@ -2866,6 +3509,7 @@ function WorkOrdersView({
   workOrders,
   workSearch,
   workStatus,
+  focusedWorkOrderId,
   onAddMaterial,
   onCancelEdit,
   onEditWorkOrder,
@@ -2875,6 +3519,7 @@ function WorkOrdersView({
   onSave,
   onSearchChange,
   onSelectCustomer,
+  onOpenDocument,
   onStatusChange,
   onUpdateStatus,
 }: {
@@ -2890,15 +3535,17 @@ function WorkOrdersView({
   workOrders: WorkOrder[];
   workSearch: string;
   workStatus: WorkOrderStatus | "ALL";
+  focusedWorkOrderId: string | null;
   onAddMaterial: (workOrderId: string, itemId: string, quantity: number, installAsDevice: boolean) => Promise<void>;
   onCancelEdit: () => void;
   onEditWorkOrder: (workOrder: WorkOrder) => void;
   onFormChange: (form: WorkOrderPayload) => void;
   onRefresh: () => void;
-  onRemoveMaterial: (movementId: string) => Promise<void>;
+  onRemoveMaterial: (movementIds: string | string[]) => Promise<void>;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
   onSearchChange: (value: string) => void;
   onSelectCustomer: (customerId: string) => void;
+  onOpenDocument: (workOrder: WorkOrder) => void;
   onStatusChange: (value: WorkOrderStatus | "ALL") => void;
   onUpdateStatus: (id: string, status: WorkOrderStatus) => void;
 }) {
@@ -2914,7 +3561,7 @@ function WorkOrdersView({
 
   function materialResults(form: { query: string }) {
     const query = form.query.trim().toLowerCase();
-    const source = inventoryItems.filter((item) => item.managedStock && item.stock > 0);
+    const source = inventoryItems;
     const matches = query
       ? source.filter((item) =>
           [item.name, item.sku, item.supplier, item.supplierCategory]
@@ -2923,7 +3570,9 @@ function WorkOrdersView({
         )
       : source;
 
-    return matches.slice(0, 6);
+    return matches
+      .sort((left, right) => Number(right.managedStock && right.stock > 0) - Number(left.managedStock && left.stock > 0))
+      .slice(0, 6);
   }
 
   return (
@@ -3080,11 +3729,21 @@ function WorkOrdersView({
               const form = materialForm(workOrder.id);
               const results = materialResults(form);
               const movements = workOrder.inventoryMovements ?? [];
+              const groupedMovements = groupWorkOrderMaterials(movements);
               const selectedItem = inventoryItems.find((item) => item.id === form.itemId);
-              const quantityExceedsStock = Boolean(selectedItem && form.quantity > selectedItem.stock);
+              const availableQuantity = selectedItem?.stock ?? 0;
+              const selectedQuantity = selectedItem
+                ? Math.min(Math.max(1, form.quantity), availableQuantity)
+                : Math.max(1, form.quantity);
+              const workOrderSiteId = workOrder.siteId ?? workOrder.site?.id ?? "";
+              const installAsDevice = Boolean(form.installAsDevice);
 
               return (
-              <article key={workOrder.id} className="workOrderCard">
+              <article
+                key={workOrder.id}
+                id={`work-order-${workOrder.id}`}
+                className={`workOrderCard ${workOrder.id === focusedWorkOrderId ? "focusedWorkOrderCard" : ""}`}
+              >
                 <div className="workOrderCardHeader">
                   <span className={`statusPill ${workOrder.status.toLowerCase()}`}>
                     {workStatusLabels[workOrder.status]}
@@ -3113,16 +3772,16 @@ function WorkOrdersView({
                 <div className="workOrderMaterials">
                   <div className="workOrderMaterialsHeader">
                     <strong>Materiales y equipos</strong>
-                    <span>{movements.length} items</span>
+                    <span>{groupedMovements.length} items</span>
                   </div>
-                  {movements.length ? (
+                  {groupedMovements.length ? (
                     <div className="workOrderMaterialList">
-                      {movements.map((movement) => (
-                        <div key={movement.id} className="workOrderMaterialItem">
+                      {groupedMovements.map((movement) => (
+                        <div key={movement.key} className="workOrderMaterialItem">
                           <span>
-                            {movement.item?.name ?? "Articulo"} x{movement.quantity} {movement.item?.unit ?? ""}
+                            {movement.name} x{movement.quantity} {movement.unit}
                           </span>
-                          <button type="button" onClick={() => onRemoveMaterial(movement.id)} disabled={loading}>
+                          <button type="button" onClick={() => onRemoveMaterial(movement.ids)} disabled={loading}>
                             Eliminar
                           </button>
                         </div>
@@ -3153,41 +3812,53 @@ function WorkOrdersView({
                                 ...form,
                                 query: item.name,
                                 itemId: item.id,
-                                quantity: Math.min(form.quantity, item.stock || 1),
+                                quantity: Math.min(form.quantity, Math.max(1, item.stock)),
                                 open: false,
                               })
                             }
                             >
                               <strong>{item.name}</strong>
                               <span>
-                                {[item.sku ? `SKU ${item.sku}` : "", item.supplier, `${item.stock} ${item.unit}`].filter(Boolean).join(" - ")}
+                                {[
+                                  item.sku ? `SKU ${item.sku}` : "",
+                                  item.supplier,
+                                  item.managedStock && item.stock > 0 ? `Disponible ${item.stock} ${item.unit}` : "Sin stock disponible",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" - ")}
                               </span>
                             </button>
                           ))}
-                          {!results.length ? <p>No hay articulos de stock real.</p> : null}
+                          {!results.length ? <p>No hay articulos relacionados.</p> : null}
                         </div>
                       ) : null}
                     </div>
-                    <input
-                      type="number"
-                      min="1"
-                      max={selectedItem?.stock}
-                      value={form.quantity}
-                      onChange={(event) => {
-                        const nextQuantity = Math.max(1, Number(event.target.value) || 1);
+                    <select
+                      value={selectedItem ? selectedQuantity : ""}
+                      onChange={(event) =>
                         updateMaterialForm(workOrder.id, {
                           ...form,
-                          quantity: selectedItem ? Math.min(nextQuantity, selectedItem.stock) : nextQuantity,
-                        });
-                      }}
+                          quantity: Number(event.target.value) || 1,
+                        })
+                      }
                       aria-label="Cantidad"
-                    />
+                      disabled={!selectedItem}
+                    >
+                      <option value="">Cant.</option>
+                      {selectedItem
+                        ? Array.from({ length: availableQuantity }, (_, index) => index + 1).map((quantity) => (
+                            <option key={quantity} value={quantity}>
+                              {quantity}
+                            </option>
+                          ))
+                        : null}
+                    </select>
                     <button
                       type="button"
                       className="secondaryButton"
-                      disabled={loading || !form.itemId || quantityExceedsStock || (form.installAsDevice && !workOrder.siteId)}
+                      disabled={loading || !form.itemId || !selectedItem || availableQuantity < 1}
                       onClick={async () => {
-                        await onAddMaterial(workOrder.id, form.itemId, form.quantity, form.installAsDevice);
+                        await onAddMaterial(workOrder.id, form.itemId, selectedQuantity, installAsDevice);
                         updateMaterialForm(workOrder.id, { query: "", itemId: "", quantity: 1, open: false, installAsDevice: form.installAsDevice });
                       }}
                     >
@@ -3196,7 +3867,9 @@ function WorkOrdersView({
                   </div>
                   {selectedItem ? (
                     <p>
-                      Disponible: {selectedItem.stock} {selectedItem.unit}
+                      {selectedItem.managedStock && selectedItem.stock > 0
+                        ? `Disponible: ${selectedItem.stock} ${selectedItem.unit}`
+                        : "Este articulo todavia no tiene stock disponible. Primero cargale entrada en almacen."}
                     </p>
                   ) : null}
                   <label className="materialInstallToggle">
@@ -3204,13 +3877,22 @@ function WorkOrdersView({
                       type="checkbox"
                       checked={form.installAsDevice}
                       onChange={(event) => updateMaterialForm(workOrder.id, { ...form, installAsDevice: event.target.checked })}
-                      disabled={!workOrder.siteId}
                     />
                     Registrar como equipo instalado
                   </label>
-                  {!workOrder.siteId && form.installAsDevice ? <p>Selecciona un sitio en la orden para crear equipos instalados.</p> : null}
+                  {form.installAsDevice && !workOrderSiteId ? (
+                    <p>Sin sitio: se creara uno predeterminado con el nombre del cliente.</p>
+                  ) : !workOrderSiteId ? (
+                    <p>Sin sitio: si no marcas equipo instalado, solo descuenta stock.</p>
+                  ) : null}
                 </div>
                 <div className="workOrderActions">
+                  {workOrder.status === "COMPLETED" ? (
+                    <button type="button" className="secondaryButton" onClick={() => onOpenDocument(workOrder)}>
+                      <FileText size={16} />
+                      Orden/PDF
+                    </button>
+                  ) : null}
                   <button type="button" className="secondaryButton" onClick={() => onEditWorkOrder(workOrder)}>
                     <Edit3 size={16} />
                     Editar
@@ -3985,21 +4667,20 @@ function InventoryView({
                 </div>
               </label>
               <label>
-                Stock inicial
+                Cantidad en stock
                 <input
                   type="number"
                   min="0"
                   value={inventoryForm.stock}
-                  onChange={(event) => onFormChange({ ...inventoryForm, stock: Number(event.target.value) })}
-                />
-              </label>
-              <label>
-                Minimo
-                <input
-                  type="number"
-                  min="0"
-                  value={inventoryForm.minStock}
-                  onChange={(event) => onFormChange({ ...inventoryForm, minStock: Number(event.target.value) })}
+                  onChange={(event) =>
+                    onFormChange({
+                      ...inventoryForm,
+                      stock: Number(event.target.value),
+                      minStock: 0,
+                      managedStock: true,
+                    })
+                  }
+                  placeholder="Stock real disponible"
                 />
               </label>
               <label>
@@ -4182,7 +4863,7 @@ function InventoryView({
             </select>
             <select value={inventoryStockFilter} onChange={(event) => onStockFilterChange(event.target.value as "ALL" | "LOW")}>
               <option value="ALL">Todo stock</option>
-              <option value="LOW">Stock bajo</option>
+              <option value="LOW">Sin stock</option>
             </select>
             <button type="button" onClick={onRefresh}>
               <RefreshCw size={18} className={loading ? "spin" : ""} />
@@ -4193,12 +4874,14 @@ function InventoryView({
           <div className="workOrderGrid">
             {inventoryItems.map((item) => {
               const form = stockForm(item);
+              const installedQuantity = item.installedQuantity ?? 0;
+              const totalManagedQuantity = item.managedStock ? item.stock + installedQuantity : installedQuantity;
 
               return (
               <article key={item.id} className="workOrderCard">
                 <div className="workOrderCardHeader">
-                  <span className={`statusPill ${!item.managedStock ? "scheduled" : item.stock <= item.minStock ? "waiting_customer" : "completed"}`}>
-                    {!item.managedStock ? "Catalogo" : item.stock <= item.minStock ? "Stock bajo" : "Disponible"}
+                  <span className={`statusPill ${!item.managedStock ? "scheduled" : item.stock === 0 ? "waiting_customer" : "completed"}`}>
+                    {!item.managedStock ? "Catalogo" : item.stock === 0 ? "Sin stock" : "Disponible"}
                   </span>
                   <strong>{item.name}</strong>
                 </div>
@@ -4214,14 +4897,18 @@ function InventoryView({
                 </div>
                 <dl>
                   <div>
-                    <dt>Stock</dt>
+                    <dt>Disponible</dt>
                     <dd>
                       {item.managedStock ? `${item.stock} ${item.unit}` : "Sin ingresar"}
                     </dd>
                   </div>
                   <div>
-                    <dt>Minimo</dt>
-                    <dd>{item.minStock}</dd>
+                    <dt>Instalado</dt>
+                    <dd>{installedQuantity} {item.unit}</dd>
+                  </div>
+                  <div>
+                    <dt>Total real</dt>
+                    <dd>{totalManagedQuantity} {item.unit}</dd>
                   </div>
                   <div>
                     <dt>Categoria</dt>
@@ -4551,6 +5238,14 @@ function DevicesView({
   onSelectCustomer: (customerId: string) => void;
   onTypeChange: (value: DeviceType | "ALL") => void;
 }) {
+  const groupedDevices = groupInstalledDevices(devices);
+  const [selectedDeviceGroupKey, setSelectedDeviceGroupKey] = useState<string | null>(null);
+  const [deviceDetailQuery, setDeviceDetailQuery] = useState("");
+  const selectedDeviceGroup = groupedDevices.find((group) => group.key === selectedDeviceGroupKey) ?? null;
+  const selectedDeviceClients = selectedDeviceGroup
+    ? filterInstalledDeviceClientGroups(selectedDeviceGroup.clientGroups, deviceDetailQuery)
+    : [];
+
   return (
     <section className="devicesModule">
       <div className="summaryGrid customerStats" aria-label="Resumen de equipos">
@@ -4704,43 +5399,102 @@ function DevicesView({
           </div>
 
           <div className="deviceGrid">
-            {devices.map((device) => (
-              <article key={device.id} className="deviceCard">
+            {groupedDevices.map((deviceGroup) => (
+              <article key={deviceGroup.key} className="deviceCard">
                 <div className="deviceCardHeader">
                   <div className="deviceCardActions">
-                    <span className="statusPill prospect">{deviceTypeLabels[device.type]}</span>
-                    <button type="button" className="duplicateButton" onClick={() => onDuplicateDevice(device)}>
+                    <span className="statusPill prospect">{deviceTypeLabels[deviceGroup.type]}</span>
+                    <button type="button" className="duplicateButton" onClick={() => onDuplicateDevice(deviceGroup.sample)}>
                       <Copy size={15} />
                       Duplicar
                     </button>
+                    <button
+                      type="button"
+                      className="duplicateButton"
+                      onClick={() => {
+                        setSelectedDeviceGroupKey(deviceGroup.key);
+                        setDeviceDetailQuery("");
+                      }}
+                    >
+                      Consultar
+                    </button>
                   </div>
-                  <strong>{[device.brand, device.model].filter(Boolean).join(" ") || "Equipo sin marca"}</strong>
+                  <strong>{deviceGroup.model} x{deviceGroup.quantity}</strong>
                 </div>
                 <dl>
                   <div>
-                    <dt>Cliente</dt>
-                    <dd>{device.site.customer.name}</dd>
+                    <dt>Marca</dt>
+                    <dd>{deviceGroup.brand || "Sin marca"}</dd>
                   </div>
                   <div>
-                    <dt>Sitio</dt>
-                    <dd>{device.site.name}</dd>
+                    <dt>Cantidad</dt>
+                    <dd>{deviceGroup.quantity} instalados</dd>
                   </div>
                   <div>
-                    <dt>Serie</dt>
-                    <dd>{device.serial || "Sin serie"}</dd>
+                    <dt>Modelo</dt>
+                    <dd>{deviceGroup.model}</dd>
                   </div>
                   <div>
-                    <dt>IP / ID</dt>
-                    <dd>{device.ipAddress || "Sin dato"}</dd>
+                    <dt>Series</dt>
+                    <dd>{deviceGroup.serialCount ? `${deviceGroup.serialCount} registradas` : "Sin series"}</dd>
                   </div>
                 </dl>
-                <p>{device.notes || device.site.address}</p>
               </article>
             ))}
-            {!devices.length ? <p className="emptyPanel">No hay equipos para los filtros actuales.</p> : null}
+            {!groupedDevices.length ? <p className="emptyPanel">No hay equipos para los filtros actuales.</p> : null}
           </div>
         </section>
       </div>
+      {selectedDeviceGroup ? (
+        <div className="deviceDetailOverlay">
+          <section className="deviceDetailModal" aria-label="Detalle de equipos instalados">
+            <header className="deviceDetailHeader">
+              <div>
+                <span>{deviceTypeLabels[selectedDeviceGroup.type]}</span>
+                <h2>{selectedDeviceGroup.model}</h2>
+                <p>
+                  {[selectedDeviceGroup.brand || "Sin marca", `${selectedDeviceGroup.quantity} equipos instalados`]
+                    .filter(Boolean)
+                    .join(" - ")}
+                </p>
+              </div>
+              <button type="button" className="iconButton" onClick={() => setSelectedDeviceGroupKey(null)} aria-label="Cerrar detalle">
+                <X size={18} />
+              </button>
+            </header>
+            <label className="searchBox deviceDetailSearch">
+              <Search size={18} />
+              <input
+                value={deviceDetailQuery}
+                onChange={(event) => setDeviceDetailQuery(event.target.value)}
+                placeholder="Buscar cliente, sitio u orden dentro de este modelo"
+              />
+            </label>
+            <div className="deviceModelDetail">
+              {selectedDeviceClients.map((client) => (
+                <section key={client.customerId}>
+                  <header>
+                    <strong>{client.customerName}</strong>
+                    <span>{client.quantity} equipos</span>
+                  </header>
+                  <div>
+                    {client.orders.map((order) => (
+                      <article key={order.key}>
+                        <span>{order.title}</span>
+                        <strong>{order.quantity} u</strong>
+                        <small>
+                          {[order.siteNames.join(", "), order.date ? formatDateTime(order.date) : ""].filter(Boolean).join(" - ")}
+                        </small>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))}
+              {!selectedDeviceClients.length ? <p className="emptyPanel">No hay coincidencias en este modelo.</p> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -4753,6 +5507,7 @@ function cleanCustomerPayload(form: CustomerPayload): CustomerPayload {
     email: form.email?.trim() || undefined,
     phone: form.phone?.trim() || undefined,
     address: form.address?.trim() || undefined,
+    logoUrl: form.logoUrl?.trim() || undefined,
     status: form.status,
     notes: form.notes?.trim() || undefined,
   };
@@ -4829,7 +5584,7 @@ function cleanInventoryPayload(form: InventoryItemPayload): InventoryItemPayload
     category: form.category || undefined,
     unit: form.unit?.trim() || "u",
     stock: Number(form.stock) || 0,
-    minStock: Number(form.minStock) || 0,
+    minStock: 0,
     managedStock: form.managedStock ?? true,
     location: form.location?.trim() || undefined,
     supplier: form.supplier?.trim() || undefined,
@@ -5024,6 +5779,332 @@ function formatWhatsAppTime(value?: number) {
     dateStyle: "short",
     timeStyle: "short",
   });
+}
+
+type GroupedWorkOrderMaterial = {
+  key: string;
+  ids: string[];
+  name: string;
+  sku: string;
+  unit: string;
+  quantity: number;
+  deviceDetails: string[];
+};
+
+type GroupedInstalledDevice = {
+  key: string;
+  sample: InstalledDevice;
+  type: DeviceType;
+  brand: string;
+  model: string;
+  quantity: number;
+  customers: string;
+  sites: string;
+  serialCount: number;
+  notes: string;
+  clientGroups: GroupedInstalledDeviceClient[];
+};
+
+type GroupedInstalledDeviceClient = {
+  customerId: string;
+  customerName: string;
+  quantity: number;
+  orders: GroupedInstalledDeviceOrder[];
+};
+
+type GroupedInstalledDeviceOrder = {
+  key: string;
+  title: string;
+  quantity: number;
+  date?: string | null;
+  siteNames: string[];
+};
+
+function groupInstalledDevices(devices: InstalledDevice[]): GroupedInstalledDevice[] {
+  const groups = new Map<
+    string,
+    GroupedInstalledDevice & {
+      customerNames: Set<string>;
+      siteNames: Set<string>;
+      serials: Set<string>;
+      notesList: string[];
+      clients: Map<
+        string,
+        {
+          customerId: string;
+          customerName: string;
+          quantity: number;
+          orders: Map<
+            string,
+            {
+              key: string;
+              title: string;
+              quantity: number;
+              date?: string | null;
+              siteNames: Set<string>;
+            }
+          >;
+        }
+      >;
+    }
+  >();
+
+  for (const device of devices) {
+    const brand = device.brand?.trim() ?? "";
+    const model = device.model?.trim() || "Equipo sin modelo";
+    const key = [device.type, brand.toLowerCase(), model.toLowerCase()].join("|");
+    const order = device.inventoryMovements?.[0]?.workOrder;
+    const orderKey = order?.id ?? `sin-orden-${device.site.customer.id}`;
+    const orderTitle = order?.title ?? "Sin orden de trabajo relacionada";
+    const orderDate = order?.completedAt ?? order?.scheduledAt ?? device.installedAt ?? device.createdAt;
+    const current = groups.get(key);
+
+    if (current) {
+      current.quantity += 1;
+      current.customerNames.add(device.site.customer.name);
+      current.siteNames.add(device.site.name);
+      if (device.serial?.trim()) {
+        current.serials.add(device.serial.trim());
+      }
+      if (device.notes?.trim()) {
+        current.notesList.push(device.notes.trim());
+      }
+      current.customers = summarizeNames(current.customerNames);
+      current.sites = summarizeNames(current.siteNames);
+      current.serialCount = current.serials.size;
+      current.notes = current.notesList[0] ?? "";
+      addDeviceToClientGroup(current.clients, device, orderKey, orderTitle, orderDate);
+      current.clientGroups = buildInstalledDeviceClientGroups(current.clients);
+      continue;
+    }
+
+    const customerNames = new Set([device.site.customer.name]);
+    const siteNames = new Set([device.site.name]);
+    const serials = new Set<string>();
+    if (device.serial?.trim()) {
+      serials.add(device.serial.trim());
+    }
+    const notesList = device.notes?.trim() ? [device.notes.trim()] : [];
+    const clients = addDeviceToClientGroup(new Map(), device, orderKey, orderTitle, orderDate);
+
+    groups.set(key, {
+      key,
+      sample: device,
+      type: device.type,
+      brand,
+      model,
+      quantity: 1,
+      customers: summarizeNames(customerNames),
+      sites: summarizeNames(siteNames),
+      serialCount: serials.size,
+      notes: notesList[0] ?? "",
+      clientGroups: buildInstalledDeviceClientGroups(clients),
+      customerNames,
+      siteNames,
+      serials,
+      notesList,
+      clients,
+    });
+  }
+
+  return Array.from(groups.values()).map(({ customerNames, siteNames, serials, notesList, clients, ...group }) => group);
+}
+
+function summarizeNames(names: Set<string>) {
+  const values = Array.from(names).filter(Boolean);
+  if (!values.length) {
+    return "-";
+  }
+
+  if (values.length <= 2) {
+    return values.join(", ");
+  }
+
+  return `${values.slice(0, 2).join(", ")} +${values.length - 2}`;
+}
+
+function filterInstalledDeviceClientGroups(groups: GroupedInstalledDeviceClient[], query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return groups;
+  }
+
+  return groups
+    .map((client) => {
+      const clientMatches = client.customerName.toLowerCase().includes(normalizedQuery);
+      const orders = client.orders.filter((order) => {
+        const searchable = [order.title, ...order.siteNames].join(" ").toLowerCase();
+        return clientMatches || searchable.includes(normalizedQuery);
+      });
+
+      return orders.length ? { ...client, orders } : null;
+    })
+    .filter((client): client is GroupedInstalledDeviceClient => Boolean(client));
+}
+
+function addDeviceToClientGroup(
+  clients: Map<
+    string,
+    {
+      customerId: string;
+      customerName: string;
+      quantity: number;
+      orders: Map<
+        string,
+        {
+          key: string;
+          title: string;
+          quantity: number;
+          date?: string | null;
+          siteNames: Set<string>;
+        }
+      >;
+    }
+  >,
+  device: InstalledDevice,
+  orderKey: string,
+  orderTitle: string,
+  orderDate?: string | null,
+) {
+  const customer = device.site.customer;
+  const client = clients.get(customer.id) ?? {
+    customerId: customer.id,
+    customerName: customer.name,
+    quantity: 0,
+    orders: new Map(),
+  };
+  const order = client.orders.get(orderKey) ?? {
+    key: orderKey,
+    title: orderTitle,
+    quantity: 0,
+    date: orderDate,
+    siteNames: new Set<string>(),
+  };
+
+  client.quantity += 1;
+  order.quantity += 1;
+  order.siteNames.add(device.site.name);
+  client.orders.set(orderKey, order);
+  clients.set(customer.id, client);
+
+  return clients;
+}
+
+function buildInstalledDeviceClientGroups(
+  clients: Map<
+    string,
+    {
+      customerId: string;
+      customerName: string;
+      quantity: number;
+      orders: Map<
+        string,
+        {
+          key: string;
+          title: string;
+          quantity: number;
+          date?: string | null;
+          siteNames: Set<string>;
+        }
+      >;
+    }
+  >,
+): GroupedInstalledDeviceClient[] {
+  return Array.from(clients.values()).map((client) => ({
+    customerId: client.customerId,
+    customerName: client.customerName,
+    quantity: client.quantity,
+    orders: Array.from(client.orders.values()).map((order) => ({
+      key: order.key,
+      title: order.title,
+      quantity: order.quantity,
+      date: order.date,
+      siteNames: Array.from(order.siteNames),
+    })),
+  }));
+}
+
+function groupWorkOrderMaterials(movements: InventoryMovement[]): GroupedWorkOrderMaterial[] {
+  const groups = new Map<string, GroupedWorkOrderMaterial>();
+
+  for (const movement of movements) {
+    const name = movement.item?.name ?? "Articulo";
+    const sku = movement.item?.sku ?? "";
+    const unit = movement.item?.unit ?? "";
+    const key = movement.itemId || `${name}-${sku}-${unit}`;
+    const detail = [
+      movement.installedDevice?.brand,
+      movement.installedDevice?.model,
+      movement.installedDevice?.serial ? `Serie ${movement.installedDevice.serial}` : "",
+      movement.installedDevice?.ipAddress ? `IP ${movement.installedDevice.ipAddress}` : "",
+    ]
+      .filter(Boolean)
+      .join(" - ");
+
+    const current = groups.get(key);
+    if (current) {
+      current.ids.push(movement.id);
+      current.quantity += movement.quantity;
+      if (detail && !current.deviceDetails.includes(detail)) {
+        current.deviceDetails.push(detail);
+      }
+      continue;
+    }
+
+    groups.set(key, {
+      key,
+      ids: [movement.id],
+      name,
+      sku,
+      unit,
+      quantity: movement.quantity,
+      deviceDetails: detail ? [detail] : [],
+    });
+  }
+
+  return Array.from(groups.values());
+}
+
+function toWhatsAppPhone(value?: string | null) {
+  const digits = (value ?? "").replace(/\D/g, "");
+  if (!digits) {
+    return "";
+  }
+
+  if (digits.startsWith("598")) {
+    return digits;
+  }
+
+  if (digits.startsWith("0")) {
+    return `598${digits.slice(1)}`;
+  }
+
+  return digits.length <= 9 ? `598${digits}` : digits;
+}
+
+function buildWorkOrderShareText(workOrder: WorkOrder) {
+  const documentNumber = workOrder.id.slice(0, 8).toUpperCase();
+  const site = workOrder.site ? `${workOrder.site.name} - ${workOrder.site.address}` : "Sin sitio especifico";
+  const groupedMaterials = groupWorkOrderMaterials(workOrder.inventoryMovements ?? []);
+  const materials = groupedMaterials.length
+    ? groupedMaterials
+        .map((movement) => `- ${movement.name} x${movement.quantity} ${movement.unit}`)
+        .join("\n")
+    : "- Sin materiales cargados";
+
+  return [
+    `Orden de trabajo #${documentNumber}`,
+    `Cliente: ${workOrder.customer.name}`,
+    `Trabajo: ${workOrder.title}`,
+    `Tipo: ${deviceTypeLabels[workOrder.type]}`,
+    `Sitio: ${site}`,
+    `Finalizado: ${formatDateTime(workOrder.completedAt ?? workOrder.updatedAt)}`,
+    "",
+    "Materiales/equipos:",
+    materials,
+    "",
+    "Security Solutions",
+  ].join("\n");
 }
 
 function formatMailDate(value?: string) {

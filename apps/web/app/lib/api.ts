@@ -41,6 +41,7 @@ export type DashboardSummary = {
   overduePayments?: number;
   pendingPaymentAmount?: number;
   installedDevices: number;
+  installedDevicesThisMonth?: number;
   totalVehicles?: number;
   activeVehicles: number;
   inactiveVehicles?: number;
@@ -49,6 +50,8 @@ export type DashboardSummary = {
     lowStock: number;
     outOfStock: number;
     movements: number;
+    installed?: number;
+    availableStock?: number;
   };
   integrations?: {
     gmail: {
@@ -81,12 +84,14 @@ export type CustomerStatus = "ACTIVE" | "PROSPECT" | "INACTIVE";
 
 export type Customer = {
   id: string;
+  reference: string;
   name: string;
   legalName?: string | null;
   taxId?: string | null;
   email?: string | null;
   phone?: string | null;
   address?: string | null;
+  logoUrl?: string | null;
   status: CustomerStatus;
   notes?: string | null;
   createdAt: string;
@@ -106,6 +111,7 @@ export type CustomerPayload = {
   email?: string;
   phone?: string;
   address?: string;
+  logoUrl?: string;
   status?: CustomerStatus;
   notes?: string;
 };
@@ -160,6 +166,18 @@ export type InstalledDevice = {
       name: string;
     };
   };
+  inventoryMovements?: Array<{
+    id: string;
+    workOrderId?: string | null;
+    createdAt: string;
+    workOrder?: {
+      id: string;
+      title: string;
+      status: WorkOrderStatus;
+      scheduledAt?: string | null;
+      completedAt?: string | null;
+    } | null;
+  }>;
 };
 
 export type DevicePayload = {
@@ -195,6 +213,7 @@ export type WorkOrder = {
   customer: {
     id: string;
     name: string;
+    email?: string | null;
     phone?: string | null;
   };
   site?: {
@@ -214,6 +233,33 @@ export type WorkOrderPayload = {
   scheduledAt?: string;
   completedAt?: string;
   notes?: string;
+};
+
+export type CustomerDocument = {
+  id: string;
+  customerId?: string;
+  name: string;
+  mimeType?: string | null;
+  type?: string | null;
+  size?: number | null;
+  dataUrl?: string | null;
+  url?: string | null;
+  createdAt: string;
+};
+
+export type CustomerDocumentPayload = {
+  name: string;
+  mimeType?: string;
+  size?: number;
+  dataUrl: string;
+};
+
+export type CustomerProfile = {
+  customer: Customer;
+  sites: CustomerSite[];
+  workOrders: WorkOrder[];
+  equipment: InstalledDevice[];
+  documents: CustomerDocument[];
 };
 
 export type Quote = {
@@ -318,6 +364,7 @@ export type InventoryMovement = {
     brand?: string | null;
     model?: string | null;
     serial?: string | null;
+    ipAddress?: string | null;
   } | null;
 };
 
@@ -328,6 +375,7 @@ export type InventoryItem = {
   category?: DeviceType | null;
   unit: string;
   stock: number;
+  installedQuantity?: number;
   minStock: number;
   managedStock: boolean;
   location?: string | null;

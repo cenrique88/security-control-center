@@ -14,6 +14,12 @@ export class DashboardService {
   ) {}
 
   async summary() {
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const nextMonthStart = new Date(monthStart);
+    nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
+
     const [
       totalCustomers,
       activeCustomers,
@@ -34,6 +40,7 @@ export class DashboardService {
       overduePayments,
       pendingPaymentTotals,
       installedDevices,
+      installedDevicesThisMonth,
       totalVehicles,
       activeVehicles,
       inactiveVehicles,
@@ -80,7 +87,25 @@ export class DashboardService {
           paidAt: null,
         },
       }),
-      this.prisma.installedDevice.count(),
+      this.prisma.inventoryMovement.aggregate({
+        where: {
+          type: "OUT",
+          installedDeviceId: { not: null },
+        },
+        _sum: {
+          quantity: true,
+        },
+      }),
+      this.prisma.inventoryMovement.aggregate({
+        where: {
+          type: "OUT",
+          installedDeviceId: { not: null },
+          createdAt: { gte: monthStart, lt: nextMonthStart },
+        },
+        _sum: {
+          quantity: true,
+        },
+      }),
       this.prisma.vehicle.count(),
       this.prisma.vehicle.count({ where: { active: true } }),
       this.prisma.vehicle.count({ where: { active: false } }),
@@ -103,6 +128,8 @@ export class DashboardService {
       important: 0,
       activeChats: 0,
     });
+    const installedDevicesTotal = installedDevices._sum.quantity ?? 0;
+    const installedDevicesThisMonthTotal = installedDevicesThisMonth._sum.quantity ?? 0;
     const quotePipeline = Number(quoteTotals._sum.total ?? 0);
     const pendingPaymentAmount = Number(pendingPaymentTotals._sum.amount ?? 0);
 
@@ -126,7 +153,8 @@ export class DashboardService {
       pendingPayments,
       overduePayments,
       pendingPaymentAmount,
-      installedDevices,
+      installedDevices: installedDevicesTotal,
+      installedDevicesThisMonth: installedDevicesThisMonthTotal,
       totalVehicles,
       activeVehicles,
       inactiveVehicles,
@@ -144,9 +172,10 @@ export class DashboardService {
         { label: "Pipeline presupuestado", value: quotePipeline, detail: "Importe pendiente de aprobacion" },
         { label: "Cobros pendientes", value: pendingPayments, detail: `${overduePayments} vencidos` },
         { label: "Monto a cobrar", value: pendingPaymentAmount, detail: "Suma de cobros sin pagar" },
-        { label: "Equipos instalados", value: installedDevices, detail: "Dispositivos cargados en sitios" },
+        { label: "Equipos por mes", value: installedDevicesThisMonthTotal, detail: `${installedDevicesTotal} equipos instalados en total` },
         { label: "Vehiculos activos", value: activeVehicles, detail: `${inactiveVehicles} inactivos` },
-        { label: "Articulos en almacen", value: inventory.totalItems, detail: `${inventory.lowStock} con stock bajo` },
+        { label: "Stock disponible", value: inventory.availableStock, detail: `${inventory.installed} unidades instaladas desde almacen` },
+        { label: "Articulos en almacen", value: inventory.totalItems, detail: `${inventory.outOfStock} sin stock` },
         { label: "Sin stock", value: inventory.outOfStock, detail: "Articulos que necesitan reposicion" },
         {
           label: "Gmail no leidos",

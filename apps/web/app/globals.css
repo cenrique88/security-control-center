@@ -322,6 +322,25 @@ button:disabled {
   gap: 8px;
 }
 
+.topbarRight {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.operatorName {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(9, 18, 28, 0.78);
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .notificationsMenu {
   position: relative;
 }
@@ -475,32 +494,6 @@ button:disabled {
   font-size: 14px;
 }
 
-.operatorStrip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 18px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #eef3f6;
-}
-
-.operatorStrip span,
-.operatorStrip strong {
-  display: block;
-}
-
-.operatorStrip span {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.operatorStrip strong {
-  margin-top: 4px;
-  overflow-wrap: anywhere;
-}
-
 .spin {
   animation: spin 0.8s linear infinite;
 }
@@ -539,6 +532,15 @@ button:disabled {
   display: block;
   margin-top: 10px;
   font-size: 30px;
+}
+
+.summaryGrid small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.3;
 }
 
 .monitor {
@@ -700,6 +702,37 @@ button:disabled {
   white-space: nowrap;
 }
 
+.logoPickerRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.hiddenFileInput {
+  display: none;
+}
+
+.customerLogoPreview {
+  display: grid;
+  place-items: center;
+  width: 120px;
+  min-height: 72px;
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(3, 10, 18, 0.3);
+}
+
+.customerLogoPreview img {
+  display: block;
+  max-width: 100%;
+  max-height: 88px;
+  object-fit: contain;
+  padding: 8px;
+}
+
 .formGrid input,
 .formGrid select,
 .formGrid textarea,
@@ -798,15 +831,26 @@ button:disabled {
 
 .sitesPanel {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   grid-column: 1 / -1;
-  padding: 18px;
+  padding: 14px;
+}
+
+.sitesPanelBody {
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
 }
 
 .siteForm {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
 }
 
 .siteForm label {
@@ -817,8 +861,7 @@ button:disabled {
   font-weight: 800;
 }
 
-.siteForm input,
-.siteForm textarea {
+.siteForm input {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
@@ -829,14 +872,8 @@ button:disabled {
 }
 
 .siteForm input {
-  height: 40px;
+  height: 38px;
   padding: 0 11px;
-}
-
-.siteForm textarea {
-  min-height: 72px;
-  resize: vertical;
-  padding: 10px 11px;
 }
 
 .devicesLayout {
@@ -1015,6 +1052,399 @@ button:disabled {
   line-height: 1.45;
 }
 
+.deviceModelDetail {
+  display: grid;
+  gap: 10px;
+}
+
+.deviceModelDetail section {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(7, 17, 27, 0.03);
+}
+
+.deviceModelDetail header,
+.deviceModelDetail article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.deviceModelDetail header span {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.deviceModelDetail section > div {
+  display: grid;
+  gap: 6px;
+}
+
+.deviceModelDetail article {
+  min-height: 34px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: rgba(5, 13, 24, 0.05);
+}
+
+.deviceModelDetail article span,
+.deviceModelDetail article small {
+  overflow-wrap: anywhere;
+}
+
+.deviceModelDetail article span {
+  font-weight: 850;
+}
+
+.deviceModelDetail article strong {
+  color: var(--text);
+}
+
+.deviceModelDetail article small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.deviceDetailOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 6, 12, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.customerProfileOverlay {
+  align-items: start;
+  overflow-y: auto;
+}
+
+.deviceDetailModal {
+  display: grid;
+  gap: 14px;
+  width: min(860px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  padding: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(126, 197, 210, 0.24);
+  border-radius: 8px;
+  background: rgba(8, 18, 29, 0.98);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.deviceDetailHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(126, 197, 210, 0.16);
+}
+
+.deviceDetailHeader span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.deviceDetailHeader h2,
+.deviceDetailHeader p {
+  margin: 0;
+}
+
+.deviceDetailHeader h2 {
+  margin-top: 4px;
+  color: var(--text);
+}
+
+.deviceDetailHeader p {
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.deviceDetailSearch {
+  width: 100%;
+}
+
+.deviceDetailModal .deviceModelDetail {
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.deviceDetailModal .deviceModelDetail section {
+  background: rgba(13, 29, 44, 0.82);
+}
+
+.deviceDetailModal .deviceModelDetail article {
+  background: rgba(3, 10, 18, 0.5);
+}
+
+.customerProfileModal {
+  display: grid;
+  gap: 14px;
+  width: min(1080px, 100%);
+  max-height: none;
+  padding: 18px;
+  overflow: visible;
+  border: 1px solid rgba(126, 197, 210, 0.24);
+  border-radius: 8px;
+  background: rgba(8, 18, 29, 0.98);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.customerProfileHeaderSide {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.customerProfileLogoBox {
+  display: grid;
+  place-items: center;
+  width: 150px;
+  min-height: 92px;
+  overflow: hidden;
+  border: 1px solid rgba(126, 197, 210, 0.22);
+  border-radius: 8px;
+  background: rgba(3, 10, 18, 0.42);
+}
+
+.customerProfileLogoBox img {
+  display: block;
+  width: 100%;
+  max-height: 112px;
+  object-fit: contain;
+  padding: 10px;
+}
+
+.customerProfileLogoBox div {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  padding: 12px;
+}
+
+.customerProfileLogoBox strong {
+  color: var(--text);
+  font-size: 28px;
+  letter-spacing: 0;
+}
+
+.customerProfileLogoBox span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.customerProfileBody {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  overflow: visible;
+}
+
+.customerProfileSection {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 13px;
+  border: 1px solid rgba(126, 197, 210, 0.16);
+  border-radius: 8px;
+  background: rgba(13, 29, 44, 0.82);
+}
+
+.wideProfileSection {
+  grid-column: 1 / -1;
+}
+
+.customerProfileSection h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.customerProfileSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.customerProfileSectionHeader .secondaryButton {
+  width: auto;
+}
+
+.customerProfileGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.customerProfileGrid dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.customerProfileGrid dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.customerProfileList {
+  display: grid;
+  gap: 8px;
+}
+
+.customerProfileList article {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: rgba(3, 10, 18, 0.5);
+}
+
+.customerProfileOrderButton {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(3, 10, 18, 0.5);
+  color: inherit;
+  text-align: left;
+}
+
+.customerProfileDocumentButton {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(3, 10, 18, 0.5);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.customerProfileOrderButton:hover,
+.customerProfileOrderButton:focus-visible,
+.customerProfileDocumentButton:hover,
+.customerProfileDocumentButton:focus-visible {
+  border-color: rgba(67, 211, 198, 0.55);
+  outline: none;
+}
+
+.customerProfileList strong,
+.customerProfileList span,
+.customerProfileList small,
+.customerProfileList em,
+.customerProfileOrderButton strong,
+.customerProfileOrderButton span,
+.customerProfileOrderButton small,
+.customerProfileOrderButton em,
+.customerProfileDocumentButton strong,
+.customerProfileDocumentButton span,
+.customerProfileDocumentButton small {
+  overflow-wrap: anywhere;
+}
+
+.customerProfileList span,
+.customerProfileList small,
+.customerProfileOrderButton span,
+.customerProfileOrderButton small,
+.customerProfileDocumentButton span,
+.customerProfileDocumentButton small {
+  color: var(--muted);
+}
+
+.customerProfileList small,
+.customerProfileOrderButton small,
+.customerProfileDocumentButton small {
+  font-size: 12px;
+}
+
+.customerProfileList em,
+.customerProfileOrderButton em {
+  color: var(--accent);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.customerProfileTableWrap {
+  overflow-x: auto;
+  border: 1px solid rgba(126, 197, 210, 0.16);
+  border-radius: 8px;
+}
+
+.customerProfileOrdersTable {
+  width: 100%;
+  min-width: 840px;
+  border-collapse: collapse;
+}
+
+.customerProfileOrdersTable th,
+.customerProfileOrdersTable td {
+  padding: 11px 12px;
+  border-bottom: 1px solid rgba(126, 197, 210, 0.12);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.customerProfileOrdersTable th {
+  background: rgba(14, 31, 47, 0.9);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.customerProfileOrdersTable tbody tr {
+  cursor: pointer;
+  background: rgba(3, 10, 18, 0.36);
+}
+
+.customerProfileOrdersTable tbody tr:hover {
+  background: rgba(15, 118, 110, 0.18);
+}
+
+.customerProfileOrdersTable td strong,
+.customerProfileOrdersTable td span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.customerProfileOrdersTable td span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.customerProfileOrdersTable td .statusPill {
+  display: inline-flex;
+  margin-top: 0;
+}
+
+.focusedWorkOrderCard {
+  border-color: rgba(67, 211, 198, 0.78);
+  box-shadow: 0 0 0 2px rgba(67, 211, 198, 0.16);
+}
+
 .quoteCard h3,
 .paymentCard h3 {
   margin: 0;
@@ -1105,7 +1535,8 @@ button:disabled {
   align-items: start;
 }
 
-.workOrderMaterialForm input {
+.workOrderMaterialForm input,
+.workOrderMaterialForm select {
   width: 100%;
   min-width: 0;
   height: 40px;
@@ -1115,6 +1546,261 @@ button:disabled {
   background: #ffffff;
   color: var(--ink);
   font: inherit;
+}
+
+.documentOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 18px;
+  overflow-y: auto;
+  padding: 20px;
+  background: rgba(2, 8, 14, 0.82);
+  backdrop-filter: blur(10px);
+}
+
+.documentToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-solid);
+  color: var(--ink);
+}
+
+.documentToolbar strong,
+.documentToolbar span {
+  display: block;
+}
+
+.documentToolbar span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.documentToolbarActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.workOrderDocumentSheet {
+  width: min(100%, 980px);
+  margin: 0 auto 28px;
+  padding: 34px;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #17202a;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.35);
+}
+
+.documentHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 22px;
+  border-bottom: 2px solid #0f766e;
+}
+
+.documentBrand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.documentBrand img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+}
+
+.documentBrand strong,
+.documentBrand span,
+.documentNumberBox span,
+.documentNumberBox strong,
+.documentNumberBox small {
+  display: block;
+}
+
+.documentBrand strong {
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.documentBrand span,
+.documentNumberBox span,
+.documentNumberBox small,
+.documentInfoGrid span,
+.documentFooter {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.documentNumberBox {
+  min-width: 190px;
+  padding: 14px;
+  border: 1px solid #d9e1e8;
+  border-radius: 8px;
+  text-align: right;
+}
+
+.documentNumberBox strong {
+  margin: 6px 0;
+  color: #0f766e;
+  font-size: 24px;
+}
+
+.documentTitleBlock {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px 0 18px;
+}
+
+.documentTitleBlock span {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.documentTitleBlock h1 {
+  margin: 6px 0 0;
+  color: #0f172a;
+  font-size: 30px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.documentTitleBlock em {
+  min-width: 120px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  text-align: center;
+}
+
+.documentInfoGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.documentInfoGrid article {
+  min-height: 118px;
+  padding: 14px;
+  border: 1px solid #d9e1e8;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.documentInfoGrid strong {
+  display: block;
+  margin: 8px 0 6px;
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.documentInfoGrid p,
+.documentSection p {
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.documentSection {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.documentSection h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.documentTableWrap {
+  overflow-x: auto;
+  border: 1px solid #d9e1e8;
+  border-radius: 8px;
+}
+
+.documentTable {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+
+.documentTable th,
+.documentTable td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #17202a;
+  text-align: left;
+  vertical-align: top;
+}
+
+.documentTable th {
+  background: #eef3f6;
+  color: #475569;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.documentTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.documentSignatures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 54px;
+}
+
+.documentSignatures div {
+  display: grid;
+  align-items: end;
+  min-height: 78px;
+  border-bottom: 1px solid #94a3b8;
+}
+
+.documentSignatures span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.documentFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 26px;
+  padding-top: 14px;
+  border-top: 1px solid #d9e1e8;
 }
 
 .materialInstallToggle {
@@ -1732,15 +2418,17 @@ button:disabled {
 
 .siteList {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 248px;
+  overflow-y: auto;
 }
 
 .siteCard {
   display: grid;
-  gap: 10px;
-  min-height: 132px;
-  padding: 14px;
+  gap: 8px;
+  min-height: 104px;
+  padding: 11px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8fafc;
@@ -1760,7 +2448,7 @@ button:disabled {
 
 .siteCard p {
   margin: 0;
-  line-height: 1.45;
+  line-height: 1.35;
 }
 
 .siteMeta {
@@ -1844,6 +2532,21 @@ button:disabled {
   vertical-align: middle;
 }
 
+.customerTable th.centerColumn,
+.customerTable td.centerColumn {
+  text-align: center;
+}
+
+.customerTable td.centerColumn {
+  justify-items: center;
+}
+
+.customerTable .countCell {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 900;
+}
+
 .customerTable th {
   background: #f8fafc;
   color: var(--muted);
@@ -1866,7 +2569,9 @@ button:disabled {
 .statusPill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 26px;
+  min-width: 92px;
   padding: 0 9px;
   border-radius: 999px;
   font-size: 12px;
@@ -1978,8 +2683,7 @@ button:disabled {
   }
 
   .summaryGrid,
-  .monitorGrid,
-  .operatorStrip {
+  .monitorGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2053,6 +2757,10 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .sitesPanelBody {
+    grid-template-columns: 1fr;
+  }
+
   .deviceGrid {
     grid-template-columns: 1fr;
   }
@@ -2080,6 +2788,10 @@ button:disabled {
   .directoryToolbar button {
     grid-column: 1 / -1;
   }
+
+  .customerProfileBody {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 620px) {
@@ -2097,6 +2809,12 @@ button:disabled {
     flex-direction: column;
   }
 
+  .topbarRight {
+    align-items: start;
+    justify-items: start;
+    width: 100%;
+  }
+
   .topbarActions {
     justify-content: flex-start;
     width: 100%;
@@ -2104,7 +2822,6 @@ button:disabled {
 
   .summaryGrid,
   .monitorGrid,
-  .operatorStrip,
   .formGrid,
   .directoryToolbar,
   .siteForm,
@@ -2208,6 +2925,33 @@ button:disabled {
     overflow: visible;
   }
 
+  .deviceDetailOverlay {
+    align-items: stretch;
+    padding: 10px;
+  }
+
+  .customerProfileModal {
+    max-height: none;
+    padding: 12px;
+  }
+
+  .deviceDetailHeader {
+    grid-template-columns: 1fr;
+  }
+
+  .customerProfileHeaderSide {
+    justify-items: start;
+  }
+
+  .customerProfileLogoBox {
+    width: 120px;
+    min-height: 72px;
+  }
+
+  .customerProfileGrid {
+    grid-template-columns: 1fr;
+  }
+
   .customerTable {
     min-width: 0;
   }
@@ -2239,6 +2983,11 @@ button:disabled {
     gap: 10px;
     padding: 8px 0;
     border-bottom: 0;
+  }
+
+  .customerTable td.centerColumn {
+    text-align: left;
+    justify-items: start;
   }
 
   .customerTable td::before {
@@ -2318,7 +3067,6 @@ body {
 .sectionHeader h2,
 .authIntro h1,
 .summaryGrid strong,
-.operatorStrip strong,
 .formGrid label,
 .customerTable td strong,
 .workOrderCardHeader strong,
@@ -2336,7 +3084,6 @@ body {
 }
 
 .topbar button,
-.operatorStrip,
 .summaryGrid article,
 .monitorCard,
 .customerForm,
@@ -2390,6 +3137,7 @@ body {
 .formGrid input,
 .formGrid select,
 .formGrid textarea,
+.siteForm input,
 .searchBox input,
 .directoryToolbar select,
 .agendaControls input,
@@ -2402,6 +3150,7 @@ body {
 
 .formGrid input::placeholder,
 .formGrid textarea::placeholder,
+.siteForm input::placeholder,
 .searchBox input::placeholder,
 .authForm input::placeholder {
   color: rgba(159, 178, 199, 0.74);
@@ -2410,6 +3159,7 @@ body {
 .formGrid input:focus,
 .formGrid select:focus,
 .formGrid textarea:focus,
+.siteForm input:focus,
 .searchBox input:focus,
 .directoryToolbar select:focus,
 .agendaControls input:focus,
@@ -2437,6 +3187,7 @@ body {
 }
 
 .workOrderMaterialForm input,
+.workOrderMaterialForm select,
 .stockQuickActions input {
   border-color: var(--line);
   background: rgba(2, 9, 16, 0.74);
@@ -2563,4 +3314,91 @@ body {
 
 .emptyPanel {
   color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .documentOverlay {
+    padding: 12px;
+  }
+
+  .documentToolbar,
+  .documentHeader,
+  .documentTitleBlock,
+  .documentFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .documentToolbarActions {
+    justify-content: stretch;
+  }
+
+  .documentToolbarActions .secondaryButton,
+  .documentToolbarActions .iconButton {
+    flex: 1 1 auto;
+  }
+
+  .workOrderDocumentSheet {
+    padding: 20px;
+  }
+
+  .documentNumberBox {
+    text-align: left;
+  }
+
+  .documentInfoGrid,
+  .documentSignatures {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  @page {
+    margin: 12mm;
+    size: A4;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .printableWorkOrder,
+  .printableWorkOrder * {
+    visibility: visible !important;
+  }
+
+  .documentOverlay {
+    position: static;
+    display: block;
+    padding: 0;
+    overflow: visible;
+    background: #ffffff !important;
+    backdrop-filter: none;
+  }
+
+  .documentToolbar {
+    display: none !important;
+  }
+
+  .printableWorkOrder {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .documentTableWrap {
+    overflow: visible;
+  }
+
+  .documentTable {
+    min-width: 0;
+  }
 }
