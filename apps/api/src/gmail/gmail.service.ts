@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { SendGmailMessageDto } from "./dto/send-gmail-message.dto";
 
 type GmailMessageList = {
   messages?: Array<{ id: string; threadId: string }>;
@@ -90,6 +91,40 @@ export class GmailService {
     };
   }
 
+  async send(dto: SendGmailMessageDto) {
+    const accessToken = await this.getAccessToken();
+    const raw = this.toBase64Url(
+      [
+        `To: ${dto.to}`,
+        `Subject: ${this.encodeHeader(dto.subject)}`,
+        "MIME-Version: 1.0",
+        "Content-Type: text/plain; charset=UTF-8",
+        "Content-Transfer-Encoding: 8bit",
+        "",
+        dto.message,
+      ].join("\r\n"),
+    );
+
+    const result = await this.gmailRequest<{ id: string; threadId?: string }>(
+      accessToken,
+      "/gmail/v1/users/me/messages/send",
+      {
+        method: "POST",
+        body: { raw },
+      },
+    );
+
+    return {
+      provider: "Gmail",
+      sent: true,
+      to: dto.to,
+      subject: dto.subject,
+      sentAt: new Date().toISOString(),
+      messageId: result.id,
+      threadId: result.threadId,
+    };
+  }
+
   getAuthorizationUrl() {
     const clientId = this.config.get<string>("GMAIL_CLIENT_ID");
     const redirectUri = this.config.get<string>("GMAIL_REDIRECT_URI");
@@ -102,7 +137,7 @@ export class GmailService {
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: "code",
-      scope: "https://www.googleapis.com/auth/gmail.readonly",
+      scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
       access_type: "offline",
       prompt: "consent",
     });
@@ -206,11 +241,18 @@ export class GmailService {
     );
   }
 
-  private async gmailRequest<T>(accessToken: string, path: string): Promise<T> {
+  private async gmailRequest<T>(
+    accessToken: string,
+    path: string,
+    options: { method?: string; body?: Record<string, unknown> } = {},
+  ): Promise<T> {
     const response = await fetch(`https://gmail.googleapis.com${path}`, {
+      method: options.method ?? "GET",
       headers: {
         Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
       },
+      body: options.body ? JSON.stringify(options.body) : undefined,
     });
 
     if (!response.ok) {
@@ -235,5 +277,13 @@ export class GmailService {
       unread: message.labelIds?.includes("UNREAD") ?? false,
       important: message.labelIds?.includes("IMPORTANT") ?? false,
     };
+  }
+
+  private toBase64Url(value: string) {
+    return Buffer.from(value, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+
+  private encodeHeader(value: string) {
+    return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
   }
 }

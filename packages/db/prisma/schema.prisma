@@ -137,6 +137,7 @@ model InstalledDevice {
 
 model InventoryItem {
   id               String              @id @default(cuid())
+  reference        String              @unique
   sku              String?             @unique
   name             String
   category         ServiceType?

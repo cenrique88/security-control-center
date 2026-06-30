@@ -31,6 +31,7 @@ export class InventoryService {
       where.managedStock = false;
     } else if (filters.mode !== "all") {
       where.managedStock = true;
+      where.stock = { gt: 0 };
     }
 
     if (filters.lowStock === "true") {
@@ -76,31 +77,34 @@ export class InventoryService {
 
   async createItem(dto: CreateInventoryItemDto) {
     try {
-      return await this.prisma.inventoryItem.create({
-        data: {
-          sku: this.cleanNullable(dto.sku),
-          name: dto.name.trim(),
-          category: dto.category as ServiceType | undefined,
-          unit: this.cleanOptional(dto.unit) ?? "u",
-          stock: dto.stock ?? 0,
-          minStock: dto.minStock ?? 0,
-          managedStock: dto.managedStock ?? true,
-          location: this.cleanNullable(dto.location),
-          supplier: this.cleanNullable(dto.supplier),
-          supplierCategory: this.cleanNullable(dto.supplierCategory),
-          costPrice: dto.costPrice,
-          taxAmount: dto.taxAmount,
-          priceWithTax: dto.priceWithTax,
-          currency: this.cleanOptional(dto.currency) ?? "USD",
-          notes: this.cleanNullable(dto.notes),
-        },
-        include: {
-          movements: {
-            take: 5,
-            orderBy: { createdAt: "desc" },
-            include: this.movementInclude(),
+      return await this.prisma.$transaction(async (tx) => {
+        return tx.inventoryItem.create({
+          data: {
+            reference: await this.nextReference(tx),
+            sku: this.cleanNullable(dto.sku),
+            name: dto.name.trim(),
+            category: dto.category as ServiceType | undefined,
+            unit: this.cleanOptional(dto.unit) ?? "u",
+            stock: dto.stock ?? 0,
+            minStock: dto.minStock ?? 0,
+            managedStock: dto.managedStock ?? true,
+            location: this.cleanNullable(dto.location),
+            supplier: this.cleanNullable(dto.supplier),
+            supplierCategory: this.cleanNullable(dto.supplierCategory),
+            costPrice: dto.costPrice,
+            taxAmount: dto.taxAmount,
+            priceWithTax: dto.priceWithTax,
+            currency: this.cleanOptional(dto.currency) ?? "USD",
+            notes: this.cleanNullable(dto.notes),
           },
-        },
+          include: {
+            movements: {
+              take: 5,
+              orderBy: { createdAt: "desc" },
+              include: this.movementInclude(),
+            },
+          },
+        });
       });
     } catch (error) {
       this.handleDatabaseError(error);
@@ -340,6 +344,25 @@ export class InventoryService {
         },
       },
     } satisfies Prisma.InventoryMovementInclude;
+  }
+
+  private async nextReference(tx: Prisma.TransactionClient) {
+    const lastItem = await tx.inventoryItem.findFirst({
+      where: {
+        reference: {
+          startsWith: "ART-",
+        },
+      },
+      orderBy: {
+        reference: "desc",
+      },
+      select: {
+        reference: true,
+      },
+    });
+
+    const lastNumber = Number(lastItem?.reference.replace("ART-", "")) || 0;
+    return `ART-${String(lastNumber + 1).padStart(4, "0")}`;
   }
 
   private async ensureWorkOrder(tx: Prisma.TransactionClient, id: string) {

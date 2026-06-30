@@ -26,7 +26,8 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { ChangeEvent, CSSProperties, FormEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   apiRequest,
@@ -56,6 +57,7 @@ import {
   SitePayload,
   Vehicle,
   VehiclePayload,
+  WhatsAppChat,
   WhatsAppSync,
   WhatsAppStatus,
   WorkOrder,
@@ -109,6 +111,49 @@ type AppNotification = {
   severity: "info" | "warning" | "critical";
   value: number | string;
 };
+
+type MessageComposeState = {
+  channel: "whatsapp" | "mail";
+  title: string;
+  to: string;
+  subject: string;
+  message: string;
+  customerId?: string;
+  workOrderId?: string;
+};
+
+type InventorySortKey = "reference" | "date" | "brand" | "model" | "installed" | "status";
+type InventoryColumnKey = InventorySortKey | "actions";
+
+const inventoryColumnDefaults: Record<InventoryColumnKey, number> = {
+  reference: 124,
+  date: 124,
+  brand: 180,
+  model: 620,
+  installed: 136,
+  status: 150,
+  actions: 116,
+};
+
+const inventoryColumnMinimums: Record<InventoryColumnKey, number> = {
+  reference: 92,
+  date: 92,
+  brand: 130,
+  model: 260,
+  installed: 108,
+  status: 118,
+  actions: 92,
+};
+
+const inventoryColumnOrder: InventoryColumnKey[] = ["reference", "date", "brand", "model", "installed", "status", "actions"];
+const inventorySortableColumns: Array<{ key: InventorySortKey; label: string }> = [
+  { key: "reference", label: "Ref." },
+  { key: "date", label: "Fecha" },
+  { key: "brand", label: "Importador" },
+  { key: "model", label: "Modelo" },
+  { key: "installed", label: "Instalado" },
+  { key: "status", label: "Estado" },
+];
 
 const emptyCustomerForm: CustomerPayload = {
   name: "",
@@ -395,6 +440,9 @@ export default function Home() {
   const [customerProfileLoading, setCustomerProfileLoading] = useState(false);
   const [customerProfileError, setCustomerProfileError] = useState("");
   const [focusedWorkOrderId, setFocusedWorkOrderId] = useState<string | null>(null);
+  const [messageCompose, setMessageCompose] = useState<MessageComposeState | null>(null);
+  const [messageSending, setMessageSending] = useState(false);
+  const [messageError, setMessageError] = useState("");
 
   const summaryCards = useMemo(
     () => [
@@ -626,15 +674,23 @@ export default function Home() {
     [vehicles],
   );
 
+  const visibleInventoryItems = useMemo(() => {
+    if (inventoryMode === "stock" && inventoryStockFilter === "ALL") {
+      return inventoryItems.filter((item) => item.managedStock && item.stock > 0);
+    }
+
+    return inventoryItems;
+  }, [inventoryItems, inventoryMode, inventoryStockFilter]);
+
   const inventoryStats = useMemo(
     () => [
-      { label: "Articulos", value: inventoryItems.length },
-      { label: "Catalogo", value: inventoryItems.filter((item) => !item.managedStock).length },
-      { label: "Instalados", value: inventoryItems.reduce((total, item) => total + (item.installedQuantity ?? 0), 0) },
-      { label: "Disponibles", value: inventoryItems.reduce((total, item) => total + (item.managedStock ? item.stock : 0), 0) },
-      { label: "Sin stock", value: inventoryItems.filter((item) => item.managedStock && item.stock === 0).length },
+      { label: "Articulos", value: visibleInventoryItems.length },
+      { label: "Catalogo", value: visibleInventoryItems.filter((item) => !item.managedStock).length },
+      { label: "Instalados", value: visibleInventoryItems.reduce((total, item) => total + (item.installedQuantity ?? 0), 0) },
+      { label: "Disponibles", value: visibleInventoryItems.reduce((total, item) => total + (item.managedStock ? item.stock : 0), 0) },
+      { label: "Sin stock", value: visibleInventoryItems.filter((item) => item.managedStock && item.stock === 0).length },
     ],
-    [inventoryItems],
+    [visibleInventoryItems],
   );
 
   const gmailStats = useMemo(
@@ -664,15 +720,15 @@ export default function Home() {
   );
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("sscc_token");
-    const storedUser = localStorage.getItem("sscc_user");
-
-    if (!storedToken || !storedUser || isExpiredJwt(storedToken)) {
-      redirectToLogin();
-      return;
-    }
-
     try {
+      const storedToken = localStorage.getItem("sscc_token");
+      const storedUser = localStorage.getItem("sscc_user");
+
+      if (!storedToken || !storedUser || isExpiredJwt(storedToken)) {
+        redirectToLogin();
+        return;
+      }
+
       setToken(storedToken);
       setUser(JSON.parse(storedUser) as AuthUser);
       setAuthChecked(true);
@@ -1985,16 +2041,112 @@ export default function Home() {
     window.print();
   }
 
-  function shareWorkOrderByWhatsApp(workOrder: WorkOrder) {
-    const text = encodeURIComponent(buildWorkOrderShareText(workOrder));
-    const phone = toWhatsAppPhone(workOrder.customer.phone);
-    window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, "_blank");
+  function composeWorkOrderWhatsApp(workOrder: WorkOrder) {
+    setMessageError("");
+    setMessageCompose({
+      channel: "whatsapp",
+      title: `WhatsApp - ${workOrder.customer.name}`,
+      to: workOrder.customer.phone ?? "",
+      subject: `Orden de trabajo - ${workOrder.title}`,
+      message: buildWorkOrderShareText(workOrder),
+      customerId: workOrder.customer.id,
+      workOrderId: workOrder.id,
+    });
   }
 
-  function shareWorkOrderByMail(workOrder: WorkOrder) {
-    const subject = encodeURIComponent(`Orden de trabajo - ${workOrder.title}`);
-    const body = encodeURIComponent(buildWorkOrderShareText(workOrder));
-    window.location.href = `mailto:${workOrder.customer.email ?? ""}?subject=${subject}&body=${body}`;
+  function composeWorkOrderMail(workOrder: WorkOrder) {
+    setMessageError("");
+    setMessageCompose({
+      channel: "mail",
+      title: `Mail - ${workOrder.customer.name}`,
+      to: workOrder.customer.email ?? "",
+      subject: `Orden de trabajo - ${workOrder.title}`,
+      message: buildWorkOrderShareText(workOrder),
+      customerId: workOrder.customer.id,
+      workOrderId: workOrder.id,
+    });
+  }
+
+  function composeCustomerWhatsApp(customer: Customer) {
+    setMessageError("");
+    setMessageCompose({
+      channel: "whatsapp",
+      title: `WhatsApp - ${customer.name}`,
+      to: customer.phone ?? "",
+      subject: `Mensaje para ${customer.name}`,
+      message: buildCustomerShareText(customer),
+      customerId: customer.id,
+    });
+  }
+
+  function composeWhatsAppChat(chat: WhatsAppChat) {
+    setMessageError("");
+    setMessageCompose({
+      channel: "whatsapp",
+      title: `Responder - ${chat.name || chat.id}`,
+      to: chat.id,
+      subject: `WhatsApp - ${chat.name || chat.id}`,
+      message: "",
+    });
+  }
+
+  function composeCustomerMail(customer: Customer) {
+    setMessageError("");
+    setMessageCompose({
+      channel: "mail",
+      title: `Mail - ${customer.name}`,
+      to: customer.email ?? "",
+      subject: `Security Solutions - ${customer.name}`,
+      message: buildCustomerShareText(customer),
+      customerId: customer.id,
+    });
+  }
+
+  async function sendComposedMessage() {
+    if (!token || !messageCompose) {
+      return;
+    }
+
+    setMessageSending(true);
+    setMessageError("");
+
+    try {
+      if (messageCompose.channel === "whatsapp") {
+        await apiRequest("/api/whatsapp/send", {
+          method: "POST",
+          token,
+          body: JSON.stringify({
+            to: messageCompose.to,
+            message: messageCompose.message,
+            customerId: messageCompose.customerId,
+            workOrderId: messageCompose.workOrderId,
+          }),
+        });
+      } else {
+        await apiRequest("/api/gmail/send", {
+          method: "POST",
+          token,
+          body: JSON.stringify({
+            to: messageCompose.to,
+            subject: messageCompose.subject,
+            message: messageCompose.message,
+            customerId: messageCompose.customerId,
+            workOrderId: messageCompose.workOrderId,
+          }),
+        });
+      }
+
+      setStatus(messageCompose.channel === "whatsapp" ? "WhatsApp enviado." : "Mail enviado.");
+      setMessageCompose(null);
+    } catch (error) {
+      if (handleAuthError(error)) {
+        return;
+      }
+
+      setMessageError(`No se pudo enviar el mensaje: ${getErrorMessage(error)}`);
+    } finally {
+      setMessageSending(false);
+    }
   }
 
   if (!authChecked) {
@@ -2205,6 +2357,8 @@ export default function Home() {
             onFormChange={setCustomerForm}
             onLocate={captureCustomerLocation}
             onAddDocument={addCustomerDocument}
+            onComposeMail={composeCustomerMail}
+            onComposeWhatsApp={composeCustomerWhatsApp}
             onOpenProfile={openCustomerProfile}
             onOpenWorkOrder={openWorkOrderFromCustomerProfile}
             onRefresh={() => loadCustomers()}
@@ -2240,6 +2394,8 @@ export default function Home() {
             onSave={saveWorkOrder}
             onSearchChange={setWorkSearch}
             onSelectCustomer={selectCustomer}
+            onComposeMail={composeWorkOrderMail}
+            onComposeWhatsApp={composeWorkOrderWhatsApp}
             onOpenDocument={setWorkOrderDocument}
             onStatusChange={setWorkStatus}
             onUpdateStatus={updateWorkOrderStatus}
@@ -2306,7 +2462,7 @@ export default function Home() {
             inventoryCatalogMatches={inventoryCatalogMatches}
             inventoryError={inventoryError}
             inventoryForm={inventoryForm}
-            inventoryItems={inventoryItems}
+            inventoryItems={visibleInventoryItems}
             inventoryMode={inventoryMode}
             inventoryMovementForm={inventoryMovementForm}
             inventorySearch={inventorySearch}
@@ -2364,6 +2520,7 @@ export default function Home() {
             whatsAppError={whatsAppError}
             whatsAppStats={whatsAppStats}
             onRefresh={() => syncWhatsApp()}
+            onReply={composeWhatsAppChat}
           />
         ) : (
           <DevicesView
@@ -2392,12 +2549,103 @@ export default function Home() {
       <WorkOrderDocumentModal
         workOrder={workOrderDocument}
         onClose={() => setWorkOrderDocument(null)}
-        onMail={shareWorkOrderByMail}
+        onMail={composeWorkOrderMail}
         onPrint={printWorkOrderDocument}
-        onWhatsApp={shareWorkOrderByWhatsApp}
+        onWhatsApp={composeWorkOrderWhatsApp}
       />
     ) : null}
+    {messageCompose && typeof document !== "undefined" ? createPortal(
+      <MessageComposeModal
+        compose={messageCompose}
+        error={messageError}
+        loading={messageSending}
+        onChange={setMessageCompose}
+        onClose={() => {
+          setMessageCompose(null);
+          setMessageError("");
+        }}
+        onSend={sendComposedMessage}
+      />,
+      document.body,
+    ) : null}
     </>
+  );
+}
+
+function MessageComposeModal({
+  compose,
+  error,
+  loading,
+  onChange,
+  onClose,
+  onSend,
+}: {
+  compose: MessageComposeState;
+  error: string;
+  loading: boolean;
+  onChange: (compose: MessageComposeState) => void;
+  onClose: () => void;
+  onSend: () => void;
+}) {
+  const channelLabel = compose.channel === "whatsapp" ? "WhatsApp" : "Mail";
+  const destinationLabel = compose.channel === "whatsapp" ? "Telefono" : "Email";
+
+  return (
+    <div className="deviceDetailOverlay customerProfileOverlay" onClick={onClose}>
+      <section
+        className="customerProfileModal messageComposeModal"
+        aria-label={`Enviar ${channelLabel}`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="deviceDetailHeader">
+          <div>
+            <span>{channelLabel}</span>
+            <h2>{compose.title}</h2>
+            <p>Edita el mensaje antes de enviarlo desde el CRM.</p>
+          </div>
+          <div className="documentToolbarActions">
+            <button type="button" className="secondaryButton" onClick={onSend} disabled={loading || !compose.to || !compose.message.trim()}>
+              {compose.channel === "whatsapp" ? <MessageSquare size={16} /> : <Mail size={16} />}
+              {loading ? "Enviando..." : "Enviar"}
+            </button>
+            <button type="button" className="iconButton" onClick={onClose} aria-label="Cerrar mensaje">
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+
+        {error ? <p className="formError">{error}</p> : null}
+
+        <div className="messageComposeGrid">
+          <label>
+            {destinationLabel}
+            <input
+              value={compose.to}
+              onChange={(event) => onChange({ ...compose, to: event.target.value })}
+              placeholder={compose.channel === "whatsapp" ? "099 000 000" : "cliente@empresa.com"}
+            />
+          </label>
+          {compose.channel === "mail" ? (
+            <label>
+              Asunto
+              <input
+                value={compose.subject}
+                onChange={(event) => onChange({ ...compose, subject: event.target.value })}
+                placeholder="Asunto del correo"
+              />
+            </label>
+          ) : null}
+          <label className="wideField">
+            Mensaje
+            <textarea
+              value={compose.message}
+              onChange={(event) => onChange({ ...compose, message: event.target.value })}
+              placeholder="Escribe el mensaje"
+            />
+          </label>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -2637,6 +2885,8 @@ function CustomersView({
   onFormChange,
   onLocate,
   onAddDocument,
+  onComposeMail,
+  onComposeWhatsApp,
   onOpenProfile,
   onOpenWorkOrder,
   onRefresh,
@@ -2672,6 +2922,8 @@ function CustomersView({
   onFormChange: (form: CustomerPayload) => void;
   onLocate: () => void;
   onAddDocument: (customerId: string, payload: CustomerDocumentPayload) => Promise<void>;
+  onComposeMail: (customer: Customer) => void;
+  onComposeWhatsApp: (customer: Customer) => void;
   onOpenProfile: (customer: Customer) => void;
   onOpenWorkOrder: (workOrder: WorkOrder) => void;
   onRefresh: () => void;
@@ -3027,6 +3279,8 @@ function CustomersView({
           onClose={onCloseProfile}
           onEdit={onEditCustomer}
           onAddDocument={onAddDocument}
+          onComposeMail={onComposeMail}
+          onComposeWhatsApp={onComposeWhatsApp}
           onOpenWorkOrder={onOpenWorkOrder}
         />
       ) : null}
@@ -3041,6 +3295,8 @@ function CustomerProfileModal({
   onClose,
   onEdit,
   onAddDocument,
+  onComposeMail,
+  onComposeWhatsApp,
   onOpenWorkOrder,
 }: {
   error: string;
@@ -3049,6 +3305,8 @@ function CustomerProfileModal({
   onClose: () => void;
   onEdit: (customer: Customer) => void;
   onAddDocument: (customerId: string, payload: CustomerDocumentPayload) => Promise<void>;
+  onComposeMail: (customer: Customer) => void;
+  onComposeWhatsApp: (customer: Customer) => void;
   onOpenWorkOrder: (workOrder: WorkOrder) => void;
 }) {
   const customer = profile?.customer;
@@ -3130,10 +3388,20 @@ function CustomerProfileModal({
             ) : null}
             <div className="documentToolbarActions">
               {customer ? (
-                <button type="button" className="secondaryButton" onClick={() => onEdit(customer)}>
-                  <Edit3 size={16} />
-                  Editar
-                </button>
+                <>
+                  <button type="button" className="secondaryButton" onClick={() => onComposeWhatsApp(customer)}>
+                    <MessageSquare size={16} />
+                    WhatsApp
+                  </button>
+                  <button type="button" className="secondaryButton" onClick={() => onComposeMail(customer)}>
+                    <Mail size={16} />
+                    Mail
+                  </button>
+                  <button type="button" className="secondaryButton" onClick={() => onEdit(customer)}>
+                    <Edit3 size={16} />
+                    Editar
+                  </button>
+                </>
               ) : null}
               <button type="button" className="iconButton" onClick={onClose} aria-label="Cerrar ficha">
                 <X size={18} />
@@ -3253,15 +3521,56 @@ function CustomerProfileModal({
 
             <section className="customerProfileSection">
               <h3>Equipos instalados</h3>
-              <div className="customerProfileList">
-                {groupInstalledDevices(profile.equipment).map((group) => (
-                  <article key={group.key}>
-                    <strong>{group.model} x{group.quantity}</strong>
-                    <span>{[group.brand || "Sin marca", deviceTypeLabels[group.type]].join(" - ")}</span>
-                    <small>{group.serialCount ? `${group.serialCount} series registradas` : "Sin series"}</small>
-                  </article>
-                ))}
-                {!profile.equipment.length ? <p className="emptyPanel">Sin equipos instalados vinculados.</p> : null}
+              <div className="customerProfileTableWrap">
+                <table className="customerProfileOrdersTable customerProfileDevicesTable">
+                  <thead>
+                    <tr>
+                      <th>Modelo</th>
+                      <th>Cant.</th>
+                      <th>Tipo</th>
+                      <th>Sitio</th>
+                      <th>Orden</th>
+                      <th>Series</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupInstalledDevices(profile.equipment).map((group) => {
+                      const orders = group.clientGroups.flatMap((client) => client.orders);
+                      return (
+                        <tr key={group.key}>
+                          <td data-label="Modelo">
+                            <strong>{group.model}</strong>
+                            <span>{group.brand || "Sin marca"}</span>
+                          </td>
+                          <td data-label="Cant.">
+                            <strong>{group.quantity}</strong>
+                          </td>
+                          <td data-label="Tipo">
+                            <span>{deviceTypeLabels[group.type]}</span>
+                          </td>
+                          <td data-label="Sitio">
+                            <span>{group.sites}</span>
+                          </td>
+                          <td data-label="Orden">
+                            <span>
+                              {orders.length
+                                ? orders.map((order) => `${order.title} x${order.quantity}`).join(" / ")
+                                : "Sin orden relacionada"}
+                            </span>
+                          </td>
+                          <td data-label="Series">
+                            <span>{group.serialCount ? `${group.serialCount} registradas` : "Sin series"}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!profile.equipment.length ? (
+                      <tr>
+                        <td colSpan={6} className="emptyTable">Sin equipos instalados vinculados.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
               </div>
             </section>
 
@@ -3519,6 +3828,8 @@ function WorkOrdersView({
   onSave,
   onSearchChange,
   onSelectCustomer,
+  onComposeMail,
+  onComposeWhatsApp,
   onOpenDocument,
   onStatusChange,
   onUpdateStatus,
@@ -3545,11 +3856,15 @@ function WorkOrdersView({
   onSave: (event: FormEvent<HTMLFormElement>) => void;
   onSearchChange: (value: string) => void;
   onSelectCustomer: (customerId: string) => void;
+  onComposeMail: (workOrder: WorkOrder) => void;
+  onComposeWhatsApp: (workOrder: WorkOrder) => void;
   onOpenDocument: (workOrder: WorkOrder) => void;
   onStatusChange: (value: WorkOrderStatus | "ALL") => void;
   onUpdateStatus: (id: string, status: WorkOrderStatus) => void;
 }) {
   const [materialForms, setMaterialForms] = useState<Record<string, { query: string; itemId: string; quantity: number; open: boolean; installAsDevice: boolean }>>({});
+  const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
+  const selectedWorkOrder = workOrders.find((workOrder) => workOrder.id === selectedWorkOrderId) ?? null;
 
   function materialForm(workOrderId: string) {
     return materialForms[workOrderId] ?? { query: "", itemId: "", quantity: 1, open: false, installAsDevice: true };
@@ -3724,7 +4039,7 @@ function WorkOrdersView({
             </button>
           </div>
 
-          <div className="workOrderGrid">
+          <div className="workOrderGrid workOrderList">
             {workOrders.map((workOrder) => {
               const form = materialForm(workOrder.id);
               const results = materialResults(form);
@@ -3743,6 +4058,7 @@ function WorkOrdersView({
                 key={workOrder.id}
                 id={`work-order-${workOrder.id}`}
                 className={`workOrderCard ${workOrder.id === focusedWorkOrderId ? "focusedWorkOrderCard" : ""}`}
+                onClick={() => setSelectedWorkOrderId(workOrder.id)}
               >
                 <div className="workOrderCardHeader">
                   <span className={`statusPill ${workOrder.status.toLowerCase()}`}>
@@ -3888,19 +4204,25 @@ function WorkOrdersView({
                 </div>
                 <div className="workOrderActions">
                   {workOrder.status === "COMPLETED" ? (
-                    <button type="button" className="secondaryButton" onClick={() => onOpenDocument(workOrder)}>
+                  <button type="button" className="secondaryButton" onClick={() => onOpenDocument(workOrder)}>
                       <FileText size={16} />
                       Orden/PDF
                     </button>
                   ) : null}
-                  <button type="button" className="secondaryButton" onClick={() => onEditWorkOrder(workOrder)}>
+                  <button type="button" className="secondaryButton" onClick={(event) => {
+                    event.stopPropagation();
+                    onEditWorkOrder(workOrder);
+                  }}>
                     <Edit3 size={16} />
                     Editar
                   </button>
                   <button
                     type="button"
                     className="secondaryButton"
-                    onClick={() => onUpdateStatus(workOrder.id, "IN_PROGRESS")}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onUpdateStatus(workOrder.id, "IN_PROGRESS");
+                    }}
                     disabled={workOrder.status === "IN_PROGRESS" || workOrder.status === "COMPLETED"}
                   >
                     En curso
@@ -3908,7 +4230,10 @@ function WorkOrdersView({
                   <button
                     type="button"
                     className="secondaryButton"
-                    onClick={() => onUpdateStatus(workOrder.id, "COMPLETED")}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onUpdateStatus(workOrder.id, "COMPLETED");
+                    }}
                     disabled={workOrder.status === "COMPLETED"}
                   >
                     Completar
@@ -3919,6 +4244,215 @@ function WorkOrdersView({
             })}
             {!workOrders.length ? <p className="emptyPanel">No hay trabajos para los filtros actuales.</p> : null}
           </div>
+          {selectedWorkOrder && typeof document !== "undefined" ? createPortal((() => {
+            const form = materialForm(selectedWorkOrder.id);
+            const results = materialResults(form);
+            const groupedMovements = groupWorkOrderMaterials(selectedWorkOrder.inventoryMovements ?? []);
+            const selectedItem = inventoryItems.find((item) => item.id === form.itemId);
+            const availableQuantity = selectedItem?.stock ?? 0;
+            const selectedQuantity = selectedItem
+              ? Math.min(Math.max(1, form.quantity), availableQuantity)
+              : Math.max(1, form.quantity);
+            const workOrderSiteId = selectedWorkOrder.siteId ?? selectedWorkOrder.site?.id ?? "";
+            const installAsDevice = Boolean(form.installAsDevice);
+
+            return (
+              <div className="deviceDetailOverlay customerProfileOverlay" onClick={() => setSelectedWorkOrderId(null)}>
+                <section className="customerProfileModal workOrderDetailModal" aria-label="Detalle del trabajo" onClick={(event) => event.stopPropagation()}>
+                  <header className="deviceDetailHeader">
+                    <div>
+                      <span>Orden de trabajo</span>
+                      <h2>{selectedWorkOrder.title}</h2>
+                      <p>
+                        {[selectedWorkOrder.customer.name, selectedWorkOrder.site?.name, deviceTypeLabels[selectedWorkOrder.type]]
+                          .filter(Boolean)
+                          .join(" - ")}
+                      </p>
+                    </div>
+                    <div className="documentToolbarActions">
+                      <button type="button" className="secondaryButton" onClick={() => onComposeWhatsApp(selectedWorkOrder)}>
+                        <MessageSquare size={16} />
+                        WhatsApp
+                      </button>
+                      <button type="button" className="secondaryButton" onClick={() => onComposeMail(selectedWorkOrder)}>
+                        <Mail size={16} />
+                        Mail
+                      </button>
+                      {selectedWorkOrder.status === "COMPLETED" ? (
+                        <button type="button" className="secondaryButton" onClick={() => onOpenDocument(selectedWorkOrder)}>
+                          <FileText size={16} />
+                          Orden/PDF
+                        </button>
+                      ) : null}
+                      <button type="button" className="secondaryButton" onClick={() => onEditWorkOrder(selectedWorkOrder)}>
+                        <Edit3 size={16} />
+                        Editar
+                      </button>
+                      <button type="button" className="iconButton" onClick={() => setSelectedWorkOrderId(null)} aria-label="Cerrar orden">
+                        <X size={18} />
+                      </button>
+                    </div>
+                  </header>
+
+                  <dl className="customerProfileGrid">
+                    <div>
+                      <dt>Cliente</dt>
+                      <dd>{selectedWorkOrder.customer.name}</dd>
+                    </div>
+                    <div>
+                      <dt>Sitio</dt>
+                      <dd>{selectedWorkOrder.site?.name ?? "Sin sitio"}</dd>
+                    </div>
+                    <div>
+                      <dt>Estado</dt>
+                      <dd>{workStatusLabels[selectedWorkOrder.status]}</dd>
+                    </div>
+                    <div>
+                      <dt>Agenda</dt>
+                      <dd>{formatDateTime(selectedWorkOrder.scheduledAt)}</dd>
+                    </div>
+                  </dl>
+
+                  <p className="workOrderDetailNotes">{selectedWorkOrder.notes || selectedWorkOrder.site?.address || "Sin notas operativas"}</p>
+
+                  <div className="workOrderMaterials">
+                    <div className="workOrderMaterialsHeader">
+                      <strong>Materiales y equipos</strong>
+                      <span>{groupedMovements.length} items</span>
+                    </div>
+                    {groupedMovements.length ? (
+                      <div className="workOrderMaterialList">
+                        {groupedMovements.map((movement) => (
+                          <div key={movement.key} className="workOrderMaterialItem">
+                            <span>{movement.name} x{movement.quantity} {movement.unit}</span>
+                            <button type="button" onClick={() => onRemoveMaterial(movement.ids)} disabled={loading}>
+                              Eliminar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p>Sin materiales cargados.</p>
+                    )}
+                    <div className="workOrderMaterialForm">
+                      <div className="autocompleteField">
+                        <input
+                          value={form.query}
+                          onChange={(event) => updateMaterialForm(selectedWorkOrder.id, { ...form, query: event.target.value, itemId: "", open: true })}
+                          onFocus={() => updateMaterialForm(selectedWorkOrder.id, { ...form, open: true })}
+                          onBlur={() => window.setTimeout(() => updateMaterialForm(selectedWorkOrder.id, { ...materialForm(selectedWorkOrder.id), open: false }), 120)}
+                          placeholder="Buscar articulo para descontar"
+                          autoComplete="off"
+                        />
+                        {form.open ? (
+                          <div className="autocompleteResults">
+                            {results.map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() =>
+                                  updateMaterialForm(selectedWorkOrder.id, {
+                                    ...form,
+                                    query: item.name,
+                                    itemId: item.id,
+                                    quantity: Math.min(form.quantity, Math.max(1, item.stock)),
+                                    open: false,
+                                  })
+                                }
+                              >
+                                <strong>{item.name}</strong>
+                                <span>
+                                  {[
+                                    item.sku ? `SKU ${item.sku}` : "",
+                                    item.supplier,
+                                    item.managedStock && item.stock > 0 ? `Disponible ${item.stock} ${item.unit}` : "Sin stock disponible",
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" - ")}
+                                </span>
+                              </button>
+                            ))}
+                            {!results.length ? <p>No hay articulos relacionados.</p> : null}
+                          </div>
+                        ) : null}
+                      </div>
+                      <select
+                        value={selectedItem ? selectedQuantity : ""}
+                        onChange={(event) =>
+                          updateMaterialForm(selectedWorkOrder.id, {
+                            ...form,
+                            quantity: Number(event.target.value) || 1,
+                          })
+                        }
+                        aria-label="Cantidad"
+                        disabled={!selectedItem}
+                      >
+                        <option value="">Cant.</option>
+                        {selectedItem
+                          ? Array.from({ length: availableQuantity }, (_, index) => index + 1).map((quantity) => (
+                              <option key={quantity} value={quantity}>
+                                {quantity}
+                              </option>
+                            ))
+                          : null}
+                      </select>
+                      <button
+                        type="button"
+                        className="secondaryButton"
+                        disabled={loading || !form.itemId || !selectedItem || availableQuantity < 1}
+                        onClick={async () => {
+                          await onAddMaterial(selectedWorkOrder.id, form.itemId, selectedQuantity, installAsDevice);
+                          updateMaterialForm(selectedWorkOrder.id, { query: "", itemId: "", quantity: 1, open: false, installAsDevice: form.installAsDevice });
+                        }}
+                      >
+                        Agregar
+                      </button>
+                    </div>
+                    {selectedItem ? (
+                      <p>
+                        {selectedItem.managedStock && selectedItem.stock > 0
+                          ? `Disponible: ${selectedItem.stock} ${selectedItem.unit}`
+                          : "Este articulo todavia no tiene stock disponible. Primero cargale entrada en almacen."}
+                      </p>
+                    ) : null}
+                    <label className="materialInstallToggle">
+                      <input
+                        type="checkbox"
+                        checked={form.installAsDevice}
+                        onChange={(event) => updateMaterialForm(selectedWorkOrder.id, { ...form, installAsDevice: event.target.checked })}
+                      />
+                      Registrar como equipo instalado
+                    </label>
+                    {form.installAsDevice && !workOrderSiteId ? (
+                      <p>Sin sitio: se creara uno predeterminado con el nombre del cliente.</p>
+                    ) : !workOrderSiteId ? (
+                      <p>Sin sitio: si no marcas equipo instalado, solo descuenta stock.</p>
+                    ) : null}
+                  </div>
+
+                  <div className="workOrderActions">
+                    <button
+                      type="button"
+                      className="secondaryButton"
+                      onClick={() => onUpdateStatus(selectedWorkOrder.id, "IN_PROGRESS")}
+                      disabled={selectedWorkOrder.status === "IN_PROGRESS" || selectedWorkOrder.status === "COMPLETED"}
+                    >
+                      En curso
+                    </button>
+                    <button
+                      type="button"
+                      className="secondaryButton"
+                      onClick={() => onUpdateStatus(selectedWorkOrder.id, "COMPLETED")}
+                      disabled={selectedWorkOrder.status === "COMPLETED"}
+                    >
+                      Completar
+                    </button>
+                  </div>
+                </section>
+              </div>
+            );
+          })(), document.body) : null}
         </section>
       </div>
     </section>
@@ -4552,9 +5086,49 @@ function InventoryView({
   const [movementPickerOpen, setMovementPickerOpen] = useState(false);
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
   const [stockForms, setStockForms] = useState<Record<string, { entry: number; exact: number }>>({});
+  const [selectedInventoryItemId, setSelectedInventoryItemId] = useState<string | null>(null);
+  const [inventoryColumnWidths, setInventoryColumnWidths] = useState<Record<InventoryColumnKey, number>>(() => {
+    if (typeof window === "undefined") {
+      return inventoryColumnDefaults;
+    }
+
+    try {
+      const saved = window.localStorage.getItem("sscc.inventoryColumns");
+      if (!saved) {
+        return inventoryColumnDefaults;
+      }
+
+      return { ...inventoryColumnDefaults, ...(JSON.parse(saved) as Partial<Record<InventoryColumnKey, number>>) };
+    } catch {
+      return inventoryColumnDefaults;
+    }
+  });
+  const [inventorySort, setInventorySort] = useState<{ key: InventorySortKey; direction: "asc" | "desc" }>({
+    key: "date",
+    direction: "desc",
+  });
+  const inventoryGridTemplate = inventoryColumnOrder.map((key) => `${inventoryColumnWidths[key]}px`).join(" ");
+  const inventoryGridMinWidth = inventoryColumnOrder.reduce((total, key) => total + inventoryColumnWidths[key], 0);
+  const inventoryGridStyle: CSSProperties = {
+    gridTemplateColumns: inventoryGridTemplate,
+    minWidth: inventoryGridMinWidth,
+  };
   const suppliers = Array.from(
     new Set(["Microfal", ...(inventoryItems.map((item) => item.supplier).filter(Boolean) as string[])]),
   ).sort();
+  const selectedInventoryItem = inventoryItems.find((item) => item.id === selectedInventoryItemId) ?? null;
+  const sortedInventoryItems = useMemo(() => {
+    return [...inventoryItems].sort((left, right) => {
+      const leftValue = inventorySortValue(left, inventorySort.key);
+      const rightValue = inventorySortValue(right, inventorySort.key);
+      const result =
+        typeof leftValue === "number" && typeof rightValue === "number"
+          ? leftValue - rightValue
+          : String(leftValue).localeCompare(String(rightValue), "es", { numeric: true, sensitivity: "base" });
+
+      return inventorySort.direction === "asc" ? result : -result;
+    });
+  }, [inventoryItems, inventorySort]);
   const selectedMovementItem = inventoryItems.find((item) => item.id === inventoryMovementForm.itemId);
   const movementItemResults = useMemo(() => {
     const query = movementItemQuery.trim().toLowerCase();
@@ -4575,12 +5149,44 @@ function InventoryView({
     }
   }, [inventoryMovementForm.itemId, selectedMovementItem]);
 
+  useEffect(() => {
+    window.localStorage.setItem("sscc.inventoryColumns", JSON.stringify(inventoryColumnWidths));
+  }, [inventoryColumnWidths]);
+
   function stockForm(item: InventoryItem) {
     return stockForms[item.id] ?? { entry: 1, exact: item.stock };
   }
 
   function updateStockForm(itemId: string, nextForm: { entry: number; exact: number }) {
     setStockForms((current) => ({ ...current, [itemId]: nextForm }));
+  }
+
+  function toggleInventorySort(key: InventorySortKey) {
+    setInventorySort((current) => ({
+      key,
+      direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  }
+
+  function startInventoryColumnResize(key: InventoryColumnKey, event: ReactMouseEvent<HTMLSpanElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startWidth = inventoryColumnWidths[key];
+
+    function resize(moveEvent: MouseEvent) {
+      const nextWidth = Math.max(inventoryColumnMinimums[key], startWidth + moveEvent.clientX - startX);
+      setInventoryColumnWidths((current) => ({ ...current, [key]: nextWidth }));
+    }
+
+    function stopResize() {
+      window.removeEventListener("mousemove", resize);
+      window.removeEventListener("mouseup", stopResize);
+    }
+
+    window.addEventListener("mousemove", resize);
+    window.addEventListener("mouseup", stopResize);
   }
 
   return (
@@ -4871,26 +5477,66 @@ function InventoryView({
             </button>
           </div>
           {inventoryError ? <p className="formError">{inventoryError}</p> : null}
-          <div className="workOrderGrid">
-            {inventoryItems.map((item) => {
+          <div className="inventoryTableScroller">
+            <div className="inventorySortBar" style={inventoryGridStyle} aria-label="Ordenar almacen">
+              {[
+                ["reference", "Ref."],
+                ["date", "Fecha"],
+                ["brand", "Importador"],
+                ["model", "Modelo"],
+                ["installed", "Instalado"],
+                ["status", "Estado"],
+              ].map(([key, label]) => (
+                <button key={key} type="button" onClick={() => toggleInventorySort(key as InventorySortKey)}>
+                  {label} {inventorySort.key === key ? (inventorySort.direction === "asc" ? "↑" : "↓") : "↕"}
+                  <span
+                    className="columnResizeHandle"
+                    onMouseDown={(event) => startInventoryColumnResize(key as InventorySortKey, event)}
+                    aria-hidden="true"
+                  />
+                </button>
+              ))}
+              <span className="inventoryActionHeader" aria-hidden="true">
+                <span
+                  className="columnResizeHandle"
+                  onMouseDown={(event) => startInventoryColumnResize("actions", event)}
+                  aria-hidden="true"
+                />
+              </span>
+            </div>
+            <div className="workOrderGrid inventoryDirectoryList">
+            {sortedInventoryItems.map((item) => {
               const form = stockForm(item);
               const installedQuantity = item.installedQuantity ?? 0;
               const totalManagedQuantity = item.managedStock ? item.stock + installedQuantity : installedQuantity;
+              const statusLabel = !item.managedStock ? "Catalogo" : item.stock === 0 ? "Sin stock" : "Disponible";
+              const statusClass = !item.managedStock ? "scheduled" : item.stock === 0 ? "waiting_customer" : "completed";
 
               return (
-              <article key={item.id} className="workOrderCard">
-                <div className="workOrderCardHeader">
-                  <span className={`statusPill ${!item.managedStock ? "scheduled" : item.stock === 0 ? "waiting_customer" : "completed"}`}>
-                    {!item.managedStock ? "Catalogo" : item.stock === 0 ? "Sin stock" : "Disponible"}
-                  </span>
-                  <strong>{item.name}</strong>
-                </div>
+              <article
+                key={item.id}
+                className="workOrderCard"
+                style={inventoryGridStyle}
+                onClick={() => setSelectedInventoryItemId(item.id)}
+              >
+                <span className="inventoryRef">{item.reference}</span>
+                <span className="inventoryDate">{formatInventoryDate(item.updatedAt)}</span>
+                <span className="inventoryBrand">{item.supplier || "Sin importador"}</span>
+                <strong className="inventoryModel" title={item.name}>{item.name}</strong>
+                <span className="inventoryInstalled">{installedQuantity} {item.unit}</span>
+                <span className={`statusPill ${statusClass}`}>{statusLabel}</span>
                 <div className="workOrderActions">
-                  <button type="button" className="secondaryButton" onClick={() => onEditItem(item)}>
+                  <button type="button" className="secondaryButton" onClick={(event) => {
+                    event.stopPropagation();
+                    onEditItem(item);
+                  }}>
                     <Edit3 size={16} />
                     Editar
                   </button>
-                  <button type="button" className="secondaryButton dangerButton" onClick={() => onDeleteItem(item)} disabled={loading}>
+                  <button type="button" className="secondaryButton dangerButton" onClick={(event) => {
+                    event.stopPropagation();
+                    onDeleteItem(item);
+                  }} disabled={loading}>
                     <X size={16} />
                     Eliminar
                   </button>
@@ -4982,7 +5628,161 @@ function InventoryView({
               );
             })}
             {!inventoryItems.length ? <p className="emptyPanel">No hay articulos para los filtros actuales.</p> : null}
+            </div>
           </div>
+          {selectedInventoryItem && typeof document !== "undefined" ? (() => {
+            const form = stockForm(selectedInventoryItem);
+            const installedQuantity = selectedInventoryItem.installedQuantity ?? 0;
+            const totalManagedQuantity = selectedInventoryItem.managedStock ? selectedInventoryItem.stock + installedQuantity : installedQuantity;
+
+            return createPortal(
+              <div className="deviceDetailOverlay customerProfileOverlay" onClick={() => setSelectedInventoryItemId(null)}>
+                <section className="customerProfileModal inventoryDetailModal" aria-label="Detalle del articulo" onClick={(event) => event.stopPropagation()}>
+                  <header className="deviceDetailHeader">
+                    <div>
+                      <span>Articulo de almacen</span>
+                      <h2>{selectedInventoryItem.name}</h2>
+                      <p>
+                        {[
+                          selectedInventoryItem.reference,
+                          selectedInventoryItem.sku ? `SKU ${selectedInventoryItem.sku}` : "",
+                          selectedInventoryItem.supplier,
+                          selectedInventoryItem.supplierCategory,
+                        ]
+                          .filter(Boolean)
+                          .join(" - ") || "Sin datos adicionales"}
+                      </p>
+                    </div>
+                    <div className="documentToolbarActions">
+                      <button
+                        type="button"
+                        className="secondaryButton"
+                        onClick={() => {
+                          setSelectedInventoryItemId(null);
+                          onEditItem(selectedInventoryItem);
+                        }}
+                      >
+                        <Edit3 size={16} />
+                        Editar
+                      </button>
+                      <button type="button" className="secondaryButton dangerButton" onClick={() => onDeleteItem(selectedInventoryItem)} disabled={loading}>
+                        <X size={16} />
+                        Eliminar
+                      </button>
+                      <button type="button" className="iconButton" onClick={() => setSelectedInventoryItemId(null)} aria-label="Cerrar articulo">
+                        <X size={18} />
+                      </button>
+                    </div>
+                  </header>
+
+                  <dl className="customerProfileGrid">
+                    <div>
+                      <dt>Referencia</dt>
+                      <dd>{selectedInventoryItem.reference}</dd>
+                    </div>
+                    <div>
+                      <dt>Disponible</dt>
+                      <dd>{selectedInventoryItem.managedStock ? `${selectedInventoryItem.stock} ${selectedInventoryItem.unit}` : "Sin ingresar"}</dd>
+                    </div>
+                    <div>
+                      <dt>Instalado</dt>
+                      <dd>{installedQuantity} {selectedInventoryItem.unit}</dd>
+                    </div>
+                    <div>
+                      <dt>Total real</dt>
+                      <dd>{totalManagedQuantity} {selectedInventoryItem.unit}</dd>
+                    </div>
+                    <div>
+                      <dt>Categoria</dt>
+                      <dd>{selectedInventoryItem.category ? deviceTypeLabels[selectedInventoryItem.category] : "Sin categoria"}</dd>
+                    </div>
+                    <div>
+                      <dt>Ubicacion</dt>
+                      <dd>{selectedInventoryItem.location || "Sin ubicacion"}</dd>
+                    </div>
+                    <div>
+                      <dt>Proveedor</dt>
+                      <dd>{selectedInventoryItem.supplier || "Sin proveedor"}</dd>
+                    </div>
+                    <div>
+                      <dt>Precio IVA inc.</dt>
+                      <dd>{formatPrice(selectedInventoryItem.priceWithTax, selectedInventoryItem.currency)}</dd>
+                    </div>
+                  </dl>
+
+                  <p className="workOrderDetailNotes">{selectedInventoryItem.notes || "Sin notas del articulo."}</p>
+
+                  <section className="customerProfileSection">
+                    <div className="customerProfileSectionHeader">
+                      <h3>Stock</h3>
+                    </div>
+                    <div className="stockQuickActions">
+                      <div>
+                        <label>
+                          Entrada
+                          <input
+                            type="number"
+                            min="1"
+                            value={form.entry}
+                            onChange={(event) =>
+                              updateStockForm(selectedInventoryItem.id, { ...form, entry: Math.max(1, Number(event.target.value) || 1) })
+                            }
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="secondaryButton"
+                          disabled={loading || form.entry <= 0}
+                          onClick={() => onQuickMovement(selectedInventoryItem.id, "IN", form.entry)}
+                        >
+                          Sumar
+                        </button>
+                      </div>
+                      <div>
+                        <label>
+                          Stock exacto
+                          <input
+                            type="number"
+                            min="0"
+                            value={form.exact}
+                            onChange={(event) =>
+                              updateStockForm(selectedInventoryItem.id, { ...form, exact: Math.max(0, Number(event.target.value) || 0) })
+                            }
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="secondaryButton"
+                          disabled={loading || form.exact < 0}
+                          onClick={() => onQuickMovement(selectedInventoryItem.id, "ADJUST", form.exact)}
+                        >
+                          Ajustar
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="customerProfileSection">
+                    <div className="customerProfileSectionHeader">
+                      <h3>Movimientos recientes</h3>
+                    </div>
+                    <div className="movementList inventoryDetailMovements">
+                      {selectedInventoryItem.movements.map((movement) => (
+                        <span key={movement.id}>
+                          {movement.type} {movement.quantity} - stock {movement.stockAfter}
+                          <button type="button" onClick={() => onDeleteMovement(movement.id)} disabled={loading} aria-label="Eliminar movimiento">
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))}
+                      {!selectedInventoryItem.movements.length ? <p>Sin movimientos recientes.</p> : null}
+                    </div>
+                  </section>
+                </section>
+              </div>,
+              document.body,
+            );
+          })() : null}
         </section>
       </div>
     </section>
@@ -5093,6 +5893,7 @@ function WhatsAppView({
   whatsAppError,
   whatsAppStats,
   onRefresh,
+  onReply,
 }: {
   loading: boolean;
   status: WhatsAppStatus;
@@ -5100,6 +5901,7 @@ function WhatsAppView({
   whatsAppError: string;
   whatsAppStats: Array<{ label: string; value: number | string }>;
   onRefresh: () => void;
+  onReply: (chat: WhatsAppChat) => void;
 }) {
   return (
     <section className="whatsAppModule">
@@ -5172,6 +5974,10 @@ function WhatsAppView({
                   <span>{chat.isGroup ? "Grupo" : "Chat"} · {formatWhatsAppTime(chat.timestamp)}</span>
                 </div>
                 <p>{chat.lastMessage || "Sin ultimo mensaje disponible"}</p>
+                <button type="button" className="secondaryButton" onClick={() => onReply(chat)}>
+                  <MessageSquare size={16} />
+                  Responder
+                </button>
                 {chat.unreadCount ? <em>{chat.unreadCount}</em> : null}
               </article>
             ))}
@@ -5758,6 +6564,18 @@ function formatShortDate(value?: string | null) {
   });
 }
 
+function formatInventoryDate(value?: string | null) {
+  if (!value) {
+    return "Sin fecha";
+  }
+
+  return new Date(value).toLocaleDateString("es-UY", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 function formatTime(value?: string | null) {
   if (!value) {
     return "--:--";
@@ -6105,6 +6923,48 @@ function buildWorkOrderShareText(workOrder: WorkOrder) {
     "",
     "Security Solutions",
   ].join("\n");
+}
+
+function buildCustomerShareText(customer: Customer) {
+  return [
+    `Hola ${customer.name},`,
+    "",
+    "Te contactamos desde Security Solutions.",
+    "",
+    "Quedamos a las ordenes.",
+    "Security Solutions",
+  ].join("\n");
+}
+
+function inventorySortValue(item: InventoryItem, key: InventorySortKey) {
+  const latestMovement = item.movements[0];
+  const device = latestMovement?.installedDevice;
+
+  if (key === "reference") {
+    return Number(item.reference.replace(/\D/g, "")) || 0;
+  }
+
+  if (key === "date") {
+    return new Date(latestMovement?.createdAt ?? item.updatedAt ?? item.createdAt).getTime();
+  }
+
+  if (key === "brand") {
+    return device?.brand ?? item.supplier ?? "";
+  }
+
+  if (key === "model") {
+    return device?.model ?? item.name;
+  }
+
+  if (key === "installed") {
+    return item.installedQuantity ?? 0;
+  }
+
+  if (key === "status") {
+    return !item.managedStock ? "Catalogo" : item.stock > 0 ? "Disponible" : "Sin stock";
+  }
+
+  return "";
 }
 
 function formatMailDate(value?: string) {

@@ -370,6 +370,7 @@ export type InventoryMovement = {
 
 export type InventoryItem = {
   id: string;
+  reference: string;
   sku?: string | null;
   name: string;
   category?: DeviceType | null;

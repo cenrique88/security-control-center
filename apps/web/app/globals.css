@@ -1398,6 +1398,10 @@ button:disabled {
   border-collapse: collapse;
 }
 
+.customerProfileDevicesTable {
+  min-width: 720px;
+}
+
 .customerProfileOrdersTable th,
 .customerProfileOrdersTable td {
   padding: 11px 12px;
@@ -1456,6 +1460,428 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
+}
+
+.inventoryList {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.inventoryList .workOrderCard {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(360px, 2fr) minmax(220px, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.inventoryList .workOrderCard:last-child {
+  border-bottom: 0;
+}
+
+.inventoryList .workOrderCardHeader {
+  align-content: start;
+}
+
+.inventoryList .workOrderCard > dl {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.inventoryList .workOrderCard > p,
+.inventoryList .movementList {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.inventoryList .stockQuickActions {
+  align-self: stretch;
+}
+
+.inventoryList .workOrderActions {
+  grid-template-columns: 1fr;
+}
+
+.inventoryTableScroller {
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.inventoryDirectoryList {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: var(--panel);
+}
+
+.inventorySortBar {
+  display: grid;
+  grid-template-columns: 124px 124px 180px 620px 136px 150px 116px;
+  gap: 0;
+  min-width: 1450px;
+  overflow: hidden;
+  border: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  background: rgba(8, 19, 31, 0.88);
+}
+
+.inventorySortBar button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.inventorySortBar button > span:first-child {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventorySortBar button:last-child {
+  border-right: 0;
+}
+
+.inventorySortBar button:hover {
+  color: var(--accent);
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.inventoryActionHeader {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  border-left: 1px solid var(--line);
+}
+
+.columnResizeHandle {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  z-index: 3;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.columnResizeHandle::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  right: 4px;
+  width: 2px;
+  height: calc(100% - 18px);
+  border-radius: 999px;
+  background: transparent;
+}
+
+.columnResizeHandle:hover::after {
+  background: var(--accent);
+}
+
+.inventoryDirectoryList .workOrderCard {
+  display: grid;
+  grid-template-columns: 124px 124px 180px 620px 136px 150px 116px;
+  gap: 0;
+  align-items: center;
+  min-width: 1450px;
+  min-height: 76px;
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.inventoryDirectoryList .workOrderCard:hover {
+  background: rgba(20, 184, 166, 0.09);
+}
+
+.inventoryDirectoryList .workOrderCard:last-child {
+  border-bottom: 0;
+}
+
+.inventoryDirectoryList .inventoryRef,
+.inventoryDirectoryList .inventoryDate,
+.inventoryDirectoryList .inventoryBrand,
+.inventoryDirectoryList .inventoryModel,
+.inventoryDirectoryList .inventoryInstalled {
+  min-width: 0;
+  padding: 0 16px 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventoryDirectoryList .inventoryRef {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.inventoryDirectoryList .inventoryDate,
+.inventoryDirectoryList .inventoryBrand,
+.inventoryDirectoryList .inventoryInstalled {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.inventoryDirectoryList .inventoryModel {
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.inventoryDirectoryList .statusPill {
+  width: min(100%, 124px);
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  justify-content: center;
+  justify-self: center;
+}
+
+.inventoryDirectoryList .workOrderCard > dl div:nth-child(n + 5),
+.inventoryDirectoryList .workOrderCard > dl,
+.inventoryDirectoryList .workOrderCard > p,
+.inventoryDirectoryList .stockQuickActions,
+.inventoryDirectoryList .movementList {
+  display: none;
+}
+
+.inventoryDirectoryList .workOrderCard > dl dt,
+.inventoryDirectoryList .workOrderCard > dl dd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventoryDirectoryList .workOrderActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 8px;
+}
+
+.inventoryDirectoryList .workOrderActions .secondaryButton {
+  width: 42px;
+  min-width: 42px;
+  height: 38px;
+  padding: 0;
+  font-size: 0;
+}
+
+.inventoryDirectoryList .workOrderActions .secondaryButton svg {
+  flex: 0 0 auto;
+}
+
+.inventoryDetailModal {
+  width: min(1040px, 100%);
+}
+
+.inventoryDetailMovements {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.workOrderList {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.workOrderGrid.workOrderList {
+  grid-template-columns: 1fr;
+}
+
+.workOrderList .workOrderCard {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(680px, 2.4fr) minmax(220px, 0.8fr);
+  gap: 18px;
+  align-items: center;
+  min-height: 78px;
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.workOrderList .workOrderCard:hover {
+  background: rgba(20, 184, 166, 0.09);
+}
+
+.workOrderList .workOrderCard:last-child {
+  border-bottom: 0;
+}
+
+.workOrderList .workOrderCardHeader {
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: start;
+  gap: 9px;
+  align-content: center;
+}
+
+.workOrderList .workOrderCardHeader .statusPill {
+  justify-self: start;
+  min-width: 132px;
+  max-width: 160px;
+  height: 28px;
+  margin: 0;
+  padding: 0 14px;
+  justify-content: center;
+  text-align: center;
+}
+
+.workOrderList .workOrderCardHeader strong {
+  line-height: 1.18;
+}
+
+.workOrderList .workOrderCard > dl {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 14px;
+  align-items: center;
+  margin: 0;
+}
+
+.workOrderList .workOrderCard > dl div {
+  align-self: center;
+}
+
+.workOrderList .workOrderCard > dl dt,
+.workOrderList .workOrderCard > dl dd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workOrderList .workOrderCard > p {
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.workOrderList .workOrderMaterials,
+.workOrderList .workOrderActions {
+  display: none;
+}
+
+.workOrderDetailModal {
+  width: min(1080px, 100%);
+}
+
+.workOrderDetailModal .workOrderMaterials {
+  background: rgba(8, 19, 31, 0.46);
+}
+
+.workOrderDetailNotes {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.messageComposeModal {
+  width: min(760px, 100%);
+}
+
+.messageComposeGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.messageComposeGrid label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.messageComposeGrid .wideField {
+  grid-column: 1 / -1;
+}
+
+.messageComposeGrid input,
+.messageComposeGrid textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(2, 9, 16, 0.74);
+  color: var(--ink);
+  font: inherit;
+}
+
+.messageComposeGrid input {
+  height: 42px;
+  padding: 0 12px;
+}
+
+.messageComposeGrid textarea {
+  min-height: 240px;
+  resize: vertical;
+  padding: 12px;
+  line-height: 1.45;
 }
 
 .workOrderMaterials {
@@ -2121,16 +2547,18 @@ button:disabled {
 .whatsAppChatList article {
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  padding: 13px 46px 13px 13px;
+  align-items: center;
+  padding: 13px 48px 13px 13px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--panel-soft);
 }
 
 .whatsAppChatList article.unreadChat {
-  border-color: rgba(15, 118, 110, 0.35);
-  background: #ecfdf5;
+  border-color: rgba(67, 211, 198, 0.46);
+  background: rgba(10, 88, 80, 0.28);
 }
 
 .whatsAppChatList strong,
@@ -2146,11 +2574,19 @@ button:disabled {
 }
 
 .whatsAppChatList p {
+  grid-column: 1;
   margin: 0;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.whatsAppChatList .secondaryButton {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-width: 124px;
+  align-self: center;
 }
 
 .whatsAppChatList em {
@@ -2431,7 +2867,8 @@ button:disabled {
   padding: 11px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #f8fafc;
+  background: rgba(8, 19, 31, 0.74);
+  box-shadow: inset 0 1px 0 rgba(126, 197, 210, 0.06);
 }
 
 .siteCard strong,
@@ -2462,8 +2899,9 @@ button:disabled {
   min-height: 24px;
   padding: 3px 8px;
   border-radius: 999px;
-  background: #eef3f6;
-  color: var(--accent-strong);
+  border: 1px solid rgba(67, 211, 198, 0.2);
+  background: rgba(20, 184, 166, 0.12);
+  color: var(--accent);
   font-weight: 800;
 }
 
@@ -2769,6 +3207,14 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .workOrderList .workOrderCard {
+    grid-template-columns: minmax(220px, 0.85fr) minmax(0, 1.8fr);
+  }
+
+  .workOrderList .workOrderCard > p {
+    grid-column: 1 / -1;
+  }
+
   .quoteGrid {
     grid-template-columns: 1fr;
   }
@@ -2869,6 +3315,24 @@ button:disabled {
 
   .workOrderGrid {
     padding: 12px;
+  }
+
+  .workOrderList .workOrderCard {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .workOrderList .workOrderCardHeader .statusPill {
+    width: auto;
+    min-width: 120px;
+  }
+
+  .workOrderList .workOrderCard > dl {
+    grid-template-columns: 1fr;
+  }
+
+  .messageComposeGrid {
+    grid-template-columns: 1fr;
   }
 
   .quoteGrid {
@@ -3125,6 +3589,7 @@ body {
 .whatsAppGroupGrid article,
 .agendaItem,
 .agendaTime,
+.siteCard,
 .secondaryButton,
 .iconTextButton,
 .geoButton,
@@ -3184,6 +3649,12 @@ body {
 .workOrderMaterialItem {
   border-color: var(--line);
   background: var(--panel-soft);
+}
+
+.siteMeta span {
+  border-color: rgba(67, 211, 198, 0.2);
+  background: rgba(20, 184, 166, 0.12);
+  color: var(--accent);
 }
 
 .workOrderMaterialForm input,

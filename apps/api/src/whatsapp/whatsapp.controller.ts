@@ -1,5 +1,6 @@
-import { Controller, Get, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { SendWhatsAppMessageDto } from "./dto/send-whatsapp-message.dto";
 import { WhatsAppService } from "./whatsapp.service";
 
 @Controller("whatsapp")
@@ -15,5 +16,10 @@ export class WhatsAppController {
   @Get("sync")
   sync() {
     return this.whatsAppService.sync();
+  }
+
+  @Post("send")
+  send(@Body() dto: SendWhatsAppMessageDto) {
+    return this.whatsAppService.send(dto);
   }
 }
