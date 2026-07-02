@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Min } from "class-validator";
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, Min } from "class-validator";
 
 enum ServiceTypeDto {
   CCTV = "CCTV",
@@ -13,47 +13,47 @@ enum ServiceTypeDto {
   OTHER = "OTHER",
 }
 
-export class CreateInventoryItemDto {
-  @IsOptional()
+enum QuoteItemTypeDto {
+  EQUIPMENT = "EQUIPMENT",
+  MATERIAL = "MATERIAL",
+  SUPPLY = "SUPPLY",
+  LABOR = "LABOR",
+  EXPENSE = "EXPENSE",
+}
+
+export class UpsertPriceBookItemDto {
   @IsString()
-  sku?: string;
+  code!: string;
 
   @IsString()
   name!: string;
 
   @IsOptional()
+  @IsEnum(QuoteItemTypeDto)
+  type?: QuoteItemTypeDto;
+
+  @IsString()
+  category!: string;
+
+  @IsOptional()
   @IsEnum(ServiceTypeDto)
-  category?: ServiceTypeDto;
+  service?: ServiceTypeDto;
+
+  @IsOptional()
+  @IsString()
+  brand?: string;
+
+  @IsOptional()
+  @IsString()
+  model?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
 
   @IsOptional()
   @IsString()
   unit?: string;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  stock?: number;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  minStock?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  managedStock?: boolean;
-
-  @IsOptional()
-  @IsString()
-  location?: string;
-
-  @IsOptional()
-  @IsString()
-  supplier?: string;
-
-  @IsOptional()
-  @IsString()
-  supplierCategory?: string;
 
   @IsOptional()
   @IsNumber()
@@ -63,18 +63,18 @@ export class CreateInventoryItemDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  taxAmount?: number;
+  salePrice?: number;
 
   @IsOptional()
   @IsNumber()
   @Min(0)
-  priceWithTax?: number;
+  taxRate?: number;
 
   @IsOptional()
   @IsString()
   currency?: string;
 
   @IsOptional()
-  @IsString()
-  notes?: string;
+  @IsBoolean()
+  active?: boolean;
 }

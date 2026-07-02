@@ -235,6 +235,9 @@ export class WorkOrdersService {
         select: {
           id: true,
           name: true,
+          reference: true,
+          taxId: true,
+          logoUrl: true,
           email: true,
           phone: true,
         },

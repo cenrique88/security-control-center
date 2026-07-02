@@ -21,6 +21,11 @@ enum CustomerStatus {
   INACTIVE
 }
 
+enum CustomerType {
+  NORMAL
+  THIRD_PARTY
+}
+
 enum WorkOrderStatus {
   SCHEDULED
   IN_PROGRESS
@@ -33,16 +38,47 @@ enum ServiceType {
   CCTV
   ALARM
   ACCESS_CONTROL
+  CABLING
   GPS
+  ELECTRIC_FENCE
+  AUTOMATION
   NETWORKING
   MAINTENANCE
   OTHER
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum QuoteItemType {
+  EQUIPMENT
+  MATERIAL
+  SUPPLY
+  LABOR
+  EXPENSE
 }
 
 enum InventoryMovementType {
   IN
   OUT
   ADJUST
+}
+
+enum MeetingType {
+  IN_PERSON
+  VIDEO_CALL
+  PHONE
+}
+
+enum MeetingStatus {
+  PENDING
+  DONE
+  CANCELLED
 }
 
 model User {
@@ -65,6 +101,7 @@ model Customer {
   phone       String?
   address     String?
   logoUrl     String?
+  type        CustomerType   @default(NORMAL)
   status      CustomerStatus @default(PROSPECT)
   notes       String?
   createdAt   DateTime       @default(now())
@@ -74,6 +111,11 @@ model Customer {
   quotes      Quote[]
   payments    Payment[]
   documents   CustomerDocument[]
+  meetings    Meeting[]
+  laborPointRates CustomerLaborPointRate[]
+  priceOverrides CustomerPriceOverride[]
+
+  @@index([type])
 }
 
 model CustomerDocument {
@@ -158,6 +200,83 @@ model InventoryItem {
   movements        InventoryMovement[]
 }
 
+model PriceBookItem {
+  id          String        @id @default(cuid())
+  code        String        @unique
+  name        String
+  type        QuoteItemType @default(EQUIPMENT)
+  category    String
+  service     ServiceType?
+  brand       String?
+  model       String?
+  description String?
+  unit        String        @default("u")
+  costPrice   Decimal      @default(0) @db.Decimal(12, 2)
+  salePrice   Decimal      @default(0) @db.Decimal(12, 2)
+  taxRate     Decimal      @default(22) @db.Decimal(5, 2)
+  currency    String       @default("UYU")
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  quoteItems  QuoteItem[]
+  customerOverrides CustomerPriceOverride[]
+
+  @@index([category])
+  @@index([service])
+  @@index([active])
+}
+
+model LaborPointRate {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  pointValue  Decimal  @db.Decimal(12, 2)
+  taxRate     Decimal  @default(22) @db.Decimal(5, 2)
+  currency    String   @default("UYU")
+  active      Boolean  @default(true)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model CustomerLaborPointRate {
+  id          String   @id @default(cuid())
+  customerId  String
+  name        String
+  pointValue  Decimal  @db.Decimal(12, 2)
+  taxRate     Decimal  @default(22) @db.Decimal(5, 2)
+  currency    String   @default("UYU")
+  active      Boolean  @default(true)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([active])
+}
+
+model CustomerPriceOverride {
+  id              String        @id @default(cuid())
+  customerId      String
+  priceBookItemId String
+  salePrice       Decimal       @db.Decimal(12, 2)
+  costPrice       Decimal       @default(0) @db.Decimal(12, 2)
+  taxRate         Decimal       @default(22) @db.Decimal(5, 2)
+  currency        String        @default("UYU")
+  active          Boolean       @default(true)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  priceBookItem   PriceBookItem @relation(fields: [priceBookItemId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, priceBookItemId])
+  @@index([customerId])
+  @@index([priceBookItemId])
+  @@index([active])
+}
+
 model InventoryMovement {
   id              String                @id @default(cuid())
   itemId          String
@@ -174,18 +293,88 @@ model InventoryMovement {
 }
 
 model Quote {
-  id          String   @id @default(cuid())
-  customerId  String
-  number      String   @unique
-  title       String
-  laborPoints Int      @default(0)
-  subtotal    Decimal  @db.Decimal(12, 2)
-  tax         Decimal  @db.Decimal(12, 2)
-  total       Decimal  @db.Decimal(12, 2)
-  acceptedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id                   String         @id @default(cuid())
+  customerId           String
+  meetingId            String?
+  number               String         @unique
+  title                String
+  service              ServiceType    @default(OTHER)
+  status               QuoteStatus    @default(DRAFT)
+  currency             String         @default("UYU")
+  issueDate            DateTime       @default(now())
+  validUntil           DateTime?
+  taxIncluded          Boolean        @default(false)
+  discountPercent      Decimal        @default(0) @db.Decimal(5, 2)
+  profitMarginPercent  Decimal        @default(0) @db.Decimal(5, 2)
+  laborPoints          Decimal        @default(0) @db.Decimal(8, 2)
+  materialsSubtotal    Decimal        @default(0) @db.Decimal(12, 2)
+  laborSubtotal        Decimal        @default(0) @db.Decimal(12, 2)
+  expensesSubtotal     Decimal        @default(0) @db.Decimal(12, 2)
+  subtotal             Decimal        @db.Decimal(12, 2)
+  discountAmount       Decimal        @default(0) @db.Decimal(12, 2)
+  taxableBase          Decimal        @default(0) @db.Decimal(12, 2)
+  tax                  Decimal        @db.Decimal(12, 2)
+  total                Decimal        @db.Decimal(12, 2)
+  costTotal            Decimal        @default(0) @db.Decimal(12, 2)
+  estimatedProfit      Decimal        @default(0) @db.Decimal(12, 2)
+  estimatedMargin      Decimal        @default(0) @db.Decimal(5, 2)
+  internalNotes        String?
+  commercialTerms      String?
+  executionTime        String?
+  warranty             String?
+  paymentTerms         String?
+  sentAt               DateTime?
+  acceptedAt           DateTime?
+  rejectedAt           DateTime?
+  createdBy            String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  customer             Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  meeting              Meeting?       @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  items                QuoteItem[]
+  history              QuoteHistory[]
+
+  @@index([customerId])
+  @@index([meetingId])
+  @@index([status])
+  @@index([service])
+}
+
+model QuoteItem {
+  id              String         @id @default(cuid())
+  quoteId         String
+  priceBookItemId String?
+  type            QuoteItemType
+  category        String
+  description     String
+  quantity        Decimal        @db.Decimal(12, 2)
+  unit            String
+  unitPrice       Decimal        @db.Decimal(12, 2)
+  taxRate         Decimal        @default(22) @db.Decimal(5, 2)
+  unitCost        Decimal        @default(0) @db.Decimal(12, 2)
+  subtotal        Decimal        @db.Decimal(12, 2)
+  taxAmount       Decimal        @db.Decimal(12, 2)
+  total           Decimal        @db.Decimal(12, 2)
+  sortOrder       Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  quote           Quote          @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  priceBookItem   PriceBookItem? @relation(fields: [priceBookItemId], references: [id], onDelete: SetNull)
+
+  @@index([quoteId])
+  @@index([priceBookItemId])
+}
+
+model QuoteHistory {
+  id        String   @id @default(cuid())
+  quoteId   String
+  action    String
+  comment   String?
+  createdBy String?
+  createdAt DateTime @default(now())
+  quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
 }
 
 model Payment {
@@ -198,6 +387,64 @@ model Payment {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+
+model Meeting {
+  id                String              @id @default(cuid())
+  customerId        String
+  dateTime          DateTime
+  contact           String?
+  type              MeetingType
+  status            MeetingStatus       @default(PENDING)
+  objective         String
+  notes             String?
+  commitments       String?
+  nextStep          String?
+  followUpDate      DateTime?
+  attendees         String?
+  needs             String?
+  equipmentNeeded   String?
+  estimatedBudget   Decimal?            @db.Decimal(12, 2)
+  closeProbability  Int?
+  reminderEnabled   Boolean             @default(true)
+  reminderMinutesBefore Int             @default(30)
+  reminderSentAt    DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  customer          Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  attachments       MeetingAttachment[]
+  quotes            Quote[]
+
+  @@index([customerId])
+  @@index([dateTime])
+  @@index([followUpDate])
+  @@index([status])
+}
+
+model MeetingAttachment {
+  id        String   @id @default(cuid())
+  meetingId String
+  name      String
+  mimeType  String?
+  size      Int?
+  dataUrl   String
+  createdAt DateTime @default(now())
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+}
+
+model WhatsAppDailySummarySettings {
+  id              String   @id @default("meeting-summary")
+  enabled         Boolean  @default(true)
+  recipientName   String?
+  recipientPhone  String   @default("097684200")
+  sendTime        String   @default("18:00")
+  messageTemplate String   @default("Resumen de reuniones para {fecha}\n\n{reuniones}\n\nSecurity Solutions")
+  lastSentForDate String?
+  lastSentAt      DateTime?
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
 }
 
 model Vehicle {

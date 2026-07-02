@@ -4,6 +4,7 @@ import {
   Bell,
   CalendarDays,
   Car,
+  Handshake,
   ClipboardList,
   Copy,
   DollarSign,
@@ -12,8 +13,11 @@ import {
   LogOut,
   Mail,
   MapPin,
+  Menu,
   MessageSquare,
   Package,
+  Paperclip,
+  PhoneCall,
   Plus,
   Printer,
   RefreshCw,
@@ -39,6 +43,7 @@ import {
   CustomerPayload,
   CustomerSite,
   CustomerStatus,
+  CustomerType,
   DashboardSummary,
   DevicePayload,
   DeviceType,
@@ -50,14 +55,22 @@ import {
   InventoryMovementPayload,
   InventoryMovementType,
   InstalledDevice,
+  LaborPointCalculation,
+  Meeting,
+  MeetingPayload,
+  MeetingStatus,
+  MeetingType,
   Payment,
   PaymentPayload,
   Quote,
   QuotePayload,
+  QuoteStatus,
   SitePayload,
   Vehicle,
   VehiclePayload,
   WhatsAppChat,
+  WhatsAppDailyMeetingSummary,
+  WhatsAppDailyMeetingSummaryPayload,
   WhatsAppSync,
   WhatsAppStatus,
   WorkOrder,
@@ -68,8 +81,10 @@ import {
 const modules = [
   { name: "Dashboard", icon: ShieldCheck },
   { name: "Clientes", icon: Users },
+  { name: "Tercerizados", icon: Handshake },
   { name: "Trabajos", icon: Wrench },
   { name: "Agenda", icon: CalendarDays },
+  { name: "Reuniones", icon: PhoneCall },
   { name: "Presupuestos", icon: ClipboardList },
   { name: "Cobros", icon: DollarSign },
   { name: "Almacen", icon: Package },
@@ -89,10 +104,21 @@ const deviceTypeLabels: Record<DeviceType, string> = {
   CCTV: "CCTV",
   ALARM: "Alarma",
   ACCESS_CONTROL: "Control de acceso",
+  CABLING: "Cableado",
   GPS: "GPS",
+  ELECTRIC_FENCE: "Cercos electricos",
+  AUTOMATION: "Automatizacion",
   NETWORKING: "Redes",
   MAINTENANCE: "Mantenimiento",
   OTHER: "Otro",
+};
+
+const quoteStatusLabels: Record<QuoteStatus, string> = {
+  DRAFT: "Borrador",
+  SENT: "Enviado",
+  APPROVED: "Aprobado",
+  REJECTED: "Rechazado",
+  EXPIRED: "Vencido",
 };
 
 const workStatusLabels: Record<WorkOrderStatus, string> = {
@@ -101,6 +127,18 @@ const workStatusLabels: Record<WorkOrderStatus, string> = {
   WAITING_CUSTOMER: "Espera cliente",
   COMPLETED: "Completado",
   CANCELLED: "Cancelado",
+};
+
+const meetingTypeLabels: Record<MeetingType, string> = {
+  IN_PERSON: "Presencial",
+  VIDEO_CALL: "Videollamada",
+  PHONE: "Telefono",
+};
+
+const meetingStatusLabels: Record<MeetingStatus, string> = {
+  PENDING: "Pendiente",
+  DONE: "Realizada",
+  CANCELLED: "Cancelada",
 };
 
 type AppNotification = {
@@ -163,6 +201,7 @@ const emptyCustomerForm: CustomerPayload = {
   phone: "",
   address: "",
   logoUrl: "",
+  type: "NORMAL",
   status: "PROSPECT",
   notes: "",
 };
@@ -198,9 +237,42 @@ const emptyQuoteForm: QuotePayload = {
   customerId: "",
   number: "",
   title: "",
+  service: "CCTV",
+  status: "DRAFT",
+  currency: "UYU",
+  taxIncluded: false,
+  discountPercent: 0,
+  profitMarginPercent: 0,
   laborPoints: 0,
   subtotal: 0,
   tax: 0,
+  commercialTerms: "",
+  executionTime: "",
+  warranty: "",
+  paymentTerms: "",
+  internalNotes: "",
+  items: [],
+};
+
+const emptyMeetingForm: MeetingPayload = {
+  customerId: "",
+  dateTime: "",
+  contact: "",
+  type: "IN_PERSON",
+  status: "PENDING",
+  objective: "",
+  notes: "",
+  commitments: "",
+  nextStep: "",
+  followUpDate: "",
+  attendees: "",
+  needs: "",
+  equipmentNeeded: "",
+  estimatedBudget: 0,
+  closeProbability: 50,
+  reminderEnabled: true,
+  reminderMinutesBefore: 30,
+  attachments: [],
 };
 
 const emptyPaymentForm: PaymentPayload = {
@@ -294,6 +366,25 @@ const emptyWhatsAppSync: WhatsAppSync = {
   groups: [],
 };
 
+const emptyWhatsAppDailyMeetingSummary: WhatsAppDailyMeetingSummary = {
+  settings: {
+    id: "meeting-summary",
+    enabled: true,
+    recipientName: "Lewis",
+    recipientPhone: "097684200",
+    sendTime: "18:00",
+    messageTemplate: "Resumen de reuniones para {fecha}\n\n{reuniones}\n\nSecurity Solutions",
+    updatedAt: "",
+    createdAt: "",
+  },
+  preview: {
+    dateKey: "",
+    dateLabel: "",
+    meetingsCount: 0,
+    message: "",
+  },
+};
+
 const fallbackSummary: DashboardSummary = {
   lastUpdatedAt: "",
   totalCustomers: 0,
@@ -367,6 +458,7 @@ export default function Home() {
   const [devices, setDevices] = useState<InstalledDevice[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [agendaOrders, setAgendaOrders] = useState<WorkOrder[]>([]);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -376,11 +468,21 @@ export default function Home() {
   const [gmailSync, setGmailSync] = useState<GmailSync>(emptyGmailSync);
   const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus>(fallbackWhatsAppStatus);
   const [whatsAppSync, setWhatsAppSync] = useState<WhatsAppSync>(emptyWhatsAppSync);
+  const [whatsAppDailySummary, setWhatsAppDailySummary] = useState<WhatsAppDailyMeetingSummary>(emptyWhatsAppDailyMeetingSummary);
+  const [whatsAppDailySummaryForm, setWhatsAppDailySummaryForm] = useState<WhatsAppDailyMeetingSummaryPayload>({
+    enabled: true,
+    recipientName: "Lewis",
+    recipientPhone: "097684200",
+    sendTime: "18:00",
+    messageTemplate: emptyWhatsAppDailyMeetingSummary.settings.messageTemplate,
+  });
   const [customerForm, setCustomerForm] = useState<CustomerPayload>(emptyCustomerForm);
   const [siteForm, setSiteForm] = useState<SitePayload>(emptySiteForm);
   const [deviceForm, setDeviceForm] = useState<DevicePayload>(emptyDeviceForm);
   const [workOrderForm, setWorkOrderForm] = useState<WorkOrderPayload>(emptyWorkOrderForm);
+  const [meetingForm, setMeetingForm] = useState<MeetingPayload>(emptyMeetingForm);
   const [quoteForm, setQuoteForm] = useState<QuotePayload>(emptyQuoteForm);
+  const [quoteLaborPreview, setQuoteLaborPreview] = useState<LaborPointCalculation | null>(null);
   const [paymentForm, setPaymentForm] = useState<PaymentPayload>(emptyPaymentForm);
   const [vehicleForm, setVehicleForm] = useState<VehiclePayload>(emptyVehicleForm);
   const [inventoryForm, setInventoryForm] = useState<InventoryItemPayload>(emptyInventoryForm);
@@ -388,6 +490,7 @@ export default function Home() {
     useState<InventoryMovementPayload>(emptyInventoryMovementForm);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [editingWorkOrderId, setEditingWorkOrderId] = useState<string | null>(null);
+  const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null);
   const [editingInventoryItemId, setEditingInventoryItemId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [deviceSearch, setDeviceSearch] = useState("");
@@ -396,8 +499,11 @@ export default function Home() {
   const [workStatus, setWorkStatus] = useState<WorkOrderStatus | "ALL">("ALL");
   const [agendaDate, setAgendaDate] = useState(() => toDateInputValue(new Date()));
   const [agendaStatus, setAgendaStatus] = useState<WorkOrderStatus | "ALL">("ALL");
+  const [meetingSearch, setMeetingSearch] = useState("");
+  const [meetingType, setMeetingType] = useState<MeetingType | "ALL">("ALL");
+  const [meetingStatus, setMeetingStatus] = useState<MeetingStatus | "ALL">("ALL");
   const [quoteSearch, setQuoteSearch] = useState("");
-  const [quoteStatus, setQuoteStatus] = useState<"ALL" | "PENDING" | "ACCEPTED">("ALL");
+  const [quoteStatus, setQuoteStatus] = useState<"ALL" | QuoteStatus>("ALL");
   const [paymentSearch, setPaymentSearch] = useState("");
   const [paymentStatus, setPaymentStatus] = useState<"ALL" | "PENDING" | "PAID" | "OVERDUE">("ALL");
   const [vehicleSearch, setVehicleSearch] = useState("");
@@ -416,17 +522,20 @@ export default function Home() {
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [workOrdersLoading, setWorkOrdersLoading] = useState(false);
   const [agendaLoading, setAgendaLoading] = useState(false);
+  const [meetingsLoading, setMeetingsLoading] = useState(false);
   const [quotesLoading, setQuotesLoading] = useState(false);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [vehiclesLoading, setVehiclesLoading] = useState(false);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [gmailLoading, setGmailLoading] = useState(false);
   const [whatsAppLoading, setWhatsAppLoading] = useState(false);
+  const [whatsAppSummarySaving, setWhatsAppSummarySaving] = useState(false);
   const [customerError, setCustomerError] = useState("");
   const [siteError, setSiteError] = useState("");
   const [deviceError, setDeviceError] = useState("");
   const [workOrderError, setWorkOrderError] = useState("");
   const [agendaError, setAgendaError] = useState("");
+  const [meetingError, setMeetingError] = useState("");
   const [quoteError, setQuoteError] = useState("");
   const [paymentError, setPaymentError] = useState("");
   const [vehicleError, setVehicleError] = useState("");
@@ -435,14 +544,55 @@ export default function Home() {
   const [whatsAppError, setWhatsAppError] = useState("");
   const [locating, setLocating] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [workOrderDocument, setWorkOrderDocument] = useState<WorkOrder | null>(null);
+  const [customerDocumentView, setCustomerDocumentView] = useState<{ customer: Customer; document: CustomerDocument } | null>(null);
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile | null>(null);
   const [customerProfileLoading, setCustomerProfileLoading] = useState(false);
   const [customerProfileError, setCustomerProfileError] = useState("");
   const [focusedWorkOrderId, setFocusedWorkOrderId] = useState<string | null>(null);
+  const [focusedDeviceGroupKey, setFocusedDeviceGroupKey] = useState<string | null>(null);
   const [messageCompose, setMessageCompose] = useState<MessageComposeState | null>(null);
   const [messageSending, setMessageSending] = useState(false);
   const [messageError, setMessageError] = useState("");
+  const notificationsMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const locked = Boolean(
+      workOrderDocument ||
+      customerDocumentView ||
+      messageCompose ||
+      customerProfile ||
+      customerProfileLoading ||
+      customerProfileError,
+    );
+    document.body.classList.toggle("modalScrollLocked", locked);
+    return () => {
+      document.body.classList.remove("modalScrollLocked");
+    };
+  }, [workOrderDocument, customerDocumentView, messageCompose, customerProfile, customerProfileLoading, customerProfileError]);
+
+  useEffect(() => {
+    if (!notificationsOpen) {
+      return;
+    }
+
+    function closeNotificationsFromOutside(event: MouseEvent | TouchEvent) {
+      const target = event.target;
+      if (!(target instanceof Node) || notificationsMenuRef.current?.contains(target)) {
+        return;
+      }
+
+      setNotificationsOpen(false);
+    }
+
+    document.addEventListener("mousedown", closeNotificationsFromOutside);
+    document.addEventListener("touchstart", closeNotificationsFromOutside);
+    return () => {
+      document.removeEventListener("mousedown", closeNotificationsFromOutside);
+      document.removeEventListener("touchstart", closeNotificationsFromOutside);
+    };
+  }, [notificationsOpen]);
 
   const summaryCards = useMemo(
     () => [
@@ -556,14 +706,34 @@ export default function Home() {
     [notifications],
   );
 
+  const normalCustomers = useMemo(
+    () => customers.filter((customer) => (customer.type ?? "NORMAL") === "NORMAL"),
+    [customers],
+  );
+
+  const thirdPartyCustomers = useMemo(
+    () => customers.filter((customer) => customer.type === "THIRD_PARTY"),
+    [customers],
+  );
+
   const customerStats = useMemo(
     () => [
-      { label: "Total", value: customers.length },
-      { label: "Activos", value: customers.filter((customer) => customer.status === "ACTIVE").length },
-      { label: "Prospectos", value: customers.filter((customer) => customer.status === "PROSPECT").length },
-      { label: "Inactivos", value: customers.filter((customer) => customer.status === "INACTIVE").length },
+      { label: "Clientes", value: normalCustomers.length },
+      { label: "Activos", value: normalCustomers.filter((customer) => customer.status === "ACTIVE").length },
+      { label: "Prospectos", value: normalCustomers.filter((customer) => customer.status === "PROSPECT").length },
+      { label: "Inactivos", value: normalCustomers.filter((customer) => customer.status === "INACTIVE").length },
     ],
-    [customers],
+    [normalCustomers],
+  );
+
+  const thirdPartyStats = useMemo(
+    () => [
+      { label: "Tercerizados", value: thirdPartyCustomers.length },
+      { label: "Activos", value: thirdPartyCustomers.filter((customer) => customer.status === "ACTIVE").length },
+      { label: "Con trabajos", value: thirdPartyCustomers.filter((customer) => customer._count.workOrders > 0).length },
+      { label: "Presupuestos", value: thirdPartyCustomers.reduce((total, customer) => total + customer._count.quotes, 0) },
+    ],
+    [thirdPartyCustomers],
   );
 
   const selectedCustomer = useMemo(
@@ -601,9 +771,22 @@ export default function Home() {
     [agendaOrders],
   );
 
+  const agendaMeetingItems = useMemo(
+    () =>
+      meetings
+        .filter((meeting) => meeting.dateTime)
+        .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()),
+    [meetings],
+  );
+
   const agendaToday = useMemo(
     () => agendaItems.filter((workOrder) => isSameDay(workOrder.scheduledAt, selectedAgendaDate)),
     [agendaItems, selectedAgendaDate],
+  );
+
+  const agendaMeetingsToday = useMemo(
+    () => agendaMeetingItems.filter((meeting) => isSameDay(meeting.dateTime, selectedAgendaDate)),
+    [agendaMeetingItems, selectedAgendaDate],
   );
 
   const agendaOverdue = useMemo(
@@ -615,6 +798,17 @@ export default function Home() {
           startOfDay(new Date(workOrder.scheduledAt ?? "")).getTime() < startOfDay(selectedAgendaDate).getTime(),
       ),
     [agendaItems, selectedAgendaDate],
+  );
+
+  const agendaMeetingsOverdue = useMemo(
+    () =>
+      agendaMeetingItems.filter(
+        (meeting) =>
+          meeting.status !== "DONE" &&
+          meeting.status !== "CANCELLED" &&
+          startOfDay(new Date(meeting.dateTime)).getTime() < startOfDay(selectedAgendaDate).getTime(),
+      ),
+    [agendaMeetingItems, selectedAgendaDate],
   );
 
   const agendaWeek = useMemo(
@@ -629,21 +823,46 @@ export default function Home() {
     [agendaItems, selectedAgendaDate],
   );
 
+  const agendaMeetingsWeek = useMemo(
+    () =>
+      agendaMeetingItems.filter((meeting) => {
+        const scheduledAt = new Date(meeting.dateTime);
+        const day = startOfDay(scheduledAt).getTime();
+        const start = startOfDay(selectedAgendaDate).getTime();
+        const end = addDays(startOfDay(selectedAgendaDate), 6).getTime();
+        return day >= start && day <= end;
+      }),
+    [agendaMeetingItems, selectedAgendaDate],
+  );
+
   const agendaStats = useMemo(
     () => [
-      { label: "Hoy", value: agendaToday.length },
-      { label: "Atrasados", value: agendaOverdue.length },
-      { label: "Semana", value: agendaWeek.length },
+      { label: "Hoy", value: agendaToday.length + agendaMeetingsToday.length },
+      { label: "Atrasados", value: agendaOverdue.length + agendaMeetingsOverdue.length },
+      { label: "Semana", value: agendaWeek.length + agendaMeetingsWeek.length },
       { label: "Sin fecha", value: agendaOrders.filter((workOrder) => !workOrder.scheduledAt).length },
     ],
-    [agendaOrders, agendaOverdue, agendaToday, agendaWeek],
+    [agendaMeetingsOverdue, agendaMeetingsToday, agendaMeetingsWeek, agendaOrders, agendaOverdue, agendaToday, agendaWeek],
+  );
+
+  const meetingStats = useMemo(
+    () => [
+      { label: "Reuniones", value: meetings.length },
+      { label: "Pendientes", value: meetings.filter((meeting) => meeting.status === "PENDING").length },
+      { label: "Realizadas", value: meetings.filter((meeting) => meeting.status === "DONE").length },
+      {
+        label: "Seguimientos",
+        value: meetings.filter((meeting) => meeting.followUpDate && meeting.status !== "CANCELLED").length,
+      },
+    ],
+    [meetings],
   );
 
   const quoteStats = useMemo(
     () => [
       { label: "Presupuestos", value: quotes.length },
-      { label: "Pendientes", value: quotes.filter((quote) => !quote.acceptedAt).length },
-      { label: "Aceptados", value: quotes.filter((quote) => quote.acceptedAt).length },
+      { label: "Borradores", value: quotes.filter((quote) => quote.status === "DRAFT").length },
+      { label: "Aprobados", value: quotes.filter((quote) => quote.status === "APPROVED").length },
       { label: "Total", value: formatCurrency(quotes.reduce((sum, quote) => sum + toMoneyNumber(quote.total), 0)) },
     ],
     [quotes],
@@ -721,8 +940,8 @@ export default function Home() {
 
   useEffect(() => {
     try {
-      const storedToken = localStorage.getItem("sscc_token");
-      const storedUser = localStorage.getItem("sscc_user");
+      const storedToken = window.localStorage.getItem("sscc_token");
+      const storedUser = window.localStorage.getItem("sscc_user");
 
       if (!storedToken || !storedUser || isExpiredJwt(storedToken)) {
         redirectToLogin();
@@ -731,9 +950,11 @@ export default function Home() {
 
       setToken(storedToken);
       setUser(JSON.parse(storedUser) as AuthUser);
-      setAuthChecked(true);
     } catch {
       redirectToLogin();
+      return;
+    } finally {
+      setAuthChecked(true);
     }
   }, [router]);
 
@@ -747,6 +968,7 @@ export default function Home() {
     void loadDevices(token);
     void loadWorkOrders(token);
     void loadAgenda(token);
+    void loadMeetings(token, null);
     void loadQuotes(token);
     void loadPayments(token);
     void loadInventory(token);
@@ -754,15 +976,105 @@ export default function Home() {
     void loadGmailStatus(token);
     void syncGmail(token, true);
     void loadWhatsAppStatus(token);
+    void loadWhatsAppDailySummary(token);
     void syncWhatsApp(token);
   }, [token]);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    switch (activeModule) {
+      case "Dashboard":
+        void loadSummary(token);
+        break;
+      case "Clientes":
+        void loadCustomers(token);
+        break;
+      case "Tercerizados":
+        void loadCustomers(token);
+        break;
+      case "Trabajos":
+        void Promise.all([
+          loadWorkOrders(token),
+          loadAgenda(token),
+          loadInventory(token, { mode: "all", category: "ALL", supplier: "ALL", search: "" }),
+        ]);
+        break;
+      case "Agenda":
+        void Promise.all([loadAgenda(token), loadMeetings(token, null)]);
+        break;
+      case "Reuniones":
+        void loadMeetings(token, null);
+        break;
+      case "Presupuestos":
+        void loadQuotes(token);
+        break;
+      case "Cobros":
+        void loadPayments(token);
+        break;
+      case "Almacen":
+        void loadInventory(token);
+        break;
+      case "Equipos":
+        void loadDevices(token);
+        break;
+      case "Vehiculos":
+        void loadVehicles(token);
+        break;
+      case "Gmail":
+        void syncGmail(token, true);
+        break;
+      case "WhatsApp":
+        void loadWhatsAppDailySummary(token);
+        void syncWhatsApp(token, true);
+        break;
+      default:
+        break;
+    }
+  }, [activeModule, token]);
+
+  useEffect(() => {
+    if (activeModule === "Clientes" || activeModule === "Tercerizados") {
+      const type: CustomerType = activeModule === "Tercerizados" ? "THIRD_PARTY" : "NORMAL";
+      setCustomerForm((currentForm) => (editingCustomerId ? currentForm : { ...currentForm, type }));
+    }
+  }, [activeModule, editingCustomerId]);
+
+  useEffect(() => {
+    const customerId = quoteForm.customerId || selectedCustomerId || "";
+    const points = Number(quoteForm.laborPoints) || 0;
+
+    if (!token || activeModule !== "Presupuestos" || !customerId || points <= 0) {
+      setQuoteLaborPreview(null);
+      return;
+    }
+
+    const params = new URLSearchParams({ customerId, points: String(points) });
+    let active = true;
+    apiRequest<LaborPointCalculation>(`/api/price-book/labor-points/calculate?${params.toString()}`, { token })
+      .then((data) => {
+        if (active) {
+          setQuoteLaborPreview(data);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setQuoteLaborPreview(null);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activeModule, quoteForm.customerId, quoteForm.laborPoints, selectedCustomerId, token]);
 
   useEffect(() => {
     if (!token || activeModule !== "Gmail") {
       return;
     }
 
-    void syncGmail(token, true);
     const interval = window.setInterval(() => {
       void syncGmail(token, true);
     }, 60000);
@@ -775,7 +1087,6 @@ export default function Home() {
       return;
     }
 
-    void syncWhatsApp(token, true);
     const interval = window.setInterval(() => {
       void syncWhatsApp(token, true);
     }, 30000);
@@ -800,7 +1111,6 @@ export default function Home() {
       return;
     }
 
-    void loadSummary(token);
     const interval = window.setInterval(() => {
       void loadSummary(token, true);
     }, 30000);
@@ -1001,6 +1311,40 @@ export default function Home() {
       setAgendaError("No se pudo cargar la agenda");
     } finally {
       setAgendaLoading(false);
+    }
+  }
+
+  async function loadMeetings(activeToken = token, customerId: string | null = null) {
+    if (!activeToken) {
+      return;
+    }
+
+    setMeetingsLoading(true);
+    setMeetingError("");
+    try {
+      const params = new URLSearchParams();
+      if (meetingSearch.trim()) {
+        params.set("search", meetingSearch.trim());
+      }
+      if (customerId) {
+        params.set("customerId", customerId);
+      }
+      if (meetingType !== "ALL") {
+        params.set("type", meetingType);
+      }
+      if (meetingStatus !== "ALL") {
+        params.set("status", meetingStatus);
+      }
+
+      const query = params.toString();
+      const data = await apiRequest<Meeting[]>(`/api/meetings${query ? `?${query}` : ""}`, {
+        token: activeToken,
+      });
+      setMeetings(data);
+    } catch {
+      setMeetingError("No se pudieron cargar las reuniones");
+    } finally {
+      setMeetingsLoading(false);
     }
   }
 
@@ -1260,6 +1604,77 @@ export default function Home() {
     }
   }
 
+  async function loadWhatsAppDailySummary(activeToken = token) {
+    if (!activeToken) {
+      return;
+    }
+
+    try {
+      const data = await apiRequest<WhatsAppDailyMeetingSummary>("/api/whatsapp/daily-meeting-summary", {
+        token: activeToken,
+      });
+      setWhatsAppDailySummary(data);
+      setWhatsAppDailySummaryForm({
+        enabled: data.settings.enabled,
+        recipientName: data.settings.recipientName ?? "",
+        recipientPhone: data.settings.recipientPhone,
+        sendTime: data.settings.sendTime,
+        messageTemplate: data.settings.messageTemplate,
+      });
+    } catch (error) {
+      setWhatsAppError(`No se pudo cargar el resumen diario: ${getErrorMessage(error)}`);
+    }
+  }
+
+  async function saveWhatsAppDailySummary() {
+    if (!token) {
+      return;
+    }
+
+    setWhatsAppSummarySaving(true);
+    setWhatsAppError("");
+    try {
+      const data = await apiRequest<WhatsAppDailyMeetingSummary>("/api/whatsapp/daily-meeting-summary", {
+        token,
+        method: "PATCH",
+        body: JSON.stringify(whatsAppDailySummaryForm),
+      });
+      setWhatsAppDailySummary(data);
+      setStatus("Resumen diario de reuniones actualizado.");
+    } catch (error) {
+      setWhatsAppError(`No se pudo guardar el resumen diario: ${getErrorMessage(error)}`);
+    } finally {
+      setWhatsAppSummarySaving(false);
+    }
+  }
+
+  async function sendWhatsAppDailySummaryNow() {
+    if (!token) {
+      return;
+    }
+
+    setWhatsAppSummarySaving(true);
+    setWhatsAppError("");
+    try {
+      const saved = await apiRequest<WhatsAppDailyMeetingSummary>("/api/whatsapp/daily-meeting-summary", {
+        token,
+        method: "PATCH",
+        body: JSON.stringify(whatsAppDailySummaryForm),
+      });
+      setWhatsAppDailySummary(saved);
+      const sent = await apiRequest<WhatsAppDailyMeetingSummary>("/api/whatsapp/daily-meeting-summary/send", {
+        token,
+        method: "POST",
+      });
+      setWhatsAppDailySummary(sent);
+      setStatus("Resumen diario de reuniones enviado por WhatsApp.");
+    } catch (error) {
+      setWhatsAppError(`No se pudo enviar el resumen diario: ${getErrorMessage(error)}`);
+    } finally {
+      setWhatsAppSummarySaving(false);
+    }
+  }
+
   async function saveCustomer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token || !customerForm.name.trim()) {
@@ -1267,7 +1682,11 @@ export default function Home() {
       return;
     }
 
-    const payload = cleanCustomerPayload(customerForm);
+    const currentType: CustomerType = activeModule === "Tercerizados" ? "THIRD_PARTY" : "NORMAL";
+    const payload = cleanCustomerPayload({
+      ...customerForm,
+      type: editingCustomerId ? customerForm.type ?? currentType : currentType,
+    });
     const path = editingCustomerId ? `/api/customers/${editingCustomerId}` : "/api/customers";
     const method = editingCustomerId ? "PATCH" : "POST";
 
@@ -1279,11 +1698,11 @@ export default function Home() {
         method,
         body: JSON.stringify(payload),
       });
-      setCustomerForm(emptyCustomerForm);
+      setCustomerForm({ ...emptyCustomerForm, type: currentType });
       setEditingCustomerId(null);
       await Promise.all([loadCustomers(token), loadSummary(token)]);
-    } catch {
-      setCustomerError("No se pudo guardar el cliente");
+    } catch (error) {
+      setCustomerError(`No se pudo guardar el cliente: ${getErrorMessage(error)}`);
     } finally {
       setCustomersLoading(false);
     }
@@ -1449,6 +1868,88 @@ export default function Home() {
     } finally {
       setQuotesLoading(false);
     }
+  }
+
+  async function saveMeeting(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) {
+      return;
+    }
+
+    const customerId = meetingForm.customerId || selectedCustomerId || "";
+    if (!customerId || !meetingForm.dateTime || !meetingForm.objective.trim()) {
+      setMeetingError("Selecciona un cliente, fecha y objetivo de la reunion");
+      return;
+    }
+
+    setMeetingsLoading(true);
+    setMeetingError("");
+    try {
+      await apiRequest<Meeting>(editingMeetingId ? `/api/meetings/${editingMeetingId}` : "/api/meetings", {
+        token,
+        method: editingMeetingId ? "PATCH" : "POST",
+        body: JSON.stringify(cleanMeetingPayload({ ...meetingForm, customerId })),
+      });
+      setEditingMeetingId(null);
+      setMeetingForm({ ...emptyMeetingForm, customerId: "" });
+      await Promise.all([loadMeetings(token, null), loadAgenda(token), loadCustomers(token), loadSummary(token)]);
+    } catch (error) {
+      setMeetingError(`No se pudo ${editingMeetingId ? "actualizar" : "guardar"} la reunion: ${getErrorMessage(error)}`);
+    } finally {
+      setMeetingsLoading(false);
+    }
+  }
+
+  function editMeeting(meeting: Meeting) {
+    setEditingMeetingId(meeting.id);
+    setSelectedCustomerId(meeting.customerId);
+    setMeetingForm({
+      customerId: meeting.customerId,
+      dateTime: toDateTimeLocalValue(new Date(meeting.dateTime)),
+      contact: meeting.contact ?? "",
+      type: meeting.type,
+      status: meeting.status,
+      objective: meeting.objective,
+      notes: meeting.notes ?? "",
+      commitments: meeting.commitments ?? "",
+      nextStep: meeting.nextStep ?? "",
+      followUpDate: meeting.followUpDate ? toDateInputValue(new Date(meeting.followUpDate)) : "",
+      attendees: meeting.attendees ?? "",
+      needs: meeting.needs ?? "",
+      equipmentNeeded: meeting.equipmentNeeded ?? "",
+      estimatedBudget: meeting.estimatedBudget ? toMoneyNumber(meeting.estimatedBudget) : 0,
+      closeProbability: meeting.closeProbability ?? 50,
+      reminderEnabled: meeting.reminderEnabled ?? true,
+      reminderMinutesBefore: meeting.reminderMinutesBefore ?? 30,
+      attachments: [],
+    });
+    setMeetingError("");
+    window.setTimeout(() => {
+      document.querySelector(".meetingForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }
+
+  function cancelMeetingEdit() {
+    setEditingMeetingId(null);
+    setMeetingForm({ ...emptyMeetingForm, customerId: "" });
+    setMeetingError("");
+  }
+
+  function updateMeetingStatus(id: string, status: MeetingStatus) {
+    if (!token) {
+      return;
+    }
+
+    setMeetingsLoading(true);
+    setMeetingError("");
+    apiRequest<Meeting>(`/api/meetings/${id}`, {
+      token,
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    })
+      .then(() => Promise.all([loadMeetings(token, null), loadAgenda(token), loadCustomers(token)]))
+      .catch((error) => setMeetingError(`No se pudo actualizar la reunion: ${getErrorMessage(error)}`))
+      .finally(() => setMeetingsLoading(false));
   }
 
   async function savePayment(event: FormEvent<HTMLFormElement>) {
@@ -1771,7 +2272,7 @@ export default function Home() {
       await apiRequest<Quote>(`/api/quotes/${id}`, {
         token,
         method: "PATCH",
-        body: JSON.stringify({ acceptedAt: new Date().toISOString() }),
+        body: JSON.stringify({ status: "APPROVED", acceptedAt: new Date().toISOString() }),
       });
       await Promise.all([loadQuotes(token), loadCustomers(token)]);
     } catch {
@@ -1851,7 +2352,7 @@ export default function Home() {
     selectCustomer(customer.id);
     setCustomerProfile(null);
     setCustomerProfileError("");
-    setActiveModule("Clientes");
+    setActiveModule(customer.type === "THIRD_PARTY" ? "Tercerizados" : "Clientes");
     setEditingCustomerId(customer.id);
     setCustomerForm({
       name: customer.name,
@@ -1861,6 +2362,7 @@ export default function Home() {
       phone: customer.phone ?? "",
       address: customer.address ?? "",
       logoUrl: customer.logoUrl ?? "",
+      type: customer.type ?? "NORMAL",
       status: customer.status,
       notes: customer.notes ?? "",
     });
@@ -1869,11 +2371,13 @@ export default function Home() {
   function selectCustomer(customerId: string) {
     setSelectedCustomerId(customerId);
     setWorkOrderForm((currentForm) => ({ ...currentForm, customerId, siteId: "" }));
+    setMeetingForm((currentForm) => ({ ...currentForm, customerId }));
     setQuoteForm((currentForm) => ({ ...currentForm, customerId }));
     setPaymentForm((currentForm) => ({ ...currentForm, customerId }));
     void loadSites(customerId);
     void loadDevices(token, customerId);
     void loadWorkOrders(token, customerId);
+    void loadMeetings(token, customerId);
     void loadQuotes(token, customerId);
     void loadPayments(token, customerId);
   }
@@ -1913,6 +2417,36 @@ export default function Home() {
     );
   }
 
+  async function deleteCustomerDocument(customerId: string, documentId: string) {
+    if (!token) {
+      return;
+    }
+
+    if (!window.confirm("Eliminar este documento adjunto?")) {
+      return;
+    }
+
+    try {
+      await apiRequest<CustomerDocument>(`/api/customers/${customerId}/documents/${documentId}`, {
+        token,
+        method: "DELETE",
+      });
+      setCustomerDocumentView((current) => (current?.document.id === documentId ? null : current));
+      setCustomerProfile((current) =>
+        current && current.customer.id === customerId
+          ? { ...current, documents: current.documents.filter((document) => document.id !== documentId) }
+          : current,
+      );
+    } catch (error) {
+      window.alert(`No se pudo eliminar el documento: ${getErrorMessage(error)}`);
+    }
+  }
+
+  function openCustomerDocumentModal(customer: Customer, document: CustomerDocument) {
+    setCustomerProfile(null);
+    setCustomerDocumentView({ customer, document });
+  }
+
   async function openWorkOrderFromCustomerProfile(workOrder: WorkOrder) {
     if (!token) {
       return;
@@ -1946,9 +2480,41 @@ export default function Home() {
     }
   }
 
+  async function openDeviceGroupFromCustomerProfile(group: GroupedInstalledDevice) {
+    if (!token) {
+      return;
+    }
+
+    const customerId = group.sample.site.customer.id;
+    setCustomerProfile(null);
+    setCustomerProfileError("");
+    setActiveModule("Equipos");
+    setFocusedDeviceGroupKey(group.key);
+    setDeviceSearch(group.model);
+    setDeviceType(group.type);
+    setSelectedCustomerId(customerId);
+    setDeviceForm((currentForm) => ({ ...currentForm, siteId: "", type: group.type }));
+    setDevicesLoading(true);
+    setDeviceError("");
+    try {
+      const params = new URLSearchParams({
+        customerId,
+        search: group.model,
+        type: group.type,
+      });
+      const data = await apiRequest<InstalledDevice[]>(`/api/devices?${params.toString()}`, { token });
+      setDevices(data);
+      await loadSites(customerId, token);
+    } catch (error) {
+      setDeviceError(`No se pudo abrir el equipo instalado: ${getErrorMessage(error)}`);
+    } finally {
+      setDevicesLoading(false);
+    }
+  }
+
   function cancelCustomerEdit() {
     setEditingCustomerId(null);
-    setCustomerForm(emptyCustomerForm);
+    setCustomerForm({ ...emptyCustomerForm, type: activeModule === "Tercerizados" ? "THIRD_PARTY" : "NORMAL" });
     setCustomerError("");
   }
 
@@ -2030,8 +2596,12 @@ export default function Home() {
   }
 
   function redirectToLogin() {
-    localStorage.removeItem("sscc_token");
-    localStorage.removeItem("sscc_user");
+    try {
+      window.localStorage.removeItem("sscc_token");
+      window.localStorage.removeItem("sscc_user");
+    } catch {
+      // Ignore storage errors during recovery; the important part is leaving the loading screen.
+    }
     setAuthChecked(true);
     setAuthRedirecting(true);
     router.replace("/login");
@@ -2039,6 +2609,17 @@ export default function Home() {
 
   function printWorkOrderDocument() {
     window.print();
+  }
+
+  function printCustomerDocument(document: CustomerDocument) {
+    const target = document.dataUrl || document.url;
+    if (!target) {
+      window.alert("Este documento no tiene archivo asociado.");
+      return;
+    }
+
+    const printWindow = window.open(target, "_blank", "noopener,noreferrer");
+    printWindow?.focus();
   }
 
   function composeWorkOrderWhatsApp(workOrder: WorkOrder) {
@@ -2098,6 +2679,30 @@ export default function Home() {
       to: customer.email ?? "",
       subject: `Security Solutions - ${customer.name}`,
       message: buildCustomerShareText(customer),
+      customerId: customer.id,
+    });
+  }
+
+  function composeCustomerDocumentWhatsApp(customer: Customer, document: CustomerDocument) {
+    setMessageError("");
+    setMessageCompose({
+      channel: "whatsapp",
+      title: `WhatsApp - ${customer.name}`,
+      to: customer.phone ?? "",
+      subject: `Documento - ${document.name}`,
+      message: buildCustomerDocumentShareText(customer, document),
+      customerId: customer.id,
+    });
+  }
+
+  function composeCustomerDocumentMail(customer: Customer, document: CustomerDocument) {
+    setMessageError("");
+    setMessageCompose({
+      channel: "mail",
+      title: `Mail - ${customer.name}`,
+      to: customer.email ?? "",
+      subject: `Documento adjunto - ${document.name}`,
+      message: buildCustomerDocumentShareText(customer, document),
       customerId: customer.id,
     });
   }
@@ -2164,7 +2769,15 @@ export default function Home() {
 
   return (
     <>
-    <main className="shell">
+    <main className={`shell ${mobileMenuOpen ? "menuOpen" : ""}`}>
+      {mobileMenuOpen ? (
+        <button
+          type="button"
+          className="mobileMenuBackdrop"
+          aria-label="Cerrar menu"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      ) : null}
       <aside className="sidebar" aria-label="Modulos">
         <div className="brand">
           <img className="brandLogo" src="/security-solutions-logo.png" alt="Security Solutions" />
@@ -2179,8 +2792,10 @@ export default function Home() {
             const enabled =
               module.name === "Dashboard" ||
               module.name === "Clientes" ||
+              module.name === "Tercerizados" ||
               module.name === "Trabajos" ||
               module.name === "Agenda" ||
+              module.name === "Reuniones" ||
               module.name === "Presupuestos" ||
               module.name === "Cobros" ||
               module.name === "Almacen" ||
@@ -2193,7 +2808,14 @@ export default function Home() {
                 type="button"
                 key={module.name}
                 className={module.name === activeModule ? "active" : ""}
-                onClick={() => enabled && setActiveModule(module.name)}
+                onClick={() => {
+                  if (!enabled) {
+                    return;
+                  }
+
+                  setActiveModule(module.name);
+                  setMobileMenuOpen(false);
+                }}
                 disabled={!enabled}
                 title={enabled ? module.name : "Modulo pendiente"}
               >
@@ -2207,12 +2829,20 @@ export default function Home() {
 
       <section className="workspace">
         <header className="topbar">
-          <div>
+          <button
+            type="button"
+            className="mobileMenuButton"
+            aria-label="Abrir menu"
+            onClick={() => setMobileMenuOpen(true)}
+          >
+            <Menu size={22} />
+          </button>
+          <div className="topbarTitle">
             <p>{activeModule === "Dashboard" ? "Centro de Monitoreo" : "Gestion operativa"}</p>
             <h1>
               {activeModule === "Dashboard" ? "Security Solutions Control Center" : activeModule}
             </h1>
-            <span className="connectionStatus">{status}</span>
+            {activeModule !== "Dashboard" ? <span className="connectionStatus">{status}</span> : null}
           </div>
           <div className="topbarRight">
             <span className="operatorName">{user.name}</span>
@@ -2224,12 +2854,16 @@ export default function Home() {
                 onClick={() =>
                   activeModule === "Clientes"
                     ? loadCustomers()
+                    : activeModule === "Tercerizados"
+                      ? loadCustomers()
                     : activeModule === "Trabajos"
                       ? loadWorkOrders()
                       : activeModule === "Agenda"
-                        ? loadAgenda()
-                        : activeModule === "Presupuestos"
-                          ? loadQuotes()
+                        ? Promise.all([loadAgenda(), loadMeetings(token, null)])
+                        : activeModule === "Reuniones"
+                          ? loadMeetings(token, null)
+                          : activeModule === "Presupuestos"
+                            ? loadQuotes()
                           : activeModule === "Cobros"
                             ? loadPayments()
                           : activeModule === "Almacen"
@@ -2253,6 +2887,7 @@ export default function Home() {
                     devicesLoading ||
                     workOrdersLoading ||
                     agendaLoading ||
+                    meetingsLoading ||
                     quotesLoading ||
                     paymentsLoading ||
                     inventoryLoading ||
@@ -2264,7 +2899,7 @@ export default function Home() {
                   }
                 />
               </button>
-              <div className="notificationsMenu">
+              <div className="notificationsMenu" ref={notificationsMenuRef}>
                 <button
                   type="button"
                   title="Notificaciones"
@@ -2330,7 +2965,8 @@ export default function Home() {
           />
         ) : activeModule === "Clientes" ? (
           <CustomersView
-            customers={customers}
+            mode="customers"
+            customers={normalCustomers}
             customerError={customerError}
             customerForm={customerForm}
             customerProfile={customerProfile}
@@ -2342,11 +2978,11 @@ export default function Home() {
             editingCustomerId={editingCustomerId}
             locating={locating}
             loading={customersLoading}
-            selectedCustomer={selectedCustomer}
-            selectedCustomerId={selectedCustomerId}
+            selectedCustomer={selectedCustomer?.type === "NORMAL" || !selectedCustomer?.type ? selectedCustomer : null}
+            selectedCustomerId={selectedCustomer?.type === "NORMAL" || !selectedCustomer?.type ? selectedCustomerId : null}
             siteError={siteError}
             siteForm={siteForm}
-            sites={sites}
+            sites={selectedCustomer?.type === "NORMAL" || !selectedCustomer?.type ? sites : []}
             sitesLoading={sitesLoading}
             onCancelEdit={cancelCustomerEdit}
             onCloseProfile={() => {
@@ -2359,7 +2995,56 @@ export default function Home() {
             onAddDocument={addCustomerDocument}
             onComposeMail={composeCustomerMail}
             onComposeWhatsApp={composeCustomerWhatsApp}
+            onDeleteDocument={deleteCustomerDocument}
             onOpenProfile={openCustomerProfile}
+            onOpenDocument={openCustomerDocumentModal}
+            onOpenDeviceGroup={openDeviceGroupFromCustomerProfile}
+            onOpenWorkOrder={openWorkOrderFromCustomerProfile}
+            onRefresh={() => loadCustomers()}
+            onSave={saveCustomer}
+            onSearchChange={setCustomerSearch}
+            onSelectCustomer={selectCustomer}
+            onSiteFormChange={setSiteForm}
+            onSiteRefresh={() => loadSites()}
+            onSiteSave={saveSite}
+            onStatusChange={setCustomerStatus}
+          />
+        ) : activeModule === "Tercerizados" ? (
+          <CustomersView
+            mode="thirdParty"
+            customers={thirdPartyCustomers}
+            customerError={customerError}
+            customerForm={customerForm}
+            customerProfile={customerProfile}
+            customerProfileError={customerProfileError}
+            customerProfileLoading={customerProfileLoading}
+            customerSearch={customerSearch}
+            customerStats={thirdPartyStats}
+            customerStatus={customerStatus}
+            editingCustomerId={editingCustomerId}
+            locating={locating}
+            loading={customersLoading}
+            selectedCustomer={selectedCustomer?.type === "THIRD_PARTY" ? selectedCustomer : null}
+            selectedCustomerId={selectedCustomer?.type === "THIRD_PARTY" ? selectedCustomerId : null}
+            siteError={siteError}
+            siteForm={siteForm}
+            sites={selectedCustomer?.type === "THIRD_PARTY" ? sites : []}
+            sitesLoading={sitesLoading}
+            onCancelEdit={cancelCustomerEdit}
+            onCloseProfile={() => {
+              setCustomerProfile(null);
+              setCustomerProfileError("");
+            }}
+            onEditCustomer={editCustomer}
+            onFormChange={setCustomerForm}
+            onLocate={captureCustomerLocation}
+            onAddDocument={addCustomerDocument}
+            onComposeMail={composeCustomerMail}
+            onComposeWhatsApp={composeCustomerWhatsApp}
+            onDeleteDocument={deleteCustomerDocument}
+            onOpenProfile={openCustomerProfile}
+            onOpenDocument={openCustomerDocumentModal}
+            onOpenDeviceGroup={openDeviceGroupFromCustomerProfile}
             onOpenWorkOrder={openWorkOrderFromCustomerProfile}
             onRefresh={() => loadCustomers()}
             onSave={saveCustomer}
@@ -2404,6 +3089,9 @@ export default function Home() {
           <AgendaView
             agendaDate={agendaDate}
             agendaError={agendaError}
+            agendaMeetingsOverdue={agendaMeetingsOverdue}
+            agendaMeetingsToday={agendaMeetingsToday}
+            agendaMeetingsWeek={agendaMeetingsWeek}
             agendaOverdue={agendaOverdue}
             agendaStats={agendaStats}
             agendaStatus={agendaStatus}
@@ -2412,9 +3100,36 @@ export default function Home() {
             loading={agendaLoading}
             selectedDate={selectedAgendaDate}
             onDateChange={setAgendaDate}
-            onRefresh={() => loadAgenda()}
+            onRefresh={() => {
+              void Promise.all([loadAgenda(), loadMeetings(token, null)]);
+            }}
             onStatusChange={setAgendaStatus}
+            onUpdateMeetingStatus={updateMeetingStatus}
             onUpdateStatus={updateWorkOrderStatus}
+          />
+        ) : activeModule === "Reuniones" ? (
+          <MeetingsView
+            customers={customers}
+            editingMeetingId={editingMeetingId}
+            loading={meetingsLoading}
+            meetingError={meetingError}
+            meetingForm={meetingForm}
+            meetingSearch={meetingSearch}
+            meetingStats={meetingStats}
+            meetingStatus={meetingStatus}
+            meetingType={meetingType}
+            meetings={meetings}
+            selectedCustomerId={selectedCustomerId}
+            onCancelEdit={cancelMeetingEdit}
+            onEditMeeting={editMeeting}
+            onFormChange={setMeetingForm}
+            onRefresh={() => loadMeetings(token, null)}
+            onSave={saveMeeting}
+            onSearchChange={setMeetingSearch}
+            onSelectCustomer={selectCustomer}
+            onStatusChange={setMeetingStatus}
+            onTypeChange={setMeetingType}
+            onUpdateStatus={updateMeetingStatus}
           />
         ) : activeModule === "Presupuestos" ? (
           <QuotesView
@@ -2422,6 +3137,7 @@ export default function Home() {
             loading={quotesLoading}
             quoteError={quoteError}
             quoteForm={quoteForm}
+            quoteLaborPreview={quoteLaborPreview}
             quoteSearch={quoteSearch}
             quoteStats={quoteStats}
             quoteStatus={quoteStatus}
@@ -2517,8 +3233,14 @@ export default function Home() {
             loading={whatsAppLoading}
             status={whatsAppStatus}
             sync={whatsAppSync}
+            dailySummary={whatsAppDailySummary}
+            dailySummaryForm={whatsAppDailySummaryForm}
             whatsAppError={whatsAppError}
             whatsAppStats={whatsAppStats}
+            savingSummary={whatsAppSummarySaving}
+            onDailySummaryChange={setWhatsAppDailySummaryForm}
+            onSaveDailySummary={saveWhatsAppDailySummary}
+            onSendDailySummary={sendWhatsAppDailySummaryNow}
             onRefresh={() => syncWhatsApp()}
             onReply={composeWhatsAppChat}
           />
@@ -2527,6 +3249,7 @@ export default function Home() {
             customers={customers}
             deviceError={deviceError}
             deviceForm={deviceForm}
+            focusedDeviceGroupKey={focusedDeviceGroupKey}
             deviceSearch={deviceSearch}
             deviceStats={deviceStats}
             deviceType={deviceType}
@@ -2553,6 +3276,18 @@ export default function Home() {
         onPrint={printWorkOrderDocument}
         onWhatsApp={composeWorkOrderWhatsApp}
       />
+    ) : null}
+    {customerDocumentView && typeof document !== "undefined" ? createPortal(
+      <CustomerDocumentModal
+        customer={customerDocumentView.customer}
+        document={customerDocumentView.document}
+        onClose={() => setCustomerDocumentView(null)}
+        onDelete={(document) => deleteCustomerDocument(customerDocumentView.customer.id, document.id)}
+        onMail={(customer, document) => composeCustomerDocumentMail(customer, document)}
+        onPrint={printCustomerDocument}
+        onWhatsApp={(customer, document) => composeCustomerDocumentWhatsApp(customer, document)}
+      />,
+      document.body,
     ) : null}
     {messageCompose && typeof document !== "undefined" ? createPortal(
       <MessageComposeModal
@@ -2663,13 +3398,13 @@ function WorkOrderDocumentModal({
   onWhatsApp: (workOrder: WorkOrder) => void;
 }) {
   const movements = groupWorkOrderMaterials(workOrder.inventoryMovements ?? []);
-  const documentNumber = workOrder.id.slice(0, 8).toUpperCase();
+  const documentNumber = formatWorkOrderNumber(workOrder);
 
   return (
     <div className="documentOverlay">
       <div className="documentToolbar">
         <div>
-          <strong>Orden de trabajo #{documentNumber}</strong>
+          <strong>Orden de trabajo {documentNumber}</strong>
           <span>{workOrder.customer.name}</span>
         </div>
         <div className="documentToolbarActions">
@@ -2693,17 +3428,26 @@ function WorkOrderDocumentModal({
 
       <section className="workOrderDocumentSheet printableWorkOrder">
         <header className="documentHeader">
-          <div className="documentBrand">
+          <div className="documentIdentityBlock">
             <img src="/security-solutions-logo.png" alt="Security Solutions" />
-            <div>
-              <strong>Security Solutions</strong>
-              <span>Su seguridad es nuestra prioridad</span>
-            </div>
+            <strong>Security Solutions</strong>
+            <span>Proveedor de servicios</span>
           </div>
-          <div className="documentNumberBox">
+          <div className="documentCenterTitle">
             <span>Orden de trabajo</span>
-            <strong>#{documentNumber}</strong>
+            <strong>{documentNumber}</strong>
             <small>{formatDateTime(workOrder.completedAt ?? workOrder.updatedAt)}</small>
+          </div>
+          <div className="documentIdentityBlock documentClientIdentity">
+            <div className="documentClientLogo">
+              {workOrder.customer.logoUrl ? (
+                <img src={workOrder.customer.logoUrl} alt={`Logo ${workOrder.customer.name}`} />
+              ) : (
+                <strong>{workOrder.customer.name.slice(0, 2).toUpperCase()}</strong>
+              )}
+            </div>
+            <strong>{workOrder.customer.name}</strong>
+            <span>Cliente</span>
           </div>
         </header>
 
@@ -2719,6 +3463,8 @@ function WorkOrderDocumentModal({
           <article>
             <span>Cliente</span>
             <strong>{workOrder.customer.name}</strong>
+            {workOrder.customer.reference ? <p>{workOrder.customer.reference}</p> : null}
+            {workOrder.customer.taxId ? <p>RUT / Documento: {workOrder.customer.taxId}</p> : null}
             <p>{workOrder.customer.phone || "Telefono no cargado"}</p>
             <p>{workOrder.customer.email || "Email no cargado"}</p>
           </article>
@@ -2793,6 +3539,102 @@ function WorkOrderDocumentModal({
   );
 }
 
+function CustomerDocumentModal({
+  customer,
+  document,
+  onClose,
+  onDelete,
+  onMail,
+  onPrint,
+  onWhatsApp,
+}: {
+  customer: Customer;
+  document: CustomerDocument;
+  onClose: () => void;
+  onDelete: (document: CustomerDocument) => Promise<void>;
+  onMail: (customer: Customer, document: CustomerDocument) => void;
+  onPrint: (document: CustomerDocument) => void;
+  onWhatsApp: (customer: Customer, document: CustomerDocument) => void;
+}) {
+  const target = document.dataUrl || document.url || "";
+  const mimeType = document.mimeType || document.type || "";
+  const isImage = mimeType.startsWith("image/");
+  const isPdf = mimeType.includes("pdf");
+  const previewTarget = isPdf && target
+    ? `${target}${target.includes("#") ? "&" : "#"}toolbar=0&navpanes=0&scrollbar=1&view=FitH`
+    : target;
+
+  return (
+    <div className="documentOverlay customerDocumentOverlay" onClick={onClose}>
+      <section
+        className="customerDocumentModal"
+        aria-label={`Documento ${document.name}`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="customerDocumentModalHeader">
+          <div className="customerDocumentTitle">
+            <span>Documento de cliente</span>
+            <strong>{document.name}</strong>
+            <small>
+              {customer.reference} - {customer.name} - {mimeType || "Documento"} - {formatDateTime(document.createdAt)}
+            </small>
+          </div>
+          <div className="customerDocumentActions" aria-label="Acciones del documento">
+            <button type="button" onClick={() => onPrint(document)}>
+              <Printer size={17} />
+              Imprimir
+            </button>
+            <button type="button" onClick={() => onWhatsApp(customer, document)}>
+              <MessageSquare size={17} />
+              WhatsApp
+            </button>
+            <button type="button" onClick={() => onMail(customer, document)}>
+              <Mail size={17} />
+              Mail
+            </button>
+            <button type="button" className="dangerButton" onClick={() => void onDelete(document)}>
+              <X size={17} />
+              Eliminar
+            </button>
+            <button type="button" onClick={onClose}>
+              <X size={17} />
+              Cerrar
+            </button>
+          </div>
+        </header>
+        <section className="customerDocumentViewer">
+          <div className="customerDocumentPreview">
+            {!target ? <p>Este documento no tiene archivo asociado.</p> : null}
+            {target && isImage ? <img src={previewTarget} alt={document.name} /> : null}
+            {target && isPdf ? <iframe src={previewTarget} title={document.name} /> : null}
+            {target && !isImage && !isPdf ? (
+              <div className="emptyPanel">
+                <p>Vista previa no disponible para este tipo de archivo.</p>
+                <a href={previewTarget} target="_blank" rel="noreferrer">Abrir documento</a>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      </section>
+    </div>
+  );
+}
+
+function AddressDisplay({ value, fallback = "Sin direccion" }: { value?: string | null; fallback?: string }) {
+  const address = formatAddressParts(value);
+
+  if (!address.primary) {
+    return <span className="compactAddress">{fallback}</span>;
+  }
+
+  return (
+    <span className="compactAddress">
+      <strong>{address.primary}</strong>
+      {address.secondary ? <small>{address.secondary}</small> : null}
+    </span>
+  );
+}
+
 function DashboardView({
   loading,
   summary,
@@ -2819,7 +3661,7 @@ function DashboardView({
       <section className="monitor">
         <div className="sectionHeader">
           <div>
-            <p>{summary.lastUpdatedAt ? `Actualizado ${formatDateTime(summary.lastUpdatedAt)}` : "Inicio de jornada"}</p>
+            <p>Centro operativo</p>
             <h2>Operacion en vivo</h2>
           </div>
           <button type="button" onClick={onRefresh}>
@@ -2861,6 +3703,7 @@ function sortWorkOrdersByDate(workOrders: WorkOrder[]) {
 }
 
 function CustomersView({
+  mode = "customers",
   customers,
   customerError,
   customerForm,
@@ -2887,7 +3730,10 @@ function CustomersView({
   onAddDocument,
   onComposeMail,
   onComposeWhatsApp,
+  onDeleteDocument,
+  onOpenDocument,
   onOpenProfile,
+  onOpenDeviceGroup,
   onOpenWorkOrder,
   onRefresh,
   onSave,
@@ -2898,6 +3744,7 @@ function CustomersView({
   onSiteSave,
   onStatusChange,
 }: {
+  mode?: "customers" | "thirdParty";
   customers: Customer[];
   customerError: string;
   customerForm: CustomerPayload;
@@ -2924,7 +3771,10 @@ function CustomersView({
   onAddDocument: (customerId: string, payload: CustomerDocumentPayload) => Promise<void>;
   onComposeMail: (customer: Customer) => void;
   onComposeWhatsApp: (customer: Customer) => void;
+  onDeleteDocument: (customerId: string, documentId: string) => Promise<void>;
+  onOpenDocument: (customer: Customer, document: CustomerDocument) => void;
   onOpenProfile: (customer: Customer) => void;
+  onOpenDeviceGroup: (group: GroupedInstalledDevice) => void;
   onOpenWorkOrder: (workOrder: WorkOrder) => void;
   onRefresh: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
@@ -2936,6 +3786,44 @@ function CustomersView({
   onStatusChange: (value: CustomerStatus | "ALL") => void;
 }) {
   const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const copy =
+    mode === "thirdParty"
+      ? {
+          summaryLabel: "Resumen de tercerizados",
+          formEyebrowCreate: "Nueva empresa",
+          formEyebrowEdit: "Actualizar acuerdo",
+          formTitleCreate: "Alta tercerizado",
+          formTitleEdit: "Editar tercerizado",
+          nameLabel: "Empresa tercerizada",
+          namePlaceholder: "Segura, empresa asociada",
+          legalLabel: "Razon social",
+          notesPlaceholder: "Tarifas pactadas, condiciones de pago, contactos y forma de trabajo",
+          searchPlaceholder: "Buscar por empresa, RUT, contacto, email o telefono",
+          tableName: "Empresa",
+          sitesTitle: "Puntos de servicio",
+          selectedTitle: "Selecciona un tercerizado",
+          emptyList: "No hay tercerizados para los filtros actuales.",
+          emptySites: "Este tercerizado todavia no tiene puntos de servicio cargados.",
+          submitCreate: "Crear tercerizado",
+        }
+      : {
+          summaryLabel: "Resumen de clientes",
+          formEyebrowCreate: "Nuevo cliente",
+          formEyebrowEdit: "Actualizar ficha",
+          formTitleCreate: "Alta rapida",
+          formTitleEdit: "Editar cliente",
+          nameLabel: "Nombre comercial",
+          namePlaceholder: "Cliente o contacto principal",
+          legalLabel: "Razon social",
+          notesPlaceholder: "Observaciones operativas, horarios, contactos, preferencias",
+          searchPlaceholder: "Buscar por referencia, nombre, RUT, email o telefono",
+          tableName: "Cliente",
+          sitesTitle: "Sitios del cliente",
+          selectedTitle: "Selecciona un cliente",
+          emptyList: "No hay clientes para los filtros actuales.",
+          emptySites: "Este cliente todavia no tiene sitios cargados.",
+          submitCreate: "Crear cliente",
+        };
 
   function selectLogoFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -2967,7 +3855,7 @@ function CustomersView({
 
   return (
     <section className="customersModule">
-      <div className="summaryGrid customerStats" aria-label="Resumen de clientes">
+      <div className="summaryGrid customerStats" aria-label={copy.summaryLabel}>
         {customerStats.map((card) => (
           <article key={card.label}>
             <span>{card.label}</span>
@@ -2980,8 +3868,8 @@ function CustomersView({
         <form className="customerForm" onSubmit={onSave}>
           <div className="sectionHeader compactHeader">
             <div>
-              <p>{editingCustomerId ? "Actualizar ficha" : "Nuevo cliente"}</p>
-              <h2>{editingCustomerId ? "Editar cliente" : "Alta rapida"}</h2>
+              <p>{editingCustomerId ? copy.formEyebrowEdit : copy.formEyebrowCreate}</p>
+              <h2>{editingCustomerId ? copy.formTitleEdit : copy.formTitleCreate}</h2>
             </div>
             {editingCustomerId ? (
               <button type="button" className="secondaryButton" onClick={onCancelEdit}>
@@ -2993,15 +3881,15 @@ function CustomersView({
 
           <div className="formGrid">
             <label>
-              Nombre comercial
+              {copy.nameLabel}
               <input
                 value={customerForm.name}
                 onChange={(event) => onFormChange({ ...customerForm, name: event.target.value })}
-                placeholder="Cliente o contacto principal"
+                placeholder={copy.namePlaceholder}
               />
             </label>
             <label>
-              Razon social
+              {copy.legalLabel}
               <input
                 value={customerForm.legalName}
                 onChange={(event) => onFormChange({ ...customerForm, legalName: event.target.value })}
@@ -3100,7 +3988,7 @@ function CustomersView({
               <textarea
                 value={customerForm.notes}
                 onChange={(event) => onFormChange({ ...customerForm, notes: event.target.value })}
-                placeholder="Observaciones operativas, horarios, contactos, preferencias"
+                placeholder={copy.notesPlaceholder}
               />
             </label>
           </div>
@@ -3109,7 +3997,7 @@ function CustomersView({
 
           <button type="submit" className="primaryButton" disabled={loading}>
             {editingCustomerId ? <Save size={18} /> : <Plus size={18} />}
-            {editingCustomerId ? "Guardar cambios" : "Crear cliente"}
+            {editingCustomerId ? "Guardar cambios" : copy.submitCreate}
           </button>
         </form>
 
@@ -3120,7 +4008,7 @@ function CustomersView({
               <input
                 value={customerSearch}
                 onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="Buscar por referencia, nombre, RUT, email o telefono"
+                placeholder={copy.searchPlaceholder}
               />
             </label>
             <select
@@ -3145,7 +4033,7 @@ function CustomersView({
             <table className="customerTable">
               <thead>
                 <tr>
-                  <th>Cliente</th>
+                  <th>{copy.tableName}</th>
                   <th>Contacto</th>
                   <th className="centerColumn">Estado</th>
                   <th className="centerColumn">Sitios</th>
@@ -3160,7 +4048,7 @@ function CustomersView({
                     className={customer.id === selectedCustomerId ? "selectedRow" : ""}
                     onClick={() => onOpenProfile(customer)}
                   >
-                    <td data-label="Cliente">
+                    <td data-label={copy.tableName}>
                       <strong>{customer.name}</strong>
                       <span>{[customer.reference, customer.legalName || customer.taxId || "Sin razon social"].filter(Boolean).join(" - ")}</span>
                     </td>
@@ -3193,7 +4081,7 @@ function CustomersView({
                 {!customers.length ? (
                   <tr>
                     <td colSpan={6} className="emptyTable">
-                      No hay clientes para los filtros actuales.
+                      {copy.emptyList}
                     </td>
                   </tr>
                 ) : null}
@@ -3205,8 +4093,8 @@ function CustomersView({
         <section className="sitesPanel">
           <div className="sectionHeader compactHeader">
             <div>
-              <p>Sitios del cliente</p>
-              <h2>{selectedCustomer ? selectedCustomer.name : "Selecciona un cliente"}</h2>
+              <p>{copy.sitesTitle}</p>
+              <h2>{selectedCustomer ? selectedCustomer.name : copy.selectedTitle}</h2>
             </div>
             <button type="button" className="secondaryButton" onClick={onSiteRefresh} disabled={!selectedCustomer}>
               <RefreshCw size={17} className={sitesLoading ? "spin" : ""} />
@@ -3265,7 +4153,7 @@ function CustomersView({
                 </article>
               ))}
               {selectedCustomer && !sites.length ? (
-                <p className="emptyPanel">Este cliente todavia no tiene sitios cargados.</p>
+                <p className="emptyPanel">{copy.emptySites}</p>
               ) : null}
             </div>
           </div>
@@ -3281,6 +4169,9 @@ function CustomersView({
           onAddDocument={onAddDocument}
           onComposeMail={onComposeMail}
           onComposeWhatsApp={onComposeWhatsApp}
+          onDeleteDocument={onDeleteDocument}
+          onOpenDocument={onOpenDocument}
+          onOpenDeviceGroup={onOpenDeviceGroup}
           onOpenWorkOrder={onOpenWorkOrder}
         />
       ) : null}
@@ -3297,6 +4188,9 @@ function CustomerProfileModal({
   onAddDocument,
   onComposeMail,
   onComposeWhatsApp,
+  onDeleteDocument,
+  onOpenDocument,
+  onOpenDeviceGroup,
   onOpenWorkOrder,
 }: {
   error: string;
@@ -3307,10 +4201,14 @@ function CustomerProfileModal({
   onAddDocument: (customerId: string, payload: CustomerDocumentPayload) => Promise<void>;
   onComposeMail: (customer: Customer) => void;
   onComposeWhatsApp: (customer: Customer) => void;
+  onDeleteDocument: (customerId: string, documentId: string) => Promise<void>;
+  onOpenDocument: (customer: Customer, document: CustomerDocument) => void;
+  onOpenDeviceGroup: (group: GroupedInstalledDevice) => void;
   onOpenWorkOrder: (workOrder: WorkOrder) => void;
 }) {
   const customer = profile?.customer;
   const orderedWorkOrders = profile ? sortWorkOrdersByDate(profile.workOrders) : [];
+  const orderedMeetings = profile ? [...profile.meetings].sort((left, right) => new Date(right.dateTime).getTime() - new Date(left.dateTime).getTime()) : [];
   const documentInputRef = useRef<HTMLInputElement | null>(null);
   const [documentUploading, setDocumentUploading] = useState(false);
 
@@ -3350,21 +4248,40 @@ function CustomerProfileModal({
     reader.readAsDataURL(file);
   }
 
-  function openCustomerDocument(document: CustomerDocument) {
-    const target = document.dataUrl || document.url;
-    if (!target) {
-      window.alert("Este documento no tiene archivo asociado.");
+  function printCustomerProfile() {
+    if (typeof document === "undefined") {
+      window.print();
       return;
     }
 
-    window.open(target, "_blank", "noopener,noreferrer");
+    const cleanup = () => {
+      document.body.classList.remove("printingCustomerProfile");
+      window.removeEventListener("afterprint", cleanup);
+    };
+
+    document.body.classList.add("printingCustomerProfile");
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+    window.setTimeout(cleanup, 60000);
   }
 
   return (
     <div className="deviceDetailOverlay customerProfileOverlay" onClick={onClose}>
-      <section className="customerProfileModal" aria-label="Ficha del cliente" onClick={(event) => event.stopPropagation()}>
+      <section
+        className="customerProfileModal printableCustomerProfile"
+        aria-label="Ficha del cliente"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <img className="customerProfilePrintWatermark" src="/security-solutions-logo-bw.png" alt="" aria-hidden="true" />
         <header className="deviceDetailHeader">
-          <div>
+          <div className="printCompanyIdentity" aria-hidden="true">
+            <img src="/security-solutions-logo.png" alt="" />
+            <div>
+              <strong>Security Solutions</strong>
+              <span>Proveedor de servicios</span>
+            </div>
+          </div>
+          <div className="customerProfileTitleBlock">
             <span>Ficha de cliente</span>
             <h2>{customer?.name ?? "Cargando cliente"}</h2>
             <p>
@@ -3375,20 +4292,32 @@ function CustomerProfileModal({
           </div>
           <div className="customerProfileHeaderSide">
             {customer ? (
-              <div className="customerProfileLogoBox">
-                {customer.logoUrl ? (
-                  <img src={customer.logoUrl} alt={`Logo ${customer.name}`} />
-                ) : (
-                  <div>
-                    <strong>{customer.name.slice(0, 2).toUpperCase()}</strong>
-                    <span>{customer.reference}</span>
-                  </div>
-                )}
-              </div>
+              <>
+                <div className="customerProfileLogoBox">
+                  {customer.logoUrl ? (
+                    <img src={customer.logoUrl} alt={`Logo ${customer.name}`} />
+                  ) : (
+                    <div>
+                      <strong>{customer.name.slice(0, 2).toUpperCase()}</strong>
+                      <span>{customer.reference}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="printCustomerCaption" aria-hidden="true">
+                  <strong>{customer.name}</strong>
+                  <span>Cliente</span>
+                </div>
+              </>
             ) : null}
+          </div>
+          <div className="customerProfileActionBar">
             <div className="documentToolbarActions">
               {customer ? (
                 <>
+                  <button type="button" className="secondaryButton printHidden" onClick={printCustomerProfile}>
+                    <Printer size={16} />
+                    Imprimir
+                  </button>
                   <button type="button" className="secondaryButton" onClick={() => onComposeWhatsApp(customer)}>
                     <MessageSquare size={16} />
                     WhatsApp
@@ -3422,6 +4351,12 @@ function CustomerProfileModal({
                   <dt>Referencia</dt>
                   <dd>{profile.customer.reference}</dd>
                 </div>
+                {profile.customer.taxId ? (
+                  <div>
+                    <dt>RUT / Documento</dt>
+                    <dd>{profile.customer.taxId}</dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt>Telefono</dt>
                   <dd>{profile.customer.phone || "Sin telefono"}</dd>
@@ -3432,7 +4367,7 @@ function CustomerProfileModal({
                 </div>
                 <div>
                   <dt>Direccion</dt>
-                  <dd>{profile.customer.address || "Sin direccion"}</dd>
+                  <dd><AddressDisplay value={profile.customer.address} /></dd>
                 </div>
                 <div>
                   <dt>Notas</dt>
@@ -3447,11 +4382,32 @@ function CustomerProfileModal({
                 {profile.sites.map((site) => (
                   <article key={site.id}>
                     <strong>{site.name}</strong>
-                    <span>{site.address}</span>
+                    <AddressDisplay value={site.address} />
                     <small>{site._count.equipment} equipos - {site._count.workOrders} trabajos</small>
                   </article>
                 ))}
                 {!profile.sites.length ? <p className="emptyPanel">Sin sitios cargados.</p> : null}
+              </div>
+            </section>
+
+            <section className="customerProfileSection wideProfileSection">
+              <h3>Linea de tiempo comercial</h3>
+              <div className="customerProfileList meetingProfileList">
+                {orderedMeetings.map((meeting) => (
+                  <article key={meeting.id}>
+                    <div className="meetingProfileHeader">
+                      <strong>{formatShortDate(meeting.dateTime)} - {meeting.objective}</strong>
+                      <span className={`statusPill ${meetingStatusClass(meeting.status)}`}>
+                        {meetingStatusLabels[meeting.status]}
+                      </span>
+                    </div>
+                    <small>
+                      {meetingTypeLabels[meeting.type]} - {meeting.contact || "Sin contacto"} - {meeting.closeProbability ?? 0}%
+                    </small>
+                    <MeetingTimeline meeting={meeting} />
+                  </article>
+                ))}
+                {!orderedMeetings.length ? <p className="emptyPanel">Sin reuniones registradas.</p> : null}
               </div>
             </section>
 
@@ -3484,7 +4440,7 @@ function CustomerProfileModal({
                           </td>
                           <td data-label="Sitio">
                             <strong>{workOrder.site?.name ?? "Sin sitio"}</strong>
-                            <span>{workOrder.site?.address ?? "Sin direccion"}</span>
+                            <AddressDisplay value={workOrder.site?.address} />
                           </td>
                           <td data-label="Estado">
                             <span className={`statusPill ${workOrder.status.toLowerCase()}`}>
@@ -3492,7 +4448,9 @@ function CustomerProfileModal({
                             </span>
                           </td>
                           <td data-label="Equipos / Materiales">
-                            <span>{materials.length ? materials.map((item) => `${item.name} x${item.quantity}`).join(" / ") : "Sin materiales"}</span>
+                            <span className="materialSummary">
+                              {materials.length ? materials.map((item) => `${item.name} x${item.quantity}`).join(" / ") : "Sin materiales"}
+                            </span>
                           </td>
                           <td data-label="Accion">
                             <button
@@ -3519,7 +4477,7 @@ function CustomerProfileModal({
               </div>
             </section>
 
-            <section className="customerProfileSection">
+            <section className="customerProfileSection printFullWidthSection">
               <h3>Equipos instalados</h3>
               <div className="customerProfileTableWrap">
                 <table className="customerProfileOrdersTable customerProfileDevicesTable">
@@ -3537,7 +4495,12 @@ function CustomerProfileModal({
                     {groupInstalledDevices(profile.equipment).map((group) => {
                       const orders = group.clientGroups.flatMap((client) => client.orders);
                       return (
-                        <tr key={group.key}>
+                        <tr
+                          key={group.key}
+                          className="clickableRow"
+                          onClick={() => onOpenDeviceGroup(group)}
+                          title="Abrir en modulo Equipos"
+                        >
                           <td data-label="Modelo">
                             <strong>{group.model}</strong>
                             <span>{group.brand || "Sin marca"}</span>
@@ -3574,7 +4537,7 @@ function CustomerProfileModal({
               </div>
             </section>
 
-            <section className="customerProfileSection">
+            <section className="customerProfileSection printHiddenSection">
               <div className="customerProfileSectionHeader">
                 <h3>Documentos adjuntos</h3>
                 <button type="button" className="secondaryButton" onClick={() => documentInputRef.current?.click()} disabled={!customer || documentUploading}>
@@ -3591,16 +4554,29 @@ function CustomerProfileModal({
               />
               <div className="customerProfileList">
                 {profile.documents.map((document) => (
-                  <button
-                    key={document.id}
-                    type="button"
-                    className="customerProfileDocumentButton"
-                    onClick={() => openCustomerDocument(document)}
-                  >
-                    <strong>{document.name}</strong>
-                    <span>{document.mimeType || document.type || "Documento"}</span>
-                    <small>{document.createdAt ? formatDateTime(document.createdAt) : "Sin fecha"}</small>
-                  </button>
+                  <div key={document.id} className="customerProfileDocumentRow">
+                    <button
+                      type="button"
+                      className="customerProfileDocumentButton"
+                      onClick={() => customer && onOpenDocument(customer, document)}
+                    >
+                      <strong>{document.name}</strong>
+                      <span>{document.mimeType || document.type || "Documento"}</span>
+                      <small>{document.createdAt ? formatDateTime(document.createdAt) : "Sin fecha"}</small>
+                    </button>
+                    <button
+                      type="button"
+                      className="iconButton dangerIconButton"
+                      aria-label="Eliminar documento"
+                      onClick={() => {
+                        if (customer) {
+                          void onDeleteDocument(customer.id, document.id);
+                        }
+                      }}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
                 ))}
                 {!profile.documents.length ? <p className="emptyPanel">Todavia no hay documentos adjuntos.</p> : null}
               </div>
@@ -3615,6 +4591,9 @@ function CustomerProfileModal({
 function AgendaView({
   agendaDate,
   agendaError,
+  agendaMeetingsOverdue,
+  agendaMeetingsToday,
+  agendaMeetingsWeek,
   agendaOverdue,
   agendaStats,
   agendaStatus,
@@ -3625,10 +4604,14 @@ function AgendaView({
   onDateChange,
   onRefresh,
   onStatusChange,
+  onUpdateMeetingStatus,
   onUpdateStatus,
 }: {
   agendaDate: string;
   agendaError: string;
+  agendaMeetingsOverdue: Meeting[];
+  agendaMeetingsToday: Meeting[];
+  agendaMeetingsWeek: Meeting[];
   agendaOverdue: WorkOrder[];
   agendaStats: Array<{ label: string; value: number }>;
   agendaStatus: WorkOrderStatus | "ALL";
@@ -3639,11 +4622,14 @@ function AgendaView({
   onDateChange: (value: string) => void;
   onRefresh: () => void;
   onStatusChange: (value: WorkOrderStatus | "ALL") => void;
+  onUpdateMeetingStatus: (id: string, status: MeetingStatus) => void;
   onUpdateStatus: (id: string, status: WorkOrderStatus) => void;
 }) {
   const weekDays = Array.from({ length: 7 }, (_, index) => {
     const date = addDays(startOfDay(selectedDate), index);
-    const count = agendaWeek.filter((workOrder) => isSameDay(workOrder.scheduledAt, date)).length;
+    const count =
+      agendaWeek.filter((workOrder) => isSameDay(workOrder.scheduledAt, date)).length +
+      agendaMeetingsWeek.filter((meeting) => isSameDay(meeting.dateTime, date)).length;
     return { date, count };
   });
 
@@ -3711,10 +4697,11 @@ function AgendaView({
           <div className="sectionHeader compactHeader">
             <div>
               <p>Dia seleccionado</p>
-              <h2>Trabajos de hoy</h2>
+              <h2>Agenda de hoy</h2>
             </div>
           </div>
           <AgendaWorkList workOrders={agendaToday} emptyText="No hay trabajos para esta fecha." onUpdateStatus={onUpdateStatus} />
+          <AgendaMeetingList meetings={agendaMeetingsToday} emptyText="No hay reuniones para esta fecha." onUpdateStatus={onUpdateMeetingStatus} />
         </section>
 
         <section className="agendaColumn">
@@ -3725,6 +4712,7 @@ function AgendaView({
             </div>
           </div>
           <AgendaWorkList workOrders={agendaOverdue} emptyText="No hay trabajos atrasados." onUpdateStatus={onUpdateStatus} compact />
+          <AgendaMeetingList meetings={agendaMeetingsOverdue} emptyText="No hay reuniones atrasadas." onUpdateStatus={onUpdateMeetingStatus} compact />
         </section>
 
         <section className="agendaColumn">
@@ -3735,6 +4723,7 @@ function AgendaView({
             </div>
           </div>
           <AgendaWorkList workOrders={agendaWeek} emptyText="No hay trabajos en la semana." onUpdateStatus={onUpdateStatus} compact />
+          <AgendaMeetingList meetings={agendaMeetingsWeek} emptyText="No hay reuniones en la semana." onUpdateStatus={onUpdateMeetingStatus} compact />
         </section>
       </div>
     </section>
@@ -3802,6 +4791,649 @@ function AgendaWorkList({
         </article>
       ))}
     </div>
+  );
+}
+
+function AgendaMeetingList({
+  compact,
+  emptyText,
+  meetings,
+  onUpdateStatus,
+}: {
+  compact?: boolean;
+  emptyText: string;
+  meetings: Meeting[];
+  onUpdateStatus: (id: string, status: MeetingStatus) => void;
+}) {
+  if (!meetings.length) {
+    return <p className="emptyPanel">{emptyText}</p>;
+  }
+
+  return (
+    <div className={compact ? "agendaList compactAgendaList" : "agendaList"}>
+      {meetings.map((meeting) => (
+        <article key={meeting.id} className="agendaItem agendaMeetingItem">
+          <div className="agendaTime">
+            <strong>{formatTime(meeting.dateTime)}</strong>
+            <span>{formatShortDate(meeting.dateTime)}</span>
+          </div>
+          <div className="agendaItemBody">
+            <span className={`statusPill ${meetingStatusClass(meeting.status)}`}>
+              {meetingStatusLabels[meeting.status]}
+            </span>
+            <h3>{meeting.objective}</h3>
+            <dl>
+              <div>
+                <dt>Cliente</dt>
+                <dd>{meeting.customer.name}</dd>
+              </div>
+              <div>
+                <dt>Contacto</dt>
+                <dd>{meeting.contact || "Sin contacto"}</dd>
+              </div>
+              <div>
+                <dt>Tipo</dt>
+                <dd>{meetingTypeLabels[meeting.type]}</dd>
+              </div>
+              <div>
+                <dt>Cierre</dt>
+                <dd>{meeting.closeProbability ?? 0}%</dd>
+              </div>
+            </dl>
+            <p>{meeting.nextStep || meeting.needs || meeting.notes || "Sin notas comerciales"}</p>
+            <div className="workOrderActions">
+              <button
+                type="button"
+                className="secondaryButton"
+                onClick={() => onUpdateStatus(meeting.id, "DONE")}
+                disabled={meeting.status === "DONE"}
+              >
+                Realizada
+              </button>
+              <button
+                type="button"
+                className="secondaryButton"
+                onClick={() => onUpdateStatus(meeting.id, "CANCELLED")}
+                disabled={meeting.status === "CANCELLED"}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function MeetingsView({
+  customers,
+  editingMeetingId,
+  loading,
+  meetingError,
+  meetingForm,
+  meetingSearch,
+  meetingStats,
+  meetingStatus,
+  meetingType,
+  meetings,
+  selectedCustomerId,
+  onCancelEdit,
+  onEditMeeting,
+  onFormChange,
+  onRefresh,
+  onSave,
+  onSearchChange,
+  onSelectCustomer,
+  onStatusChange,
+  onTypeChange,
+  onUpdateStatus,
+}: {
+  customers: Customer[];
+  editingMeetingId: string | null;
+  loading: boolean;
+  meetingError: string;
+  meetingForm: MeetingPayload;
+  meetingSearch: string;
+  meetingStats: Array<{ label: string; value: number | string }>;
+  meetingStatus: MeetingStatus | "ALL";
+  meetingType: MeetingType | "ALL";
+  meetings: Meeting[];
+  selectedCustomerId: string | null;
+  onCancelEdit: () => void;
+  onEditMeeting: (meeting: Meeting) => void;
+  onFormChange: (form: MeetingPayload) => void;
+  onRefresh: () => void;
+  onSave: (event: FormEvent<HTMLFormElement>) => void;
+  onSearchChange: (value: string) => void;
+  onSelectCustomer: (customerId: string) => void;
+  onStatusChange: (value: MeetingStatus | "ALL") => void;
+  onTypeChange: (value: MeetingType | "ALL") => void;
+  onUpdateStatus: (id: string, status: MeetingStatus) => void;
+}) {
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
+  const selectedMeeting = useMemo(
+    () => meetings.find((meeting) => meeting.id === selectedMeetingId) ?? null,
+    [meetings, selectedMeetingId],
+  );
+
+  async function selectAttachments(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) {
+      return;
+    }
+
+    const validFiles = files.filter((file) => {
+      if (file.size <= 8 * 1024 * 1024) {
+        return true;
+      }
+
+      window.alert(`${file.name} supera los 8 MB.`);
+      return false;
+    });
+
+    const attachments = await Promise.all(validFiles.map(readMeetingAttachment));
+    onFormChange({
+      ...meetingForm,
+      attachments: [...(meetingForm.attachments ?? []), ...attachments],
+    });
+    event.target.value = "";
+  }
+
+  function removeAttachment(name: string) {
+    onFormChange({
+      ...meetingForm,
+      attachments: (meetingForm.attachments ?? []).filter((attachment) => attachment.name !== name),
+    });
+  }
+
+  return (
+    <section className="meetingsModule">
+      <div className="summaryGrid customerStats" aria-label="Resumen de reuniones">
+        {meetingStats.map((card) => (
+          <article key={card.label}>
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+          </article>
+        ))}
+      </div>
+
+      <div className="meetingsLayout">
+        <form className="meetingForm" onSubmit={onSave}>
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Seguimiento comercial</p>
+              <h2>{editingMeetingId ? "Editar reunion" : "Nueva reunion"}</h2>
+            </div>
+            {editingMeetingId ? (
+              <button type="button" className="secondaryButton" onClick={onCancelEdit}>
+                <X size={16} />
+                Cancelar
+              </button>
+            ) : null}
+          </div>
+
+          <div className="formGrid">
+            <label>
+              Cliente
+              <select
+                value={meetingForm.customerId || ""}
+                onChange={(event) => {
+                  onFormChange({ ...meetingForm, customerId: event.target.value });
+                }}
+              >
+                <option value="">Seleccionar cliente</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Fecha y hora
+              <input
+                type="datetime-local"
+                value={meetingForm.dateTime}
+                onChange={(event) => onFormChange({ ...meetingForm, dateTime: event.target.value })}
+              />
+            </label>
+            <label>
+              Contacto
+              <input
+                value={meetingForm.contact}
+                onChange={(event) => onFormChange({ ...meetingForm, contact: event.target.value })}
+                placeholder="Nombre de la persona"
+              />
+            </label>
+            <label>
+              Tipo
+              <select
+                value={meetingForm.type}
+                onChange={(event) => onFormChange({ ...meetingForm, type: event.target.value as MeetingType })}
+              >
+                {Object.entries(meetingTypeLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Estado
+              <select
+                value={meetingForm.status}
+                onChange={(event) => onFormChange({ ...meetingForm, status: event.target.value as MeetingStatus })}
+              >
+                {Object.entries(meetingStatusLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Probabilidad
+              <select
+                value={meetingForm.closeProbability}
+                onChange={(event) => onFormChange({ ...meetingForm, closeProbability: Number(event.target.value) })}
+              >
+                {[25, 50, 75, 100].map((value) => (
+                  <option key={value} value={value}>
+                    {value}%
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Aviso WhatsApp
+              <select
+                value={meetingForm.reminderEnabled ? "true" : "false"}
+                onChange={(event) => onFormChange({ ...meetingForm, reminderEnabled: event.target.value === "true" })}
+              >
+                <option value="true">Activado</option>
+                <option value="false">Desactivado</option>
+              </select>
+            </label>
+            <label>
+              Minutos antes
+              <input
+                type="number"
+                min="1"
+                value={meetingForm.reminderMinutesBefore ?? 30}
+                onChange={(event) => onFormChange({ ...meetingForm, reminderMinutesBefore: Number(event.target.value) })}
+              />
+            </label>
+            <label className="wideField">
+              Objetivo
+              <input
+                value={meetingForm.objective}
+                onChange={(event) => onFormChange({ ...meetingForm, objective: event.target.value })}
+                placeholder="Primera reunion, relevamiento, seguimiento de presupuesto"
+              />
+            </label>
+            <label className="wideField">
+              Quien asistio
+              <input
+                value={meetingForm.attendees}
+                onChange={(event) => onFormChange({ ...meetingForm, attendees: event.target.value })}
+                placeholder="Personas presentes"
+              />
+            </label>
+            <label className="wideField">
+              Necesidades del cliente
+              <textarea
+                value={meetingForm.needs}
+                onChange={(event) => onFormChange({ ...meetingForm, needs: event.target.value })}
+                placeholder="Problema, alcance, zonas, horarios, prioridad"
+              />
+            </label>
+            <label className="wideField">
+              Equipos necesarios
+              <textarea
+                value={meetingForm.equipmentNeeded}
+                onChange={(event) => onFormChange({ ...meetingForm, equipmentNeeded: event.target.value })}
+                placeholder="Camaras, NVR, alarmas, sensores, cableado"
+              />
+            </label>
+            <label>
+              Presupuesto estimado
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={meetingForm.estimatedBudget}
+                onChange={(event) => onFormChange({ ...meetingForm, estimatedBudget: Number(event.target.value) })}
+              />
+            </label>
+            <label>
+              Fecha seguimiento
+              <input
+                type="date"
+                value={meetingForm.followUpDate}
+                onChange={(event) => onFormChange({ ...meetingForm, followUpDate: event.target.value })}
+              />
+            </label>
+            <label className="wideField">
+              Notas
+              <textarea
+                value={meetingForm.notes}
+                onChange={(event) => onFormChange({ ...meetingForm, notes: event.target.value })}
+                placeholder="Todo lo conversado"
+              />
+            </label>
+            <label className="wideField">
+              Compromisos
+              <textarea
+                value={meetingForm.commitments}
+                onChange={(event) => onFormChange({ ...meetingForm, commitments: event.target.value })}
+                placeholder="Lo acordado con el cliente"
+              />
+            </label>
+            <label className="wideField">
+              Proximo paso
+              <input
+                value={meetingForm.nextStep}
+                onChange={(event) => onFormChange({ ...meetingForm, nextStep: event.target.value })}
+                placeholder="Enviar presupuesto, llamar, coordinar visita"
+              />
+            </label>
+          </div>
+
+          <label className="attachmentPicker">
+            <Paperclip size={17} />
+            <span>Adjuntar archivos</span>
+            <input
+              type="file"
+              multiple
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.mp3,.m4a,.wav,image/*,audio/*,application/pdf"
+              onChange={selectAttachments}
+            />
+          </label>
+          {meetingForm.attachments?.length ? (
+            <div className="attachmentChips">
+              {meetingForm.attachments.map((attachment) => (
+                <button type="button" key={attachment.name} onClick={() => removeAttachment(attachment.name)}>
+                  <Paperclip size={14} />
+                  {attachment.name}
+                  <X size={14} />
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {meetingError ? <p className="formError">{meetingError}</p> : null}
+
+          <button type="submit" className="primaryButton" disabled={loading}>
+            <Save size={18} />
+            {editingMeetingId ? "Actualizar reunion" : "Registrar reunion"}
+          </button>
+        </form>
+
+        <section className="meetingDirectory">
+          <div className="directoryToolbar">
+            <label className="searchBox">
+              <Search size={18} />
+              <input
+                value={meetingSearch}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="Buscar por cliente, objetivo, contacto o notas"
+              />
+            </label>
+            <select value={meetingType} onChange={(event) => onTypeChange(event.target.value as MeetingType | "ALL")}>
+              <option value="ALL">Todos los tipos</option>
+              {Object.entries(meetingTypeLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <select value={meetingStatus} onChange={(event) => onStatusChange(event.target.value as MeetingStatus | "ALL")}>
+              <option value="ALL">Todos</option>
+              {Object.entries(meetingStatusLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={onRefresh}>
+              <RefreshCw size={18} className={loading ? "spin" : ""} />
+              Filtrar
+            </button>
+          </div>
+
+          <div className="meetingList" role="list">
+            {meetings.length ? (
+              <div className="meetingListHeader" aria-hidden="true">
+                <span>Fecha</span>
+                <span>Cliente</span>
+                <span>Objetivo</span>
+                <span>Contacto</span>
+                <span>Estado</span>
+                <span>Seguimiento</span>
+              </div>
+            ) : null}
+            {meetings.map((meeting) => (
+              <button
+                key={meeting.id}
+                type="button"
+                className="meetingListRow"
+                onClick={() => setSelectedMeetingId(meeting.id)}
+              >
+                <span className="meetingListCell" data-label="Fecha">
+                  <strong>{formatDateTime(meeting.dateTime)}</strong>
+                  <small>{meetingTypeLabels[meeting.type]}</small>
+                </span>
+                <span className="meetingListCell" data-label="Cliente">
+                  <strong>{meeting.customer.name}</strong>
+                  <small>{meeting.closeProbability ?? 0}% cierre</small>
+                </span>
+                <span className="meetingListCell meetingListObjective" data-label="Objetivo">
+                  <strong>{meeting.objective}</strong>
+                  <small>{meeting.needs || meeting.nextStep || "Sin detalle cargado"}</small>
+                </span>
+                <span className="meetingListCell" data-label="Contacto">
+                  <strong>{meeting.contact || "Sin contacto"}</strong>
+                  <small>{meeting.attendees || "Sin asistentes"}</small>
+                </span>
+                <span className="meetingListCell" data-label="Estado">
+                  <span className={`statusPill ${meetingStatusClass(meeting.status)}`}>
+                    {meetingStatusLabels[meeting.status]}
+                  </span>
+                </span>
+                <span className="meetingListCell" data-label="Seguimiento">
+                  <strong>{meeting.followUpDate ? formatShortDate(meeting.followUpDate) : "Sin fecha"}</strong>
+                  <small>{meeting.estimatedBudget ? formatCurrency(meeting.estimatedBudget) : "Sin estimar"}</small>
+                </span>
+              </button>
+            ))}
+            {!meetings.length ? <p className="emptyPanel">No hay reuniones para los filtros actuales.</p> : null}
+          </div>
+        </section>
+      </div>
+
+      {selectedMeeting && typeof document !== "undefined"
+        ? createPortal(
+            <MeetingDetailModal
+              meeting={selectedMeeting}
+              onClose={() => setSelectedMeetingId(null)}
+              onEdit={() => {
+                onEditMeeting(selectedMeeting);
+                setSelectedMeetingId(null);
+              }}
+              onUpdateStatus={(status) => {
+                onUpdateStatus(selectedMeeting.id, status);
+                setSelectedMeetingId(null);
+              }}
+            />,
+            document.body,
+          )
+        : null}
+    </section>
+  );
+}
+
+function MeetingDetailModal({
+  meeting,
+  onClose,
+  onEdit,
+  onUpdateStatus,
+}: {
+  meeting: Meeting;
+  onClose: () => void;
+  onEdit: () => void;
+  onUpdateStatus: (status: MeetingStatus) => void;
+}) {
+  const facts = [
+    { label: "Contacto", value: meeting.contact },
+    {
+      label: "Presupuesto",
+      value: meeting.estimatedBudget ? formatCurrency(meeting.estimatedBudget) : "",
+    },
+    {
+      label: "Seguimiento",
+      value: meeting.followUpDate ? formatShortDate(meeting.followUpDate) : "",
+    },
+    {
+      label: "Archivos",
+      value: meeting.attachments.length ? String(meeting.attachments.length) : "",
+    },
+    {
+      label: "Aviso WhatsApp",
+      value: meeting.reminderEnabled
+        ? meeting.reminderSentAt
+          ? `Enviado ${formatDateTime(meeting.reminderSentAt)}`
+          : `${meeting.reminderMinutesBefore ?? 30} min antes`
+        : "",
+    },
+  ].filter((item) => item.value);
+  const detailBlocks = [
+    { label: "Asistieron", value: meeting.attendees },
+    { label: "Necesidades", value: meeting.needs },
+    { label: "Equipos necesarios", value: meeting.equipmentNeeded },
+    { label: "Compromisos", value: meeting.commitments },
+    { label: "Proximo paso", value: meeting.nextStep },
+    { label: "Notas", value: meeting.notes },
+  ].filter((item) => item.value);
+
+  return (
+    <div className="deviceDetailOverlay customerProfileOverlay" onClick={onClose}>
+      <section
+        className="customerProfileModal meetingDetailModal"
+        aria-label="Detalle de reunion"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="deviceDetailHeader">
+          <div>
+            <span>Seguimiento comercial</span>
+            <h2>{meeting.objective}</h2>
+            <p>
+              {meeting.customer.name} - {formatDateTime(meeting.dateTime)}
+            </p>
+          </div>
+          <button type="button" className="iconButton" onClick={onClose} aria-label="Cerrar detalle">
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="meetingModalSummary">
+          <span className={`statusPill ${meetingStatusClass(meeting.status)}`}>
+            {meetingStatusLabels[meeting.status]}
+          </span>
+          <strong>{meetingTypeLabels[meeting.type]}</strong>
+          {meeting.closeProbability ? <span>{meeting.closeProbability}% probabilidad</span> : null}
+        </div>
+
+        {facts.length ? (
+          <dl className="meetingModalFacts">
+            {facts.map((fact) => (
+              <div key={fact.label}>
+                <dt>{fact.label}</dt>
+                <dd>{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+
+        {detailBlocks.length ? (
+          <div className="meetingDetailBlocks">
+            {detailBlocks.map((block) => (
+              <section key={block.label}>
+                <span>{block.label}</span>
+                <p>{block.value}</p>
+              </section>
+            ))}
+          </div>
+        ) : null}
+
+        <section className="meetingModalSection">
+          <span>Linea de tiempo</span>
+          <MeetingTimeline meeting={meeting} />
+        </section>
+
+        {meeting.attachments.length ? (
+          <section className="meetingModalSection">
+            <span>Archivos adjuntos</span>
+            <div className="meetingAttachmentList">
+              {meeting.attachments.map((attachment) => (
+                <a
+                  key={attachment.id}
+                  href={attachment.dataUrl || "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-disabled={!attachment.dataUrl}
+                >
+                  <Paperclip size={14} />
+                  <span>{attachment.name}</span>
+                </a>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <div className="meetingActions">
+          <button type="button" className="secondaryButton" onClick={onEdit}>
+            <Edit3 size={16} />
+            Editar
+          </button>
+          <button
+            type="button"
+            className="secondaryButton"
+            onClick={() => onUpdateStatus("DONE")}
+            disabled={meeting.status === "DONE"}
+          >
+            Realizada
+          </button>
+          <button
+            type="button"
+            className="secondaryButton"
+            onClick={() => onUpdateStatus("CANCELLED")}
+            disabled={meeting.status === "CANCELLED"}
+          >
+            Cancelar
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MeetingTimeline({ meeting }: { meeting: Meeting }) {
+  const items = [
+    `${formatShortDate(meeting.dateTime)} - ${meeting.objective}`,
+    meeting.notes,
+    meeting.commitments,
+    meeting.nextStep ? `Proximo paso: ${meeting.nextStep}` : "",
+    meeting.followUpDate ? `Volver a contactar: ${formatShortDate(meeting.followUpDate)}` : "",
+    meeting.attachments.length ? `${meeting.attachments.length} archivo(s) adjunto(s)` : "",
+  ].filter(Boolean);
+
+  return (
+    <ol className="meetingTimeline">
+      {items.map((item, index) => (
+        <li key={`${meeting.id}-${index}`}>{item}</li>
+      ))}
+    </ol>
   );
 }
 
@@ -4464,6 +6096,7 @@ function QuotesView({
   loading,
   quoteError,
   quoteForm,
+  quoteLaborPreview,
   quoteSearch,
   quoteStats,
   quoteStatus,
@@ -4481,9 +6114,10 @@ function QuotesView({
   loading: boolean;
   quoteError: string;
   quoteForm: QuotePayload;
+  quoteLaborPreview: LaborPointCalculation | null;
   quoteSearch: string;
   quoteStats: Array<{ label: string; value: number | string }>;
-  quoteStatus: "ALL" | "PENDING" | "ACCEPTED";
+  quoteStatus: "ALL" | QuoteStatus;
   quotes: Quote[];
   selectedCustomerId: string | null;
   onAccept: (id: string) => void;
@@ -4492,11 +6126,16 @@ function QuotesView({
   onSave: (event: FormEvent<HTMLFormElement>) => void;
   onSearchChange: (value: string) => void;
   onSelectCustomer: (customerId: string) => void;
-  onStatusChange: (value: "ALL" | "PENDING" | "ACCEPTED") => void;
+  onStatusChange: (value: "ALL" | QuoteStatus) => void;
 }) {
-  const subtotal = Number(quoteForm.subtotal) || 0;
-  const tax = quoteForm.tax === undefined || Number.isNaN(Number(quoteForm.tax)) ? 0 : Number(quoteForm.tax);
-  const total = subtotal + tax;
+  const manualSubtotal = Number(quoteForm.subtotal) || 0;
+  const laborSubtotal = quoteLaborPreview?.subtotal ?? 0;
+  const subtotal = manualSubtotal + laborSubtotal;
+  const discount = subtotal * ((Number(quoteForm.discountPercent) || 0) / 100);
+  const taxableBase = Math.max(0, subtotal - discount);
+  const manualTax = Number(quoteForm.tax);
+  const tax = quoteLaborPreview || quoteForm.tax === undefined || Number.isNaN(manualTax) || manualTax <= 0 ? taxableBase * 0.22 : manualTax;
+  const total = taxableBase + tax;
 
   return (
     <section className="quotesModule">
@@ -4553,14 +6192,49 @@ function QuotesView({
               />
             </label>
             <label>
-              Puntos / horas
+              Servicio
+              <select
+                value={quoteForm.service || "CCTV"}
+                onChange={(event) => onFormChange({ ...quoteForm, service: event.target.value as DeviceType })}
+              >
+                {Object.entries(deviceTypeLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Moneda
+              <select
+                value={quoteForm.currency || "UYU"}
+                onChange={(event) => onFormChange({ ...quoteForm, currency: event.target.value })}
+              >
+                <option value="UYU">UYU</option>
+                <option value="USD">USD</option>
+              </select>
+            </label>
+            <label>
+              Puntas mano de obra
               <input
                 type="number"
                 min="0"
+                step="0.25"
                 value={quoteForm.laborPoints}
                 onChange={(event) => onFormChange({ ...quoteForm, laborPoints: Number(event.target.value) })}
               />
             </label>
+            {quoteLaborPreview ? (
+              <div className="quoteTotalBox">
+                <span>{quoteLaborPreview.source === "CUSTOMER" ? "Tarifa del cliente" : "Tarifa Security Solutions"}</span>
+                <strong>
+                  {formatCurrency(quoteLaborPreview.pointValue)} x punta
+                </strong>
+                <small>
+                  {quoteLaborPreview.rateName} - {formatCurrency(quoteLaborPreview.subtotal)} sin IVA
+                </small>
+              </div>
+            ) : null}
             <label>
               Subtotal
               <input
@@ -4579,6 +6253,26 @@ function QuotesView({
               />
             </label>
             <label>
+              Descuento %
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={quoteForm.discountPercent}
+                onChange={(event) => onFormChange({ ...quoteForm, discountPercent: Number(event.target.value) })}
+              />
+            </label>
+            <label>
+              Margen %
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={quoteForm.profitMarginPercent}
+                onChange={(event) => onFormChange({ ...quoteForm, profitMarginPercent: Number(event.target.value) })}
+              />
+            </label>
+            <label>
               IVA
               <input
                 type="number"
@@ -4586,6 +6280,38 @@ function QuotesView({
                 step="0.01"
                 value={quoteForm.tax}
                 onChange={(event) => onFormChange({ ...quoteForm, tax: Number(event.target.value) })}
+              />
+            </label>
+            <label className="wideField">
+              Condiciones comerciales
+              <textarea
+                value={quoteForm.commercialTerms}
+                onChange={(event) => onFormChange({ ...quoteForm, commercialTerms: event.target.value })}
+                placeholder="Validez, alcance, condiciones de aceptacion"
+              />
+            </label>
+            <label>
+              Tiempo de ejecucion
+              <input
+                value={quoteForm.executionTime}
+                onChange={(event) => onFormChange({ ...quoteForm, executionTime: event.target.value })}
+                placeholder="Ej: 2 dias habiles"
+              />
+            </label>
+            <label>
+              Garantia
+              <input
+                value={quoteForm.warranty}
+                onChange={(event) => onFormChange({ ...quoteForm, warranty: event.target.value })}
+                placeholder="Ej: 12 meses"
+              />
+            </label>
+            <label className="wideField">
+              Forma de pago
+              <input
+                value={quoteForm.paymentTerms}
+                onChange={(event) => onFormChange({ ...quoteForm, paymentTerms: event.target.value })}
+                placeholder="Entrega, saldo contra instalacion, transferencia"
               />
             </label>
             <div className="quoteTotalBox">
@@ -4614,12 +6340,15 @@ function QuotesView({
             </label>
             <select
               value={quoteStatus}
-              onChange={(event) => onStatusChange(event.target.value as "ALL" | "PENDING" | "ACCEPTED")}
+              onChange={(event) => onStatusChange(event.target.value as "ALL" | QuoteStatus)}
               aria-label="Filtrar por estado"
             >
               <option value="ALL">Todos</option>
-              <option value="PENDING">Pendientes</option>
-              <option value="ACCEPTED">Aceptados</option>
+              {Object.entries(quoteStatusLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
             </select>
             <button type="button" onClick={onRefresh}>
               <RefreshCw size={18} className={loading ? "spin" : ""} />
@@ -4631,8 +6360,8 @@ function QuotesView({
             {quotes.map((quote) => (
               <article key={quote.id} className="quoteCard">
                 <div className="quoteCardHeader">
-                  <span className={`statusPill ${quote.acceptedAt ? "completed" : "scheduled"}`}>
-                    {quote.acceptedAt ? "Aceptado" : "Pendiente"}
+                  <span className={`statusPill ${quote.status === "APPROVED" ? "completed" : quote.status === "REJECTED" ? "cancelled" : "scheduled"}`}>
+                    {quoteStatusLabels[quote.status]}
                   </span>
                   <strong>{quote.number}</strong>
                 </div>
@@ -4643,8 +6372,8 @@ function QuotesView({
                     <dd>{quote.customer.name}</dd>
                   </div>
                   <div>
-                    <dt>Puntos</dt>
-                    <dd>{quote.laborPoints}</dd>
+                    <dt>Servicio</dt>
+                    <dd>{deviceTypeLabels[quote.service]}</dd>
                   </div>
                   <div>
                     <dt>Subtotal</dt>
@@ -4660,7 +6389,7 @@ function QuotesView({
                     type="button"
                     className="secondaryButton"
                     onClick={() => onAccept(quote.id)}
-                    disabled={Boolean(quote.acceptedAt)}
+                    disabled={quote.status === "APPROVED"}
                   >
                     <Save size={16} />
                     Aceptar
@@ -5890,19 +7619,36 @@ function WhatsAppView({
   loading,
   status,
   sync,
+  dailySummary,
+  dailySummaryForm,
   whatsAppError,
   whatsAppStats,
+  savingSummary,
+  onDailySummaryChange,
+  onSaveDailySummary,
+  onSendDailySummary,
   onRefresh,
   onReply,
 }: {
   loading: boolean;
   status: WhatsAppStatus;
   sync: WhatsAppSync;
+  dailySummary: WhatsAppDailyMeetingSummary;
+  dailySummaryForm: WhatsAppDailyMeetingSummaryPayload;
   whatsAppError: string;
   whatsAppStats: Array<{ label: string; value: number | string }>;
+  savingSummary: boolean;
+  onDailySummaryChange: (form: WhatsAppDailyMeetingSummaryPayload) => void;
+  onSaveDailySummary: () => void;
+  onSendDailySummary: () => void;
   onRefresh: () => void;
   onReply: (chat: WhatsAppChat) => void;
 }) {
+  const contactOptions = [
+    ...sync.chats.map((chat) => ({ id: chat.id, label: chat.name || chat.id })),
+    ...sync.groups.map((group) => ({ id: group.id, label: group.name || group.id })),
+  ];
+
   return (
     <section className="whatsAppModule">
       <div className="summaryGrid customerStats" aria-label="Resumen de WhatsApp">
@@ -5921,7 +7667,7 @@ function WhatsAppView({
           <span>
             {status.connected
               ? `Sesion ${sync.session?.name ?? "OpenWA"} lista para operar mensajes.`
-              : "Falta configurar OpenWA, sesion o token de API."}
+              : status.connectionError || "Falta configurar OpenWA, sesion o token de API."}
           </span>
           <small className="syncStamp">
             {sync.lastSyncAt ? `Ultima sincronizacion: ${formatDateTime(sync.lastSyncAt)}` : "Sin sincronizacion todavia"}
@@ -5959,6 +7705,110 @@ function WhatsAppView({
           </div>
         </section>
 
+        <section className="integrationPanel dailySummaryPanel">
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Resumen automatico</p>
+              <h2>Reuniones de manana</h2>
+            </div>
+            <span className={`statusPill ${dailySummaryForm.enabled ? "completed" : "scheduled"}`}>
+              {dailySummaryForm.enabled ? "Activo" : "Pausado"}
+            </span>
+          </div>
+
+          <div className="formGrid">
+            <label>
+              Envio automatico
+              <select
+                value={dailySummaryForm.enabled ? "true" : "false"}
+                onChange={(event) => onDailySummaryChange({ ...dailySummaryForm, enabled: event.target.value === "true" })}
+              >
+                <option value="true">Activado</option>
+                <option value="false">Desactivado</option>
+              </select>
+            </label>
+            <label>
+              Hora
+              <input
+                type="time"
+                value={dailySummaryForm.sendTime}
+                onChange={(event) => onDailySummaryChange({ ...dailySummaryForm, sendTime: event.target.value })}
+              />
+            </label>
+            <label>
+              Contacto
+              <select
+                value={dailySummaryForm.recipientPhone}
+                onChange={(event) => {
+                  const selected = contactOptions.find((option) => option.id === event.target.value);
+                  onDailySummaryChange({
+                    ...dailySummaryForm,
+                    recipientPhone: event.target.value,
+                    recipientName: selected?.label ?? dailySummaryForm.recipientName,
+                  });
+                }}
+              >
+                <option value={dailySummaryForm.recipientPhone || ""}>
+                  {dailySummaryForm.recipientName || dailySummaryForm.recipientPhone || "Manual"}
+                </option>
+                {contactOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Numero / chat ID
+              <input
+                value={dailySummaryForm.recipientPhone}
+                onChange={(event) => onDailySummaryChange({ ...dailySummaryForm, recipientPhone: event.target.value })}
+                placeholder="097684200 o chat@c.us"
+              />
+            </label>
+            <label className="wideField">
+              Nombre del destinatario
+              <input
+                value={dailySummaryForm.recipientName}
+                onChange={(event) => onDailySummaryChange({ ...dailySummaryForm, recipientName: event.target.value })}
+                placeholder="Tecnico, administracion, compañero"
+              />
+            </label>
+            <label className="wideField">
+              Mensaje editable
+              <textarea
+                value={dailySummaryForm.messageTemplate}
+                onChange={(event) => onDailySummaryChange({ ...dailySummaryForm, messageTemplate: event.target.value })}
+                rows={7}
+              />
+            </label>
+          </div>
+
+          <div className="dailySummaryPreview">
+            <div>
+              <span>Mensaje que se enviara manana</span>
+              <strong>
+                {dailySummary.preview.dateLabel || "Proxima fecha"} - {dailySummary.preview.meetingsCount} reuniones
+              </strong>
+            </div>
+            <pre>{dailySummary.preview.message || "Guarda para generar la vista previa."}</pre>
+          </div>
+
+          <div className="meetingActions">
+            <button type="button" className="secondaryButton" onClick={onSaveDailySummary} disabled={savingSummary}>
+              <Save size={16} />
+              Guardar
+            </button>
+            <button type="button" className="secondaryButton" onClick={onSendDailySummary} disabled={savingSummary || !dailySummaryForm.recipientPhone}>
+              <MessageSquare size={16} />
+              Enviar ahora
+            </button>
+          </div>
+          {dailySummary.settings.lastSentAt ? (
+            <p className="syncStamp">Ultimo envio: {formatDateTime(dailySummary.settings.lastSentAt)}</p>
+          ) : null}
+        </section>
+
         <section className="integrationPanel">
           <div className="sectionHeader compactHeader">
             <div>
@@ -5971,7 +7821,7 @@ function WhatsAppView({
               <article key={chat.id} className={chat.unreadCount ? "unreadChat" : ""}>
                 <div>
                   <strong>{chat.name || chat.id}</strong>
-                  <span>{chat.isGroup ? "Grupo" : "Chat"} · {formatWhatsAppTime(chat.timestamp)}</span>
+                  <span>{chat.isGroup ? "Grupo" : "Chat"} - {formatWhatsAppTime(chat.timestamp)}</span>
                 </div>
                 <p>{chat.lastMessage || "Sin ultimo mensaje disponible"}</p>
                 <button type="button" className="secondaryButton" onClick={() => onReply(chat)}>
@@ -6011,6 +7861,7 @@ function DevicesView({
   customers,
   deviceError,
   deviceForm,
+  focusedDeviceGroupKey,
   deviceSearch,
   deviceStats,
   deviceType,
@@ -6029,6 +7880,7 @@ function DevicesView({
   customers: Customer[];
   deviceError: string;
   deviceForm: DevicePayload;
+  focusedDeviceGroupKey: string | null;
   deviceSearch: string;
   deviceStats: Array<{ label: string; value: number }>;
   deviceType: DeviceType | "ALL";
@@ -6051,6 +7903,13 @@ function DevicesView({
   const selectedDeviceClients = selectedDeviceGroup
     ? filterInstalledDeviceClientGroups(selectedDeviceGroup.clientGroups, deviceDetailQuery)
     : [];
+
+  useEffect(() => {
+    if (focusedDeviceGroupKey) {
+      setSelectedDeviceGroupKey(focusedDeviceGroupKey);
+      setDeviceDetailQuery("");
+    }
+  }, [focusedDeviceGroupKey]);
 
   return (
     <section className="devicesModule">
@@ -6314,6 +8173,7 @@ function cleanCustomerPayload(form: CustomerPayload): CustomerPayload {
     phone: form.phone?.trim() || undefined,
     address: form.address?.trim() || undefined,
     logoUrl: form.logoUrl?.trim() || undefined,
+    type: form.type ?? "NORMAL",
     status: form.status,
     notes: form.notes?.trim() || undefined,
   };
@@ -6356,11 +8216,56 @@ function cleanWorkOrderPayload(form: WorkOrderPayload): WorkOrderPayload {
 function cleanQuotePayload(form: QuotePayload): QuotePayload {
   return {
     customerId: form.customerId,
+    meetingId: form.meetingId || undefined,
     number: form.number?.trim() || undefined,
     title: form.title.trim(),
+    service: form.service || "OTHER",
+    status: form.status || "DRAFT",
+    currency: form.currency?.trim() || "UYU",
+    issueDate: form.issueDate || undefined,
+    validUntil: form.validUntil || undefined,
+    taxIncluded: form.taxIncluded ?? false,
+    discountPercent: Number(form.discountPercent) || 0,
+    profitMarginPercent: Number(form.profitMarginPercent) || 0,
     laborPoints: Number(form.laborPoints) || 0,
     subtotal: Number(form.subtotal) || 0,
     tax: form.tax === undefined ? undefined : Number(form.tax) || 0,
+    internalNotes: form.internalNotes?.trim() || undefined,
+    commercialTerms: form.commercialTerms?.trim() || undefined,
+    executionTime: form.executionTime?.trim() || undefined,
+    warranty: form.warranty?.trim() || undefined,
+    paymentTerms: form.paymentTerms?.trim() || undefined,
+    items: form.items?.length ? form.items : undefined,
+  };
+}
+
+function cleanMeetingPayload(form: MeetingPayload): MeetingPayload {
+  return {
+    customerId: form.customerId,
+    dateTime: form.dateTime,
+    contact: form.contact?.trim() || undefined,
+    type: form.type,
+    status: form.status,
+    objective: form.objective.trim(),
+    notes: form.notes?.trim() || undefined,
+    commitments: form.commitments?.trim() || undefined,
+    nextStep: form.nextStep?.trim() || undefined,
+    followUpDate: form.followUpDate || undefined,
+    attendees: form.attendees?.trim() || undefined,
+    needs: form.needs?.trim() || undefined,
+    equipmentNeeded: form.equipmentNeeded?.trim() || undefined,
+    estimatedBudget: Number(form.estimatedBudget) || undefined,
+    closeProbability: Number(form.closeProbability) || undefined,
+    reminderEnabled: form.reminderEnabled ?? true,
+    reminderMinutesBefore: Number(form.reminderMinutesBefore) || 30,
+    attachments: form.attachments?.length
+      ? form.attachments.map((attachment) => ({
+          name: attachment.name.trim(),
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+          dataUrl: attachment.dataUrl,
+        }))
+      : undefined,
   };
 }
 
@@ -6438,6 +8343,35 @@ function paymentStatusClass(payment: Payment) {
   return isOverdue(payment) ? "cancelled" : "scheduled";
 }
 
+function meetingStatusClass(status: MeetingStatus) {
+  if (status === "DONE") {
+    return "completed";
+  }
+
+  return status === "CANCELLED" ? "cancelled" : "scheduled";
+}
+
+function readMeetingAttachment(file: File): Promise<NonNullable<MeetingPayload["attachments"]>[number]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("No se pudo leer el archivo"));
+        return;
+      }
+
+      resolve({
+        name: file.name,
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+        dataUrl: reader.result,
+      });
+    };
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function toMoneyNumber(value: string | number) {
   return typeof value === "number" ? value : Number(value);
 }
@@ -6462,6 +8396,33 @@ function formatPrice(value?: string | number | null, currency?: string | null) {
     currency: currency || "USD",
     maximumFractionDigits: 2,
   }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+function formatAddressParts(value?: string | null) {
+  if (!value?.trim()) {
+    return { primary: "", secondary: "" };
+  }
+
+  const parts = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (!parts.length) {
+    return { primary: value.trim(), secondary: "" };
+  }
+
+  const firstStreetIndex = parts.findIndex((part) => /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(part) && !/^\d/.test(part));
+  const leadingDoorNumbers = firstStreetIndex > 0 ? parts.slice(0, firstStreetIndex) : [];
+  const street = firstStreetIndex > -1 ? parts[firstStreetIndex] : parts[0];
+  const doorNumber = leadingDoorNumbers[0] ?? "";
+  const primary = doorNumber ? `${street} ${doorNumber}` : street;
+  const secondary = (firstStreetIndex > -1 ? parts.slice(firstStreetIndex + 1) : parts.slice(1))
+    .filter((part) => !/^\d{5}$/.test(part) && part.toLowerCase() !== "uruguay")
+    .slice(0, 2)
+    .join(", ");
+
+  return { primary, secondary };
 }
 
 function toDateInputValue(date: Date) {
@@ -6901,7 +8862,7 @@ function toWhatsAppPhone(value?: string | null) {
 }
 
 function buildWorkOrderShareText(workOrder: WorkOrder) {
-  const documentNumber = workOrder.id.slice(0, 8).toUpperCase();
+  const documentNumber = formatWorkOrderNumber(workOrder);
   const site = workOrder.site ? `${workOrder.site.name} - ${workOrder.site.address}` : "Sin sitio especifico";
   const groupedMaterials = groupWorkOrderMaterials(workOrder.inventoryMovements ?? []);
   const materials = groupedMaterials.length
@@ -6911,7 +8872,7 @@ function buildWorkOrderShareText(workOrder: WorkOrder) {
     : "- Sin materiales cargados";
 
   return [
-    `Orden de trabajo #${documentNumber}`,
+    `Orden de trabajo ${documentNumber}`,
     `Cliente: ${workOrder.customer.name}`,
     `Trabajo: ${workOrder.title}`,
     `Tipo: ${deviceTypeLabels[workOrder.type]}`,
@@ -6925,6 +8886,13 @@ function buildWorkOrderShareText(workOrder: WorkOrder) {
   ].join("\n");
 }
 
+function formatWorkOrderNumber(workOrder: Pick<WorkOrder, "id" | "createdAt">) {
+  const source = `${workOrder.createdAt}-${workOrder.id}`;
+  const hash = Array.from(source).reduce((total, char) => total + char.charCodeAt(0), 0);
+  const number = (hash % 9999) + 1;
+  return `OT-${String(number).padStart(4, "0")}`;
+}
+
 function buildCustomerShareText(customer: Customer) {
   return [
     `Hola ${customer.name},`,
@@ -6934,6 +8902,18 @@ function buildCustomerShareText(customer: Customer) {
     "Quedamos a las ordenes.",
     "Security Solutions",
   ].join("\n");
+}
+
+function buildCustomerDocumentShareText(customer: Customer, document: CustomerDocument) {
+  return [
+    `Hola ${customer.name},`,
+    "",
+    `Te enviamos el documento: ${document.name}.`,
+    document.createdAt ? `Fecha de carga: ${formatDateTime(document.createdAt)}.` : "",
+    "",
+    "Quedamos a las ordenes.",
+    "Security Solutions",
+  ].filter(Boolean).join("\n");
 }
 
 function inventorySortValue(item: InventoryItem, key: InventorySortKey) {

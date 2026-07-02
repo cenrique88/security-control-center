@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { CustomerStatus, Prisma } from "@prisma/client";
+import { CustomerStatus, CustomerType, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateCustomerDocumentDto } from "./dto/create-customer-document.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
@@ -9,6 +9,7 @@ import { UpdateCustomerDto } from "./dto/update-customer.dto";
 type CustomerFilters = {
   search?: string;
   status?: "ACTIVE" | "PROSPECT" | "INACTIVE";
+  type?: "NORMAL" | "THIRD_PARTY";
 };
 
 @Injectable()
@@ -20,6 +21,10 @@ export class CustomersService {
 
     if (filters.status) {
       where.status = filters.status;
+    }
+
+    if (filters.type) {
+      where.type = filters.type;
     }
 
     if (filters.search) {
@@ -44,6 +49,7 @@ export class CustomersService {
             workOrders: true,
             quotes: true,
             payments: true,
+            meetings: true,
           },
         },
       },
@@ -63,6 +69,7 @@ export class CustomersService {
             workOrders: true,
             quotes: true,
             payments: true,
+            meetings: true,
           },
         },
       },
@@ -82,6 +89,7 @@ export class CustomersService {
             workOrders: true,
             quotes: true,
             payments: true,
+            meetings: true,
           },
         },
       },
@@ -115,6 +123,7 @@ export class CustomersService {
             workOrders: true,
             quotes: true,
             payments: true,
+            meetings: true,
           },
         },
         sites: {
@@ -169,6 +178,14 @@ export class CustomersService {
         payments: {
           orderBy: [{ dueDate: "desc" }, { updatedAt: "desc" }],
           take: 8,
+        },
+        meetings: {
+          orderBy: [{ dateTime: "desc" }, { updatedAt: "desc" }],
+          include: {
+            attachments: {
+              orderBy: { createdAt: "desc" },
+            },
+          },
         },
         documents: {
           orderBy: { createdAt: "desc" },
@@ -233,6 +250,7 @@ export class CustomersService {
       equipment,
       quotes: customer.quotes,
       payments: customer.payments,
+      meetings: customer.meetings,
       documents: customer.documents,
     };
   }
@@ -248,6 +266,28 @@ export class CustomersService {
         size: dto.size,
         dataUrl: dto.dataUrl,
       },
+    });
+  }
+
+  async deleteDocument(customerId: string, documentId: string) {
+    await this.ensureExists(customerId);
+
+    const document = await this.prisma.customerDocument.findFirst({
+      where: {
+        id: documentId,
+        customerId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!document) {
+      throw new NotFoundException("Customer document not found");
+    }
+
+    return this.prisma.customerDocument.delete({
+      where: { id: documentId },
     });
   }
 
@@ -288,6 +328,7 @@ export class CustomersService {
       phone: this.cleanOptional(dto.phone),
       address: this.cleanOptional(dto.address),
       logoUrl: this.cleanOptional(dto.logoUrl),
+      type: dto.type as CustomerType | undefined,
       status: dto.status as CustomerStatus | undefined,
       notes: this.cleanOptional(dto.notes),
     };
@@ -322,6 +363,7 @@ export class CustomersService {
       phone: this.cleanNullable(dto.phone),
       address: this.cleanNullable(dto.address),
       logoUrl: this.cleanNullable(dto.logoUrl),
+      type: dto.type as CustomerType | undefined,
       status: dto.status as CustomerStatus | undefined,
       notes: this.cleanNullable(dto.notes),
     };

@@ -6,6 +6,11 @@ enum CustomerStatusDto {
   INACTIVE = "INACTIVE",
 }
 
+enum CustomerTypeDto {
+  NORMAL = "NORMAL",
+  THIRD_PARTY = "THIRD_PARTY",
+}
+
 export class UpdateCustomerDto {
   @IsOptional()
   @IsString()
@@ -34,6 +39,10 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsString()
   logoUrl?: string;
+
+  @IsOptional()
+  @IsEnum(CustomerTypeDto)
+  type?: CustomerTypeDto;
 
   @IsOptional()
   @IsEnum(CustomerStatusDto)

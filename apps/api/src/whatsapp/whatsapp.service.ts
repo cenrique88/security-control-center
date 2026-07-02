@@ -1,6 +1,9 @@
-import { BadRequestException, Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, OnModuleDestroy, OnModuleInit, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { Meeting, MeetingType } from "@prisma/client";
+import { PrismaService } from "../prisma/prisma.service";
 import { SendWhatsAppMessageDto } from "./dto/send-whatsapp-message.dto";
+import { UpdateDailySummaryDto } from "./dto/update-daily-summary.dto";
 
 type OpenWaSession = {
   id: string;
@@ -27,10 +30,28 @@ type OpenWaGroup = {
 };
 
 @Injectable()
-export class WhatsAppService {
-  constructor(private readonly config: ConfigService) {}
+export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(WhatsAppService.name);
+  private dailySummaryTimer?: NodeJS.Timeout;
+  private dailySummaryRunning = false;
 
-  status() {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  onModuleInit() {
+    this.dailySummaryTimer = setInterval(() => void this.sendDailyMeetingSummaryIfDue(), 60_000);
+    void this.sendDailyMeetingSummaryIfDue();
+  }
+
+  onModuleDestroy() {
+    if (this.dailySummaryTimer) {
+      clearInterval(this.dailySummaryTimer);
+    }
+  }
+
+  async status() {
     const checks = [
       {
         key: "OPENWA_API_URL",
@@ -53,15 +74,32 @@ export class WhatsAppService {
         configured: Boolean(this.config.get<string>("OPENWA_WEBHOOK_SECRET")),
       },
     ];
+    const configured = checks.slice(0, 3).every((check) => check.configured);
+    let reachable = false;
+    let connectionError = "";
+
+    if (configured) {
+      const apiUrl = this.config.get<string>("OPENWA_API_URL")?.replace(/\/+$/, "");
+      const apiKey = this.config.get<string>("OPENWA_API_KEY");
+      if (apiUrl && apiKey) {
+        try {
+          await this.openWaRequest<unknown>(apiUrl, apiKey, "/sessions");
+          reachable = true;
+        } catch (error) {
+          connectionError = error instanceof Error ? error.message : String(error);
+        }
+      }
+    }
 
     return {
       provider: "OpenWA",
-      connected: checks.slice(0, 3).every((check) => check.configured),
+      connected: configured && reachable,
       lastSyncAt: null,
       unread: 0,
       pendingReplies: 0,
       activeChats: 0,
       checks,
+      connectionError,
     };
   }
 
@@ -184,20 +222,188 @@ export class WhatsAppService {
     };
   }
 
+  async getDailyMeetingSummary() {
+    const settings = await this.getOrCreateDailySummarySettings();
+    const preview = await this.buildDailyMeetingSummaryPreview();
+    return { settings, preview };
+  }
+
+  async updateDailyMeetingSummary(dto: UpdateDailySummaryDto) {
+    const current = await this.getOrCreateDailySummarySettings();
+    const settings = await this.prisma.whatsAppDailySummarySettings.update({
+      where: { id: current.id },
+      data: {
+        enabled: dto.enabled,
+        recipientName: this.cleanNullable(dto.recipientName),
+        recipientPhone: dto.recipientPhone?.trim(),
+        sendTime: dto.sendTime,
+        messageTemplate: dto.messageTemplate,
+      },
+    });
+    const preview = await this.buildDailyMeetingSummaryPreview(settings.messageTemplate);
+    return { settings, preview };
+  }
+
+  async sendDailyMeetingSummaryNow() {
+    const settings = await this.getOrCreateDailySummarySettings();
+    const preview = await this.buildDailyMeetingSummaryPreview(settings.messageTemplate);
+    await this.send({ to: settings.recipientPhone, message: preview.message });
+    const updated = await this.prisma.whatsAppDailySummarySettings.update({
+      where: { id: settings.id },
+      data: {
+        lastSentForDate: preview.dateKey,
+        lastSentAt: new Date(),
+      },
+    });
+    return { settings: updated, preview, sent: true };
+  }
+
+  private async sendDailyMeetingSummaryIfDue() {
+    if (this.dailySummaryRunning) {
+      return;
+    }
+
+    this.dailySummaryRunning = true;
+    try {
+      const settings = await this.getOrCreateDailySummarySettings();
+      if (!settings.enabled || !settings.recipientPhone.trim()) {
+        return;
+      }
+
+      const now = new Date();
+      const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const preview = await this.buildDailyMeetingSummaryPreview(settings.messageTemplate);
+      if (currentTime < settings.sendTime || settings.lastSentForDate === preview.dateKey) {
+        return;
+      }
+
+      await this.send({ to: settings.recipientPhone, message: preview.message });
+      await this.prisma.whatsAppDailySummarySettings.update({
+        where: { id: settings.id },
+        data: {
+          lastSentForDate: preview.dateKey,
+          lastSentAt: now,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`No se pudo enviar resumen diario de reuniones: ${message}`);
+    } finally {
+      this.dailySummaryRunning = false;
+    }
+  }
+
+  private async getOrCreateDailySummarySettings() {
+    return this.prisma.whatsAppDailySummarySettings.upsert({
+      where: { id: "meeting-summary" },
+      create: {
+        id: "meeting-summary",
+        enabled: true,
+        recipientName: "Lewis",
+        recipientPhone: "097684200",
+        sendTime: "18:00",
+      },
+      update: {},
+    });
+  }
+
+  private async buildDailyMeetingSummaryPreview(template?: string) {
+    const target = this.tomorrowRange();
+    const meetings = await this.prisma.meeting.findMany({
+      where: {
+        status: "PENDING",
+        dateTime: {
+          gte: target.start,
+          lt: target.end,
+        },
+      },
+      include: {
+        customer: {
+          select: {
+            name: true,
+            phone: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { dateTime: "asc" },
+    });
+    const settings = template ? null : await this.getOrCreateDailySummarySettings();
+    const messageTemplate = template ?? settings?.messageTemplate ?? "Resumen de reuniones para {fecha}\n\n{reuniones}\n\nSecurity Solutions";
+    const meetingsText = meetings.length
+      ? meetings.map((meeting, index) => this.formatMeetingSummaryLine(meeting, index + 1)).join("\n\n")
+      : "No hay reuniones coordinadas para esa fecha.";
+    const dateLabel = new Intl.DateTimeFormat("es-UY", {
+      weekday: "long",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "America/Montevideo",
+    }).format(target.start);
+
+    return {
+      dateKey: target.dateKey,
+      dateLabel,
+      meetingsCount: meetings.length,
+      meetings,
+      message: messageTemplate
+        .replaceAll("{fecha}", dateLabel)
+        .replaceAll("{cantidad}", String(meetings.length))
+        .replaceAll("{reuniones}", meetingsText),
+    };
+  }
+
+  private tomorrowRange() {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(start.getDate() + 1);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    const dateKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
+    return { start, end, dateKey };
+  }
+
+  private formatMeetingSummaryLine(meeting: Meeting & { customer: { name: string; phone?: string | null; email?: string | null } }, index: number) {
+    const time = new Intl.DateTimeFormat("es-UY", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "America/Montevideo",
+    }).format(meeting.dateTime);
+    const details = [
+      `${index}. ${time} - ${meeting.customer.name}`,
+      meeting.contact ? `Contacto: ${meeting.contact}` : "",
+      `Tipo: ${this.meetingTypeLabel(meeting.type)}`,
+      `Objetivo: ${meeting.objective}`,
+      meeting.nextStep ? `Proximo paso: ${meeting.nextStep}` : "",
+      meeting.needs ? `Necesidades: ${meeting.needs}` : "",
+    ];
+    return details.filter(Boolean).join("\n");
+  }
+
+  private meetingTypeLabel(type: MeetingType) {
+    return type === "VIDEO_CALL" ? "Videollamada" : type === "PHONE" ? "Telefono" : "Presencial";
+  }
+
   private async openWaRequest<T>(
     apiUrl: string,
     apiKey: string,
     path: string,
     options: { method?: string; body?: Record<string, unknown> } = {},
   ): Promise<T> {
-    const response = await fetch(`${apiUrl}/api${path}`, {
-      method: options.method ?? "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${apiUrl}/api${path}`, {
+        method: options.method ?? "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey,
+        },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+    } catch {
+      throw new ServiceUnavailableException(`No se pudo conectar con OpenWA en ${apiUrl}`);
+    }
 
     if (!response.ok) {
       throw new ServiceUnavailableException(`OpenWA request failed: ${response.status}`);
@@ -214,15 +420,21 @@ export class WhatsAppService {
     const failures: string[] = [];
 
     for (const candidate of candidates) {
-      const response = await fetch(`${apiUrl}/api${candidate.path}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "X-API-Key": apiKey,
-        },
-        body: JSON.stringify(candidate.body),
-      });
+      let response: Response;
+      try {
+        response = await fetch(`${apiUrl}/api${candidate.path}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+          },
+          body: JSON.stringify(candidate.body),
+        });
+      } catch {
+        failures.push(`${candidate.path}: sin conexion`);
+        continue;
+      }
 
       if (response.ok) {
         return (await this.safeJson(response)) as Record<string, unknown>;
@@ -262,5 +474,14 @@ export class WhatsAppService {
     }
 
     return digits.length <= 9 ? `598${digits}` : digits;
+  }
+
+  private cleanNullable(value?: string) {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    const clean = value.trim();
+    return clean ? clean : null;
   }
 }

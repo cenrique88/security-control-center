@@ -81,6 +81,7 @@ export type DashboardSummary = {
 };
 
 export type CustomerStatus = "ACTIVE" | "PROSPECT" | "INACTIVE";
+export type CustomerType = "NORMAL" | "THIRD_PARTY";
 
 export type Customer = {
   id: string;
@@ -92,6 +93,7 @@ export type Customer = {
   phone?: string | null;
   address?: string | null;
   logoUrl?: string | null;
+  type: CustomerType;
   status: CustomerStatus;
   notes?: string | null;
   createdAt: string;
@@ -101,6 +103,7 @@ export type Customer = {
     workOrders: number;
     quotes: number;
     payments: number;
+    meetings: number;
   };
 };
 
@@ -112,6 +115,7 @@ export type CustomerPayload = {
   phone?: string;
   address?: string;
   logoUrl?: string;
+  type?: CustomerType;
   status?: CustomerStatus;
   notes?: string;
 };
@@ -140,7 +144,10 @@ export type DeviceType =
   | "CCTV"
   | "ALARM"
   | "ACCESS_CONTROL"
+  | "CABLING"
   | "GPS"
+  | "ELECTRIC_FENCE"
+  | "AUTOMATION"
   | "NETWORKING"
   | "MAINTENANCE"
   | "OTHER";
@@ -213,6 +220,9 @@ export type WorkOrder = {
   customer: {
     id: string;
     name: string;
+    reference?: string | null;
+    taxId?: string | null;
+    logoUrl?: string | null;
     email?: string | null;
     phone?: string | null;
   };
@@ -259,19 +269,118 @@ export type CustomerProfile = {
   sites: CustomerSite[];
   workOrders: WorkOrder[];
   equipment: InstalledDevice[];
+  meetings: Meeting[];
+  quotes?: Quote[];
+  payments?: Payment[];
   documents: CustomerDocument[];
+};
+
+export type MeetingType = "IN_PERSON" | "VIDEO_CALL" | "PHONE";
+
+export type MeetingStatus = "PENDING" | "DONE" | "CANCELLED";
+
+export type MeetingAttachment = {
+  id: string;
+  meetingId?: string;
+  name: string;
+  mimeType?: string | null;
+  size?: number | null;
+  dataUrl?: string | null;
+  createdAt: string;
+};
+
+export type Meeting = {
+  id: string;
+  customerId: string;
+  dateTime: string;
+  contact?: string | null;
+  type: MeetingType;
+  status: MeetingStatus;
+  objective: string;
+  notes?: string | null;
+  commitments?: string | null;
+  nextStep?: string | null;
+  followUpDate?: string | null;
+  attendees?: string | null;
+  needs?: string | null;
+  equipmentNeeded?: string | null;
+  estimatedBudget?: string | number | null;
+  closeProbability?: number | null;
+  reminderEnabled?: boolean;
+  reminderMinutesBefore?: number;
+  reminderSentAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  customer: {
+    id: string;
+    name: string;
+    reference?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  };
+  attachments: MeetingAttachment[];
+};
+
+export type MeetingPayload = {
+  customerId: string;
+  dateTime: string;
+  contact?: string;
+  type: MeetingType;
+  status?: MeetingStatus;
+  objective: string;
+  notes?: string;
+  commitments?: string;
+  nextStep?: string;
+  followUpDate?: string;
+  attendees?: string;
+  needs?: string;
+  equipmentNeeded?: string;
+  estimatedBudget?: number;
+  closeProbability?: number;
+  reminderEnabled?: boolean;
+  reminderMinutesBefore?: number;
+  attachments?: Array<{
+    name: string;
+    mimeType?: string;
+    size?: number;
+    dataUrl: string;
+  }>;
 };
 
 export type Quote = {
   id: string;
   customerId: string;
+  meetingId?: string | null;
   number: string;
   title: string;
-  laborPoints: number;
+  service: DeviceType;
+  status: QuoteStatus;
+  currency: string;
+  issueDate: string;
+  validUntil?: string | null;
+  taxIncluded: boolean;
+  discountPercent: string | number;
+  profitMarginPercent: string | number;
+  laborPoints: string | number;
+  materialsSubtotal: string | number;
+  laborSubtotal: string | number;
+  expensesSubtotal: string | number;
   subtotal: string | number;
+  discountAmount: string | number;
+  taxableBase: string | number;
   tax: string | number;
   total: string | number;
+  costTotal: string | number;
+  estimatedProfit: string | number;
+  estimatedMargin: string | number;
+  internalNotes?: string | null;
+  commercialTerms?: string | null;
+  executionTime?: string | null;
+  warranty?: string | null;
+  paymentTerms?: string | null;
+  sentAt?: string | null;
   acceptedAt?: string | null;
+  rejectedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   customer: {
@@ -280,15 +389,127 @@ export type Quote = {
     phone?: string | null;
     email?: string | null;
   };
+  items?: QuoteItem[];
+  history?: QuoteHistory[];
+};
+
+export type QuoteStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED" | "EXPIRED";
+
+export type QuoteItemType = "EQUIPMENT" | "MATERIAL" | "SUPPLY" | "LABOR" | "EXPENSE";
+
+export type QuoteItem = {
+  id?: string;
+  quoteId?: string;
+  priceBookItemId?: string | null;
+  type: QuoteItemType;
+  category: string;
+  description: string;
+  quantity: string | number;
+  unit: string;
+  unitPrice: string | number;
+  taxRate?: string | number;
+  unitCost?: string | number;
+  subtotal?: string | number;
+  taxAmount?: string | number;
+  total?: string | number;
+  sortOrder?: number;
+};
+
+export type QuoteHistory = {
+  id: string;
+  quoteId: string;
+  action: string;
+  comment?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
 };
 
 export type QuotePayload = {
   customerId: string;
+  meetingId?: string;
   number?: string;
   title: string;
+  service?: DeviceType;
+  status?: QuoteStatus;
+  currency?: string;
+  issueDate?: string;
+  validUntil?: string;
+  taxIncluded?: boolean;
+  discountPercent?: number;
+  profitMarginPercent?: number;
   laborPoints?: number;
-  subtotal: number;
+  subtotal?: number;
   tax?: number;
+  internalNotes?: string;
+  commercialTerms?: string;
+  executionTime?: string;
+  warranty?: string;
+  paymentTerms?: string;
+  items?: Array<Omit<QuoteItem, "id" | "quoteId" | "subtotal" | "taxAmount" | "total" | "sortOrder">>;
+};
+
+export type PriceBookItem = {
+  id: string;
+  code: string;
+  name: string;
+  type: QuoteItemType;
+  category: string;
+  service?: DeviceType | null;
+  brand?: string | null;
+  model?: string | null;
+  description?: string | null;
+  unit: string;
+  costPrice: string | number;
+  salePrice: string | number;
+  taxRate: string | number;
+  currency: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PriceBookItemPayload = {
+  code: string;
+  name: string;
+  type?: QuoteItemType;
+  category: string;
+  service?: DeviceType | "";
+  brand?: string;
+  model?: string;
+  description?: string;
+  unit?: string;
+  costPrice?: number;
+  salePrice?: number;
+  taxRate?: number;
+  currency?: string;
+  active?: boolean;
+};
+
+export type LaborPointRate = {
+  id: string;
+  code: string;
+  name: string;
+  pointValue: string | number;
+  taxRate: string | number;
+  currency: string;
+  active: boolean;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LaborPointCalculation = {
+  points: number;
+  rateId: string;
+  rateName: string;
+  source: "CUSTOMER" | "DEFAULT";
+  customerId?: string;
+  pointValue: string | number;
+  taxRate: string | number;
+  subtotal: number;
+  tax: number;
+  total: number;
+  currency: string;
 };
 
 export type Payment = {
@@ -464,6 +685,7 @@ export type WhatsAppStatus = {
   unread: number;
   pendingReplies: number;
   activeChats: number;
+  connectionError?: string;
   checks: Array<{
     key: string;
     label: string;
@@ -499,6 +721,36 @@ export type WhatsAppSync = {
   stats?: Record<string, unknown>;
   chats: WhatsAppChat[];
   groups: WhatsAppChat[];
+};
+
+export type WhatsAppDailyMeetingSummary = {
+  settings: {
+    id: string;
+    enabled: boolean;
+    recipientName?: string | null;
+    recipientPhone: string;
+    sendTime: string;
+    messageTemplate: string;
+    lastSentForDate?: string | null;
+    lastSentAt?: string | null;
+    updatedAt: string;
+    createdAt: string;
+  };
+  preview: {
+    dateKey: string;
+    dateLabel: string;
+    meetingsCount: number;
+    message: string;
+  };
+  sent?: boolean;
+};
+
+export type WhatsAppDailyMeetingSummaryPayload = {
+  enabled?: boolean;
+  recipientName?: string;
+  recipientPhone?: string;
+  sendTime?: string;
+  messageTemplate?: string;
 };
 
 function getApiUrl() {

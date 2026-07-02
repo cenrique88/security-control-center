@@ -6,7 +6,9 @@ import { DashboardModule } from "./dashboard/dashboard.module";
 import { DevicesModule } from "./devices/devices.module";
 import { GmailModule } from "./gmail/gmail.module";
 import { InventoryModule } from "./inventory/inventory.module";
+import { MeetingsModule } from "./meetings/meetings.module";
 import { PaymentsModule } from "./payments/payments.module";
+import { PriceBookModule } from "./price-book/price-book.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { QuotesModule } from "./quotes/quotes.module";
 import { VehiclesModule } from "./vehicles/vehicles.module";
@@ -26,6 +28,8 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     PaymentsModule,
     VehiclesModule,
     InventoryModule,
+    PriceBookModule,
+    MeetingsModule,
     GmailModule,
     WhatsAppModule,
   ],

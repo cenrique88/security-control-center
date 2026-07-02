@@ -1,4 +1,27 @@
-import { IsDateString, IsInt, IsNumber, IsOptional, IsString, Min } from "class-validator";
+import { Type } from "class-transformer";
+import { IsArray, IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, ValidateNested } from "class-validator";
+import { CreateQuoteItemDto } from "./create-quote.dto";
+
+enum ServiceTypeDto {
+  CCTV = "CCTV",
+  ALARM = "ALARM",
+  ACCESS_CONTROL = "ACCESS_CONTROL",
+  CABLING = "CABLING",
+  GPS = "GPS",
+  ELECTRIC_FENCE = "ELECTRIC_FENCE",
+  AUTOMATION = "AUTOMATION",
+  NETWORKING = "NETWORKING",
+  MAINTENANCE = "MAINTENANCE",
+  OTHER = "OTHER",
+}
+
+enum QuoteStatusDto {
+  DRAFT = "DRAFT",
+  SENT = "SENT",
+  APPROVED = "APPROVED",
+  REJECTED = "REJECTED",
+  EXPIRED = "EXPIRED",
+}
 
 export class UpdateQuoteDto {
   @IsOptional()
@@ -14,7 +37,45 @@ export class UpdateQuoteDto {
   title?: string;
 
   @IsOptional()
-  @IsInt()
+  @IsString()
+  meetingId?: string;
+
+  @IsOptional()
+  @IsEnum(ServiceTypeDto)
+  service?: ServiceTypeDto;
+
+  @IsOptional()
+  @IsEnum(QuoteStatusDto)
+  status?: QuoteStatusDto;
+
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
+  @IsOptional()
+  @IsDateString()
+  issueDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  validUntil?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  taxIncluded?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  discountPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  profitMarginPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
   @Min(0)
   laborPoints?: number;
 
@@ -31,4 +92,30 @@ export class UpdateQuoteDto {
   @IsOptional()
   @IsDateString()
   acceptedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  internalNotes?: string;
+
+  @IsOptional()
+  @IsString()
+  commercialTerms?: string;
+
+  @IsOptional()
+  @IsString()
+  executionTime?: string;
+
+  @IsOptional()
+  @IsString()
+  warranty?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentTerms?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateQuoteItemDto)
+  items?: CreateQuoteItemDto[];
 }
