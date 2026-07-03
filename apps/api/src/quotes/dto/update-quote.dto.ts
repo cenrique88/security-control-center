@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsArray, IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, ValidateNested } from "class-validator";
+import { IsArray, IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Max, Min, ValidateNested } from "class-validator";
 import { CreateQuoteItemDto } from "./create-quote.dto";
 
 enum ServiceTypeDto {
@@ -77,7 +77,13 @@ export class UpdateQuoteDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(100)
   discountPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  discountAmount?: number;
 
   @IsOptional()
   @IsNumber()

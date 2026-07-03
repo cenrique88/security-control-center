@@ -140,7 +140,7 @@ const meetingTypeLabels: Record<MeetingType, string> = {
 
 const meetingStatusLabels: Record<MeetingStatus, string> = {
   PENDING: "Pendiente",
-  DONE: "Realizada",
+  DONE: "Aceptado",
   CANCELLED: "Cancelada",
 };
 
@@ -272,6 +272,7 @@ const emptyQuoteForm: QuotePayload = {
   currency: "UYU",
   taxIncluded: true,
   discountPercent: 0,
+  discountAmount: 0,
   profitMarginPercent: 0,
   laborPoints: 0,
   subtotal: 0,
@@ -487,6 +488,7 @@ export default function Home() {
   const [sites, setSites] = useState<CustomerSite[]>([]);
   const [devices, setDevices] = useState<InstalledDevice[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [workOrderStatsSource, setWorkOrderStatsSource] = useState<WorkOrder[]>([]);
   const [agendaOrders, setAgendaOrders] = useState<WorkOrder[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -522,6 +524,7 @@ export default function Home() {
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [editingWorkOrderId, setEditingWorkOrderId] = useState<string | null>(null);
   const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null);
+  const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
   const [editingInventoryItemId, setEditingInventoryItemId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [deviceSearch, setDeviceSearch] = useState("");
@@ -821,12 +824,12 @@ export default function Home() {
 
   const workOrderStats = useMemo(
     () => [
-      { label: "Trabajos", value: workOrders.length },
-      { label: "Programados", value: workOrders.filter((workOrder) => workOrder.status === "SCHEDULED").length },
-      { label: "En curso", value: workOrders.filter((workOrder) => workOrder.status === "IN_PROGRESS").length },
-      { label: "Completados", value: workOrders.filter((workOrder) => workOrder.status === "COMPLETED").length },
+      { label: "Trabajos", value: workOrderStatsSource.length },
+      { label: "Programados", value: workOrderStatsSource.filter((workOrder) => workOrder.status === "SCHEDULED").length },
+      { label: "En curso", value: workOrderStatsSource.filter((workOrder) => workOrder.status === "IN_PROGRESS").length },
+      { label: "Completados", value: workOrderStatsSource.filter((workOrder) => workOrder.status === "COMPLETED").length },
     ],
-    [workOrders],
+    [workOrderStatsSource],
   );
 
   const selectedAgendaDate = useMemo(() => parseDateInput(agendaDate), [agendaDate]);
@@ -917,7 +920,7 @@ export default function Home() {
     () => [
       { label: "Reuniones", value: meetings.length },
       { label: "Pendientes", value: meetings.filter((meeting) => meeting.status === "PENDING").length },
-      { label: "Realizadas", value: meetings.filter((meeting) => meeting.status === "DONE").length },
+      { label: "Aceptadas", value: meetings.filter((meeting) => meeting.status === "DONE").length },
       {
         label: "Seguimientos",
         value: meetings.filter((meeting) => meeting.followUpDate && meeting.status !== "CANCELLED").length,
@@ -1065,8 +1068,9 @@ export default function Home() {
         void loadCustomers(token);
         break;
       case "Trabajos":
+        setWorkStatus("ALL");
         void Promise.all([
-          loadWorkOrders(token),
+          loadWorkOrders(token, null, "ALL"),
           loadAgenda(token),
           loadInventory(token, { mode: "all", category: "ALL", supplier: "ALL", search: "" }),
         ]);
@@ -1331,7 +1335,12 @@ export default function Home() {
     }
   }
 
-  async function loadWorkOrders(activeToken = token, customerId = selectedCustomerId) {
+  async function loadWorkOrders(
+    activeToken = token,
+    customerId: string | null = null,
+    statusFilter: WorkOrderStatus | "ALL" = workStatus,
+    searchFilter = workSearch,
+  ) {
     if (!activeToken) {
       return;
     }
@@ -1340,21 +1349,27 @@ export default function Home() {
     setWorkOrderError("");
     try {
       const params = new URLSearchParams();
-      if (workSearch.trim()) {
-        params.set("search", workSearch.trim());
+      if (searchFilter.trim()) {
+        params.set("search", searchFilter.trim());
       }
       if (customerId) {
         params.set("customerId", customerId);
       }
-      if (workStatus !== "ALL") {
-        params.set("status", workStatus);
+      if (statusFilter !== "ALL") {
+        params.set("status", statusFilter);
       }
 
       const query = params.toString();
-      const data = await apiRequest<WorkOrder[]>(`/api/work-orders${query ? `?${query}` : ""}`, {
-        token: activeToken,
-      });
+      const [data, statsData] = await Promise.all([
+        apiRequest<WorkOrder[]>(`/api/work-orders${query ? `?${query}` : ""}`, {
+          token: activeToken,
+        }),
+        apiRequest<WorkOrder[]>("/api/work-orders", {
+          token: activeToken,
+        }),
+      ]);
       setWorkOrders(data);
+      setWorkOrderStatsSource(statsData);
     } catch {
       setWorkOrderError("No se pudieron cargar los trabajos");
     } finally {
@@ -1944,18 +1959,66 @@ export default function Home() {
     setQuotesLoading(true);
     setQuoteError("");
     try {
-      await apiRequest<Quote>("/api/quotes", {
+      await apiRequest<Quote>(editingQuoteId ? `/api/quotes/${editingQuoteId}` : "/api/quotes", {
         token,
-        method: "POST",
+        method: editingQuoteId ? "PATCH" : "POST",
         body: JSON.stringify(cleanQuotePayload({ ...quoteForm, customerId })),
       });
+      setEditingQuoteId(null);
       setQuoteForm({ ...emptyQuoteForm, customerId: selectedCustomerId ?? "" });
       await Promise.all([loadQuotes(token), loadCustomers(token), loadSummary(token)]);
-    } catch {
-      setQuoteError("No se pudo guardar el presupuesto");
+    } catch (error) {
+      setQuoteError(`${editingQuoteId ? "No se pudo actualizar" : "No se pudo guardar"} el presupuesto: ${getErrorMessage(error)}`);
     } finally {
       setQuotesLoading(false);
     }
+  }
+
+  function editQuote(quote: Quote) {
+    setEditingQuoteId(quote.id);
+    setQuoteForm({
+      customerId: quote.customerId,
+      meetingId: quote.meetingId ?? undefined,
+      number: quote.number,
+      title: quote.title,
+      service: quote.service,
+      status: quote.status,
+      pricingMode: quote.pricingMode,
+      currency: quote.currency,
+      issueDate: quote.issueDate,
+      validUntil: quote.validUntil ?? undefined,
+      taxIncluded: quote.taxIncluded,
+      discountPercent: toMoneyNumber(quote.discountPercent),
+      discountAmount: toMoneyNumber(quote.discountAmount),
+      profitMarginPercent: toMoneyNumber(quote.profitMarginPercent),
+      laborPoints: toMoneyNumber(quote.laborPoints),
+      subtotal: toMoneyNumber(quote.subtotal),
+      tax: toMoneyNumber(quote.tax),
+      internalNotes: quote.internalNotes ?? "",
+      commercialTerms: quote.commercialTerms ?? "",
+      executionTime: quote.executionTime ?? "",
+      warranty: quote.warranty ?? "",
+      paymentTerms: quote.paymentTerms ?? "",
+      items: (quote.items ?? []).map((item) => ({
+        priceBookItemId: item.priceBookItemId ?? undefined,
+        type: item.type,
+        category: item.category,
+        description: item.description,
+        quantity: item.quantity,
+        unit: item.unit,
+        unitPrice: item.unitPrice,
+        taxRate: item.taxRate,
+        unitCost: item.unitCost,
+      })),
+    });
+    setSelectedCustomerId(quote.customerId);
+    setQuoteError("");
+  }
+
+  function cancelQuoteEdit() {
+    setEditingQuoteId(null);
+    setQuoteForm({ ...emptyQuoteForm, customerId: selectedCustomerId ?? "" });
+    setQuoteError("");
   }
 
   async function saveMeeting(event: FormEvent<HTMLFormElement>) {
@@ -2488,7 +2551,7 @@ export default function Home() {
     setPaymentForm((currentForm) => ({ ...currentForm, customerId }));
     void loadSites(customerId);
     void loadDevices(token, customerId);
-    void loadWorkOrders(token, customerId);
+    void loadWorkOrders(token, null, "ALL");
     void loadMeetings(token, customerId);
     void loadQuotes(token);
     void loadPayments(token, customerId);
@@ -2760,16 +2823,14 @@ export default function Home() {
     });
   }
 
-  async function composeQuoteWhatsApp(quote: Quote) {
-    const attachment = await buildQuoteTemplateAttachment(quote);
+  function composeQuoteWhatsApp(quote: Quote) {
     setMessageError("");
     setMessageCompose({
       channel: "whatsapp",
       title: `WhatsApp - ${quote.customer.name}`,
       to: quote.customer.phone ?? "",
       subject: `Presupuesto ${quote.number} - ${quote.title}`,
-      message: `Hola ${quote.customer.name}, te enviamos el presupuesto ${quote.number} adjunto.\n\nQuedamos a las ordenes.\nSecurity Solutions`,
-      attachment,
+      message: buildQuoteShareText(quote),
       customerId: quote.customer.id,
     });
   }
@@ -2863,7 +2924,6 @@ export default function Home() {
           body: JSON.stringify({
             to: messageCompose.to,
             message: messageCompose.message,
-            attachment: messageCompose.attachment,
             customerId: messageCompose.customerId,
             workOrderId: messageCompose.workOrderId,
           }),
@@ -3276,6 +3336,7 @@ export default function Home() {
         ) : activeModule === "Presupuestos" ? (
           <QuotesView
             customers={customers}
+            editingQuoteId={editingQuoteId}
             loading={quotesLoading}
             quoteError={quoteError}
             quoteForm={quoteForm}
@@ -3287,8 +3348,10 @@ export default function Home() {
             quoteStatus={quoteStatus}
             quotes={quotes}
             onAccept={acceptQuote}
+            onCancelEdit={cancelQuoteEdit}
             onComposeMail={composeQuoteMail}
             onComposeWhatsApp={composeQuoteWhatsApp}
+            onEditQuote={editQuote}
             onFormChange={setQuoteForm}
             onRefresh={() => loadQuotes()}
             onSave={saveQuote}
@@ -5037,7 +5100,7 @@ function AgendaMeetingList({
                 onClick={() => onUpdateStatus(meeting.id, "DONE")}
                 disabled={meeting.status === "DONE"}
               >
-                Realizada
+                Aceptado
               </button>
               <button
                 type="button"
@@ -5591,7 +5654,7 @@ function MeetingDetailModal({
             onClick={() => onUpdateStatus("DONE")}
             disabled={meeting.status === "DONE"}
           >
-            Realizada
+            Aceptado
           </button>
           <button
             type="button"
@@ -6076,6 +6139,8 @@ function WorkOrdersView({
               : Math.max(1, form.quantity);
             const workOrderSiteId = selectedWorkOrder.siteId ?? selectedWorkOrder.site?.id ?? "";
             const installAsDevice = Boolean(form.installAsDevice);
+            const quoteSummary = parseWorkOrderQuoteNotes(selectedWorkOrder.notes);
+            const operationalNotes = quoteSummary ? selectedWorkOrder.site?.address : selectedWorkOrder.notes || selectedWorkOrder.site?.address;
 
             return (
               <div className="deviceDetailOverlay customerProfileOverlay" onClick={() => setSelectedWorkOrderId(null)}>
@@ -6105,7 +6170,14 @@ function WorkOrdersView({
                           Orden/PDF
                         </button>
                       ) : null}
-                      <button type="button" className="secondaryButton" onClick={() => onEditWorkOrder(selectedWorkOrder)}>
+                      <button
+                        type="button"
+                        className="secondaryButton"
+                        onClick={() => {
+                          onEditWorkOrder(selectedWorkOrder);
+                          setSelectedWorkOrderId(null);
+                        }}
+                      >
                         <Edit3 size={16} />
                         Editar
                       </button>
@@ -6115,26 +6187,82 @@ function WorkOrdersView({
                     </div>
                   </header>
 
+                  <div className="workOrderScheduleBand">
+                    <div className={`workOrderStatusBadge status-${selectedWorkOrder.status.toLowerCase()}`}>
+                      {workStatusLabels[selectedWorkOrder.status]}
+                    </div>
+                    <div>
+                      <span>Programado</span>
+                      <strong>{formatDateTime(selectedWorkOrder.scheduledAt)}</strong>
+                    </div>
+                    <div>
+                      <span>Sitio</span>
+                      <strong>{selectedWorkOrder.site?.name ?? "Sin sitio"}</strong>
+                    </div>
+                    <div>
+                      <span>Servicio</span>
+                      <strong>{deviceTypeLabels[selectedWorkOrder.type]}</strong>
+                    </div>
+                  </div>
+
                   <dl className="customerProfileGrid">
                     <div>
                       <dt>Cliente</dt>
                       <dd>{selectedWorkOrder.customer.name}</dd>
                     </div>
                     <div>
-                      <dt>Sitio</dt>
-                      <dd>{selectedWorkOrder.site?.name ?? "Sin sitio"}</dd>
-                    </div>
-                    <div>
-                      <dt>Estado</dt>
-                      <dd>{workStatusLabels[selectedWorkOrder.status]}</dd>
-                    </div>
-                    <div>
-                      <dt>Agenda</dt>
-                      <dd>{formatDateTime(selectedWorkOrder.scheduledAt)}</dd>
+                      <dt>Direccion</dt>
+                      <dd>{selectedWorkOrder.site?.address ?? "Sin direccion cargada"}</dd>
                     </div>
                   </dl>
 
-                  <p className="workOrderDetailNotes">{selectedWorkOrder.notes || selectedWorkOrder.site?.address || "Sin notas operativas"}</p>
+                  {quoteSummary ? (
+                    <section className="workOrderQuoteSummary">
+                      <div className="workOrderQuoteSummaryHeader">
+                        <div>
+                          <span>Presupuesto de origen</span>
+                          <strong>{quoteSummary.number}</strong>
+                        </div>
+                        {quoteSummary.total ? <strong>{quoteSummary.total}</strong> : null}
+                      </div>
+                      <div className="workOrderQuoteFacts">
+                        {quoteSummary.executionTime ? (
+                          <div>
+                            <span>Tiempo estimado</span>
+                            <strong>{quoteSummary.executionTime}</strong>
+                          </div>
+                        ) : null}
+                        {quoteSummary.warranty ? (
+                          <div>
+                            <span>Garantia</span>
+                            <strong>{quoteSummary.warranty}</strong>
+                          </div>
+                        ) : null}
+                        {quoteSummary.paymentTerms ? (
+                          <div>
+                            <span>Forma de pago</span>
+                            <strong>{quoteSummary.paymentTerms}</strong>
+                          </div>
+                        ) : null}
+                        {quoteSummary.commercialTerms ? (
+                          <div>
+                            <span>Condiciones</span>
+                            <strong>{quoteSummary.commercialTerms}</strong>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="workOrderApprovedItems">
+                        <span>Items aprobados</span>
+                        {quoteSummary.items.length ? (
+                          quoteSummary.items.map((item, index) => <p key={`${item}-${index}`}>{item}</p>)
+                        ) : (
+                          <p>Sin items detallados.</p>
+                        )}
+                      </div>
+                    </section>
+                  ) : (
+                    <p className="workOrderDetailNotes">{operationalNotes || "Sin notas operativas"}</p>
+                  )}
 
                   <div className="workOrderMaterials">
                     <div className="workOrderMaterialsHeader">
@@ -6282,6 +6410,7 @@ function WorkOrdersView({
 
 function QuotesView({
   customers,
+  editingQuoteId,
   loading,
   quoteError,
   quoteForm,
@@ -6293,8 +6422,10 @@ function QuotesView({
   quoteStatus,
   quotes,
   onAccept,
+  onCancelEdit,
   onComposeMail,
   onComposeWhatsApp,
+  onEditQuote,
   onFormChange,
   onRefresh,
   onSave,
@@ -6303,6 +6434,7 @@ function QuotesView({
   onStatusChange,
 }: {
   customers: Customer[];
+  editingQuoteId: string | null;
   loading: boolean;
   quoteError: string;
   quoteForm: QuotePayload;
@@ -6314,8 +6446,10 @@ function QuotesView({
   quoteStatus: "ALL" | QuoteStatus;
   quotes: Quote[];
   onAccept: (id: string, scheduledAt?: string) => void;
+  onCancelEdit: () => void;
   onComposeMail: (quote: Quote) => void;
   onComposeWhatsApp: (quote: Quote) => void;
+  onEditQuote: (quote: Quote) => void;
   onFormChange: (form: QuotePayload) => void;
   onRefresh: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
@@ -6328,7 +6462,13 @@ function QuotesView({
   const manualSubtotal = quoteForm.pricingMode === "MANUAL" ? Number(quoteForm.subtotal) || 0 : 0;
   const laborSubtotal = quoteForm.pricingMode === "THIRD_PARTY" ? quoteLaborPreview?.subtotal ?? 0 : 0;
   const subtotal = catalogSubtotal + manualSubtotal + laborSubtotal;
-  const discount = subtotal * ((Number(quoteForm.discountPercent) || 0) / 100);
+  const normalizedDiscountPercent = Math.min(100, Math.max(0, Number(quoteForm.discountPercent) || 0));
+  const rawDiscountAmount = Number(quoteForm.discountAmount);
+  const discount = Math.min(
+    subtotal,
+    Math.max(0, Number.isFinite(rawDiscountAmount) ? rawDiscountAmount : subtotal * (normalizedDiscountPercent / 100)),
+  );
+  const displayedDiscountPercent = Math.round(normalizedDiscountPercent * 100) / 100;
   const taxableBase = Math.max(0, subtotal - discount);
   const taxEnabled = quoteForm.taxIncluded !== false;
   const tax = taxEnabled ? taxableBase * 0.22 : 0;
@@ -6342,8 +6482,12 @@ function QuotesView({
   const [selectedCatalogItem, setSelectedCatalogItem] = useState<QuoteCatalogOption | null>(null);
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
   const [catalogUnitPrice, setCatalogUnitPrice] = useState<number>(0);
+  const [laborDescription, setLaborDescription] = useState("");
+  const [laborUnitPrice, setLaborUnitPrice] = useState<number>(0);
   const [quoteExchangeRate, setQuoteExchangeRate] = useState("40");
   const [quoteExecutionAt, setQuoteExecutionAt] = useState("");
+  const [discountAmountValue, setDiscountAmountValue] = useState("0");
+  const [editingDiscountAmount, setEditingDiscountAmount] = useState(false);
   const quoteCurrency = (quoteForm.currency || "UYU").toUpperCase();
   const normalizedExchangeRate = Math.max(0, Number(quoteExchangeRate) || 0);
   const normalizedQuoteCustomerQuery = quoteCustomerQuery.trim().toLowerCase();
@@ -6378,6 +6522,15 @@ function QuotesView({
   useEffect(() => {
     setQuoteExecutionAt("");
   }, [selectedQuote?.id]);
+
+  useEffect(() => {
+    if (editingDiscountAmount) {
+      return;
+    }
+
+    const roundedDiscount = Math.round(discount * 100) / 100;
+    setDiscountAmountValue(String(roundedDiscount));
+  }, [discount, editingDiscountAmount]);
 
   useEffect(() => {
     if (selectedCatalogItem?.source === "INVENTORY") {
@@ -6443,6 +6596,31 @@ function QuotesView({
     const integerWithoutLeadingZeros = integer.replace(/^0+(?=\d)/, "");
     const decimal = decimalParts.join("");
     return decimalParts.length ? `${integerWithoutLeadingZeros || "0"}.${decimal}` : integerWithoutLeadingZeros;
+  }
+
+  function updateDiscountPercent(value: string) {
+    const nextPercent = Math.min(100, Math.max(0, Number(value) || 0));
+    const nextAmount = Math.round(subtotal * (nextPercent / 100) * 100) / 100;
+    setDiscountAmountValue(String(nextAmount));
+    onFormChange({ ...quoteForm, discountPercent: nextPercent, discountAmount: nextAmount });
+  }
+
+  function updateDiscountAmount(value: string) {
+    const normalizedValue = normalizeDecimalInput(value);
+    setDiscountAmountValue(normalizedValue);
+    const nextAmount = Math.min(subtotal, Math.max(0, Number(normalizedValue) || 0));
+    const nextPercent = subtotal > 0 ? (nextAmount / subtotal) * 100 : 0;
+    onFormChange({ ...quoteForm, discountPercent: nextPercent, discountAmount: nextAmount });
+  }
+
+  function finishDiscountAmountEdit() {
+    setEditingDiscountAmount(false);
+    const normalizedValue = normalizeDecimalInput(discountAmountValue);
+    const nextAmount = Math.min(subtotal, Math.max(0, Number(normalizedValue) || 0));
+    const roundedAmount = Math.round(nextAmount * 100) / 100;
+    const nextPercent = subtotal > 0 ? (roundedAmount / subtotal) * 100 : 0;
+    setDiscountAmountValue(String(roundedAmount));
+    onFormChange({ ...quoteForm, discountPercent: nextPercent, discountAmount: roundedAmount });
   }
 
   function selectQuoteCustomer(customer: Customer) {
@@ -6547,6 +6725,53 @@ function QuotesView({
     setCatalogQuantity(1);
   }
 
+  function addLaborItem() {
+    const description = laborDescription.trim() || "Mano de obra";
+    const unitPrice = Number(laborUnitPrice) || 0;
+
+    if (unitPrice <= 0) {
+      return;
+    }
+
+    const nextItem: NonNullable<QuotePayload["items"]>[number] = {
+      type: "LABOR",
+      category: "Mano de obra",
+      description,
+      quantity: 1,
+      unit: "servicio",
+      unitPrice,
+      taxRate: 22,
+      unitCost: 0,
+    };
+
+    onFormChange({ ...quoteForm, items: [...quoteItems, nextItem], subtotal: 0 });
+    setLaborDescription("");
+    setLaborUnitPrice(0);
+  }
+
+  function printQuoteDetail() {
+    if (typeof document === "undefined") {
+      window.print();
+      return;
+    }
+
+    const cleanup = () => {
+      document.body.classList.remove("printingCustomerProfile");
+      document.body.classList.remove("printingQuoteDetail");
+      window.removeEventListener("afterprint", cleanup);
+    };
+
+    document.body.classList.add("printingCustomerProfile");
+    document.body.classList.add("printingQuoteDetail");
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+    window.setTimeout(cleanup, 60000);
+  }
+
+  async function downloadQuoteTemplate(quote: Quote) {
+    await downloadQuoteTemplatePdf(quote);
+  }
+
   function removeQuoteItem(index: number) {
     onFormChange({ ...quoteForm, items: quoteItems.filter((_, itemIndex) => itemIndex !== index) });
   }
@@ -6592,8 +6817,14 @@ function QuotesView({
           <div className="sectionHeader compactHeader">
             <div>
               <p>Comercial</p>
-              <h2>Nuevo presupuesto</h2>
+              <h2>{editingQuoteId ? "Editar presupuesto" : "Nuevo presupuesto"}</h2>
             </div>
+            {editingQuoteId ? (
+              <button type="button" className="secondaryButton" onClick={onCancelEdit}>
+                <X size={16} />
+                Cancelar
+              </button>
+            ) : null}
           </div>
 
           <div className="formGrid">
@@ -6815,6 +7046,34 @@ function QuotesView({
                     Agregar
                   </button>
                 </div>
+                {quoteForm.pricingMode === "DIRECT" ? (
+                  <>
+                    <span>Mano de obra Security Solutions</span>
+                    <div className="quoteCatalogControls quoteLaborControls">
+                      <label className="inlineCatalogField">
+                        Importe ({quoteCurrency})
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={laborUnitPrice}
+                          onChange={(event) => setLaborUnitPrice(Number(event.target.value) || 0)}
+                        />
+                      </label>
+                      <button type="button" className="secondaryButton" onClick={addLaborItem} disabled={Number(laborUnitPrice) <= 0}>
+                        Agregar mano de obra
+                      </button>
+                      <label className="inlineCatalogField laborDescriptionField">
+                        Descripcion
+                        <input
+                          value={laborDescription}
+                          onChange={(event) => setLaborDescription(event.target.value)}
+                          placeholder="Ej: Instalacion, configuracion, puesta en marcha"
+                        />
+                      </label>
+                    </div>
+                  </>
+                ) : null}
                 {quoteItems.length ? (
                   <div className="quoteItemList">
                     {quoteItems.map((item, index) => (
@@ -6857,9 +7116,21 @@ function QuotesView({
               <input
                 type="number"
                 min="0"
+                max="100"
                 step="0.01"
-                value={quoteForm.discountPercent}
-                onChange={(event) => onFormChange({ ...quoteForm, discountPercent: Number(event.target.value) })}
+                value={displayedDiscountPercent}
+                onChange={(event) => updateDiscountPercent(event.target.value)}
+              />
+            </label>
+            <label>
+              Ajuste monto ({quoteCurrency})
+              <input
+                type="text"
+                inputMode="decimal"
+                value={discountAmountValue}
+                onFocus={() => setEditingDiscountAmount(true)}
+                onBlur={finishDiscountAmountEdit}
+                onChange={(event) => updateDiscountAmount(event.target.value)}
               />
             </label>
             <label>
@@ -6929,8 +7200,8 @@ function QuotesView({
           {quoteError ? <p className="formError">{quoteError}</p> : null}
 
           <button type="submit" className="primaryButton" disabled={loading}>
-            <Plus size={18} />
-            Crear presupuesto
+            {editingQuoteId ? <Save size={18} /> : <Plus size={18} />}
+            {editingQuoteId ? "Guardar cambios" : "Crear presupuesto"}
           </button>
         </form>
 
@@ -7022,9 +7293,24 @@ function QuotesView({
                         </p>
                       </div>
                       <div className="documentToolbarActions">
-                        <button type="button" className="secondaryButton printHidden" onClick={() => window.print()}>
+                        <button
+                          type="button"
+                          className="secondaryButton printHidden"
+                          onClick={() => {
+                            onEditQuote(selectedQuote);
+                            setSelectedQuoteId(null);
+                          }}
+                        >
+                          <Edit3 size={16} />
+                          Editar
+                        </button>
+                        <button type="button" className="secondaryButton printHidden" onClick={printQuoteDetail}>
                           <Printer size={16} />
                           Imprimir
+                        </button>
+                        <button type="button" className="secondaryButton printHidden" onClick={() => void downloadQuoteTemplate(selectedQuote)}>
+                          <FileText size={16} />
+                          Descargar PDF
                         </button>
                         <button type="button" className="secondaryButton" onClick={() => onComposeWhatsApp(selectedQuote)}>
                           <MessageSquare size={16} />
@@ -9029,6 +9315,19 @@ function cleanWorkOrderPayload(form: WorkOrderPayload): WorkOrderPayload {
 }
 
 function cleanQuotePayload(form: QuotePayload): QuotePayload {
+  const cleanDiscountPercent = Math.min(100, Math.max(0, Number(form.discountPercent) || 0));
+  const cleanItems = form.items?.map((item) => ({
+    priceBookItemId: item.priceBookItemId || undefined,
+    type: item.type,
+    category: item.category,
+    description: item.description,
+    quantity: Number(item.quantity) || 0,
+    unit: item.unit,
+    unitPrice: Number(item.unitPrice) || 0,
+    taxRate: Number(item.taxRate) || 0,
+    unitCost: Number(item.unitCost) || 0,
+  }));
+
   return {
     customerId: form.customerId,
     meetingId: form.meetingId || undefined,
@@ -9041,7 +9340,8 @@ function cleanQuotePayload(form: QuotePayload): QuotePayload {
     issueDate: form.issueDate || undefined,
     validUntil: form.validUntil || undefined,
     taxIncluded: form.taxIncluded ?? true,
-    discountPercent: Number(form.discountPercent) || 0,
+    discountPercent: cleanDiscountPercent,
+    discountAmount: Math.max(0, Number(form.discountAmount) || 0),
     profitMarginPercent: Number(form.profitMarginPercent) || 0,
     laborPoints: Number(form.laborPoints) || 0,
     subtotal: Number(form.subtotal) || 0,
@@ -9051,7 +9351,7 @@ function cleanQuotePayload(form: QuotePayload): QuotePayload {
     executionTime: form.executionTime?.trim() || undefined,
     warranty: form.warranty?.trim() || undefined,
     paymentTerms: form.paymentTerms?.trim() || undefined,
-    items: form.items?.length ? form.items : undefined,
+    items: cleanItems?.length ? cleanItems : undefined,
   };
 }
 
@@ -9778,6 +10078,50 @@ function buildQuoteWorkOrderNotes(quote: Quote) {
   ].filter(Boolean).join("\n");
 }
 
+type ParsedWorkOrderQuoteNotes = {
+  number: string;
+  total?: string;
+  executionTime?: string;
+  warranty?: string;
+  paymentTerms?: string;
+  commercialTerms?: string;
+  items: string[];
+};
+
+function parseWorkOrderQuoteNotes(notes?: string | null): ParsedWorkOrderQuoteNotes | null {
+  if (!notes?.includes("Generado desde presupuesto")) {
+    return null;
+  }
+
+  const lines = notes
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const firstLine = lines.find((line) => line.startsWith("Generado desde presupuesto"));
+  const number = firstLine?.replace("Generado desde presupuesto", "").trim() || "Sin numero";
+  const readValue = (label: string) => {
+    const line = lines.find((item) => item.startsWith(`${label}:`));
+    return line?.slice(label.length + 1).trim();
+  };
+  const itemsStart = lines.findIndex((line) => line === "Items aprobados:");
+  const items = itemsStart >= 0
+    ? lines
+        .slice(itemsStart + 1)
+        .map((line) => line.replace(/^-\s*/, "").trim())
+        .filter(Boolean)
+    : [];
+
+  return {
+    number,
+    total: readValue("Total aprobado"),
+    executionTime: readValue("Tiempo de ejecucion estimado"),
+    warranty: readValue("Garantia"),
+    paymentTerms: readValue("Forma de pago"),
+    commercialTerms: readValue("Condiciones comerciales"),
+    items,
+  };
+}
+
 async function buildQuoteTemplateAttachment(quote: Quote) {
   const [logo, watermark] = await Promise.all([
     imageToDataUrl("/security-solutions-logo.png"),
@@ -9790,6 +10134,100 @@ async function buildQuoteTemplateAttachment(quote: Quote) {
     mimeType: "text/html",
     dataUrl: `data:text/html;charset=utf-8;base64,${base64EncodeUnicode(html)}`,
   };
+}
+
+async function downloadQuoteTemplatePdf(quote: Quote) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const [{ default: html2canvas }, { default: JsPDF }] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ]);
+  const [logo, watermark] = await Promise.all([
+    imageToDataUrl("/security-solutions-logo.png"),
+    imageToDataUrl("/security-solutions-logo-bw.png"),
+  ]);
+  const html = buildQuoteTemplateHtml(quote, logo, watermark);
+  const iframe = document.createElement("iframe");
+
+  iframe.style.position = "fixed";
+  iframe.style.left = "-10000px";
+  iframe.style.top = "0";
+  iframe.style.width = "794px";
+  iframe.style.height = "1123px";
+  iframe.style.border = "0";
+  iframe.setAttribute("aria-hidden", "true");
+  document.body.appendChild(iframe);
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      iframe.onload = () => resolve();
+      iframe.onerror = () => reject(new Error("No se pudo preparar el PDF."));
+      iframe.srcdoc = html;
+    });
+
+    const iframeDocument = iframe.contentDocument;
+    const page = iframeDocument?.querySelector(".page") as HTMLElement | null;
+
+    if (!page) {
+      throw new Error("No se encontro la plantilla del presupuesto.");
+    }
+
+    if (iframeDocument?.fonts?.ready) {
+      await iframeDocument.fonts.ready;
+    }
+
+    await Promise.all(
+      Array.from(iframeDocument?.images ?? []).map((image) => {
+        if (image.complete) {
+          return Promise.resolve();
+        }
+
+        return new Promise<void>((resolve) => {
+          image.onload = () => resolve();
+          image.onerror = () => resolve();
+        });
+      }),
+    );
+
+    const canvas = await html2canvas(page, {
+      backgroundColor: "#ffffff",
+      logging: false,
+      scale: 2,
+      useCORS: true,
+      windowHeight: page.scrollHeight,
+      windowWidth: page.scrollWidth,
+    });
+    const pdf = new JsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const imageWidth = pageWidth;
+    const imageHeight = (canvas.height * imageWidth) / canvas.width;
+    const imageData = canvas.toDataURL("image/png");
+
+    if (imageHeight <= pageHeight) {
+      pdf.addImage(imageData, "PNG", 0, 0, imageWidth, imageHeight);
+    } else {
+      let remainingHeight = imageHeight;
+      let position = 0;
+
+      while (remainingHeight > 0) {
+        pdf.addImage(imageData, "PNG", 0, position, imageWidth, imageHeight);
+        remainingHeight -= pageHeight;
+        position -= pageHeight;
+
+        if (remainingHeight > 0) {
+          pdf.addPage();
+        }
+      }
+    }
+
+    pdf.save(`${quote.number}-${sanitizeFileName(quote.title || "presupuesto")}.pdf`);
+  } finally {
+    iframe.remove();
+  }
 }
 
 async function imageToDataUrl(path: string) {

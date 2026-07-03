@@ -2378,6 +2378,135 @@ button:disabled {
   width: min(1080px, 100%);
 }
 
+.workOrderDetailModal > .deviceDetailHeader {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 0;
+  align-items: start;
+}
+
+.workOrderDetailModal > .deviceDetailHeader h2 {
+  max-width: 560px;
+  font-size: clamp(28px, 3vw, 42px);
+  line-height: 1.14;
+}
+
+.workOrderScheduleBand {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.9fr) repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.workOrderScheduleBand > div {
+  min-height: 74px;
+  padding: 12px 14px;
+  border: 1px solid rgba(126, 197, 210, 0.18);
+  border-radius: 8px;
+  background: rgba(13, 29, 44, 0.82);
+}
+
+.workOrderScheduleBand span,
+.workOrderQuoteSummary span,
+.workOrderApprovedItems > span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.workOrderScheduleBand strong,
+.workOrderQuoteSummary strong {
+  display: block;
+  margin-top: 7px;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.workOrderStatusBadge {
+  display: grid;
+  place-items: center;
+  color: #dff7ff;
+  font-size: 18px;
+  font-weight: 950;
+  text-align: center;
+}
+
+.workOrderStatusBadge.status-scheduled {
+  border-color: rgba(42, 224, 214, 0.42);
+  background: rgba(20, 184, 166, 0.18);
+}
+
+.workOrderStatusBadge.status-in_progress {
+  border-color: rgba(73, 190, 255, 0.42);
+  background: rgba(73, 190, 255, 0.14);
+}
+
+.workOrderStatusBadge.status-completed {
+  border-color: rgba(110, 231, 183, 0.42);
+  background: rgba(34, 197, 94, 0.14);
+}
+
+.workOrderQuoteSummary {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(126, 197, 210, 0.18);
+  border-radius: 8px;
+  background: rgba(8, 19, 31, 0.62);
+}
+
+.workOrderQuoteSummaryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(126, 197, 210, 0.14);
+}
+
+.workOrderQuoteSummaryHeader > strong {
+  margin-top: 0;
+  color: var(--accent);
+  font-size: 20px;
+  white-space: nowrap;
+}
+
+.workOrderQuoteFacts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.workOrderQuoteFacts > div {
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid rgba(126, 197, 210, 0.14);
+  border-radius: 8px;
+  background: rgba(13, 29, 44, 0.64);
+}
+
+.workOrderQuoteFacts strong {
+  font-size: 15px;
+}
+
+.workOrderApprovedItems {
+  display: grid;
+  gap: 7px;
+}
+
+.workOrderApprovedItems p {
+  margin: 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 .workOrderDetailModal .workOrderMaterials {
   background: rgba(8, 19, 31, 0.46);
 }
@@ -3678,7 +3807,7 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(120px, auto);
   gap: 10px;
-  align-items: start;
+  align-items: end;
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
@@ -3704,7 +3833,7 @@ button:disabled {
 
 .inlineCatalogField {
   display: grid;
-  grid-template-rows: 34px 46px;
+  grid-template-rows: 40px 46px;
   gap: 6px;
   align-items: end;
   color: var(--muted);
@@ -3715,12 +3844,34 @@ button:disabled {
 }
 
 .inlineCatalogField input {
+  width: 100%;
+  height: 46px;
   min-height: 46px;
 }
 
 .quoteCatalogControls > button {
+  width: 100%;
+  min-width: 0;
   min-height: 46px;
   align-self: end;
+}
+
+.quoteLaborControls {
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 0.8fr);
+  align-items: end;
+}
+
+.quoteLaborControls .laborDescriptionField {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.quoteLaborControls .laborDescriptionField input {
+  width: 100%;
+}
+
+.quoteLaborControls > button {
+  white-space: normal;
 }
 
 .quoteItemList {
@@ -4186,6 +4337,11 @@ button:disabled {
 @media (max-width: 940px) {
   .shell {
     grid-template-columns: 1fr;
+  }
+
+  .workOrderScheduleBand,
+  .workOrderQuoteFacts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .mobileMenuButton {
@@ -4996,6 +5152,17 @@ body {
 }
 
 @media (max-width: 760px) {
+  .workOrderDetailModal > .deviceDetailHeader,
+  .workOrderScheduleBand,
+  .workOrderQuoteFacts {
+    grid-template-columns: 1fr;
+  }
+
+  .workOrderQuoteSummaryHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .documentOverlay {
     padding: 12px;
   }
@@ -5077,7 +5244,8 @@ body {
 
   body.printingCustomerProfile .sidebar,
   body.printingCustomerProfile .topbar,
-  body.printingCustomerProfile .customersModule > :not(.customerProfileOverlay) {
+  body.printingCustomerProfile .customersModule > :not(.customerProfileOverlay),
+  body.printingCustomerProfile .quotesModule > :not(.customerProfileOverlay) {
     display: none !important;
   }
 
@@ -5313,6 +5481,27 @@ body {
     align-items: center;
   }
 
+  .printableCustomerProfile.quoteDetailModal {
+    display: block !important;
+    width: 194mm !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  .printableCustomerProfile.quoteDetailModal .customerProfileSection {
+    margin-top: 3mm;
+    padding: 2.6mm;
+    break-inside: avoid;
+  }
+
+  .printableCustomerProfile.quoteDetailModal .customerProfileGrid {
+    gap: 2mm 16mm;
+  }
+
   .printableCustomerProfile.quoteDetailModal .printCompanyIdentity {
     grid-column: 1;
     display: flex;
@@ -5346,6 +5535,9 @@ body {
     grid-template-columns: minmax(0, 1fr) 18mm 26mm 28mm;
     gap: 4mm;
     align-items: center;
+    padding: 2.2mm;
+    min-height: 0;
+    break-inside: avoid;
   }
 
   .printableCustomerProfile.quoteDetailModal .quoteDetailItems strong {
@@ -5371,6 +5563,14 @@ body {
     font-family: inherit;
     font-size: 10px;
     font-weight: 850;
+  }
+
+  .printableCustomerProfile.quoteDetailModal .customerProfilePrintWatermark {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 145mm;
+    max-height: 190mm;
+    opacity: 0.07;
   }
 
   .printableCustomerProfile .printFullWidthSection {
@@ -5475,6 +5675,62 @@ body {
     object-fit: contain;
     opacity: 0.085;
     transform: translate(-50%, -50%);
+  }
+
+  body.printingQuoteDetail .shell {
+    display: none !important;
+  }
+
+  body.printingQuoteDetail {
+    width: 194mm !important;
+    height: 281mm !important;
+    min-height: 0 !important;
+    margin: 0 auto !important;
+    overflow: hidden !important;
+    background: #ffffff !important;
+  }
+
+  body.printingQuoteDetail .customerProfileOverlay {
+    position: static !important;
+    display: block !important;
+    width: 194mm !important;
+    height: 281mm !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #ffffff !important;
+  }
+
+  body.printingQuoteDetail .quoteDetailModal,
+  body.printingQuoteDetail .quoteDetailModal * {
+    visibility: visible !important;
+  }
+
+  body.printingQuoteDetail .quoteDetailModal {
+    position: static !important;
+    display: block !important;
+    width: 194mm !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: 281mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    page-break-before: avoid !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
+    break-before: avoid !important;
+    break-after: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  body.printingQuoteDetail .quoteDetailModal::before,
+  body.printingQuoteDetail .quoteDetailModal::after {
+    display: none !important;
+    content: none !important;
   }
 
   .printableCustomerProfile .customerProfileOrdersTable th:nth-child(1),

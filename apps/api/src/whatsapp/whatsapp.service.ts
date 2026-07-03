@@ -254,69 +254,12 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         body: { sessionId: session.id, session: session.name ?? session.id, to, chatId, message: dto.message, text: dto.message },
       },
     ]);
-    const attachmentResult = dto.attachment
-      ? await this.openWaSend(apiUrl, apiKey, this.buildAttachmentCandidates(session, chatId, to, dto.attachment))
-      : undefined;
-
     return {
       provider: "OpenWA",
       sent: true,
       to,
       sentAt: new Date().toISOString(),
       result,
-      attachmentResult,
-    };
-  }
-
-  private buildAttachmentCandidates(
-    session: OpenWaSession,
-    chatId: string,
-    to: string,
-    attachment: { name: string; mimeType: string; dataUrl: string },
-  ) {
-    const { base64, dataUrl } = this.parseDataUrl(attachment.dataUrl);
-    const filename = attachment.name;
-    const mimetype = attachment.mimeType || "application/octet-stream";
-    const caption = filename;
-
-    return [
-      {
-        path: `/sessions/${session.id}/messages/send-file`,
-        body: { chatId, file: dataUrl, filename, mimetype, caption },
-      },
-      {
-        path: `/sessions/${session.id}/messages/send-document`,
-        body: { chatId, document: dataUrl, filename, mimetype, caption },
-      },
-      {
-        path: `/sessions/${session.id}/send-file`,
-        body: { to, chatId, file: dataUrl, filename, mimetype, caption },
-      },
-      {
-        path: "/sendFile",
-        body: { session: session.name ?? session.id, chatId, file: dataUrl, filename, mimetype, caption },
-      },
-      {
-        path: "/messages/send",
-        body: { sessionId: session.id, session: session.name ?? session.id, to, chatId, file: dataUrl, filename, mimetype, caption },
-      },
-      {
-        path: `/sessions/${session.id}/messages/send-media`,
-        body: { chatId, media: dataUrl, base64, filename, mimetype, caption },
-      },
-    ];
-  }
-
-  private parseDataUrl(dataUrl: string) {
-    const match = dataUrl.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.*)$/);
-    if (!match) {
-      throw new BadRequestException("Invalid attachment data");
-    }
-
-    return {
-      mimeType: match[1] || "application/octet-stream",
-      base64: match[2],
-      dataUrl,
     };
   }
 

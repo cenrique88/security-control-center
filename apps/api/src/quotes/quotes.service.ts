@@ -92,6 +92,7 @@ export class QuotesService {
       tax: dto.tax,
       taxEnabled,
       discountPercent: dto.discountPercent,
+      discountAmount: dto.discountAmount,
       laborPoints: dto.laborPoints,
       pricingMode: (dto.pricingMode as QuotePricingMode | undefined) ?? "DIRECT",
       refreshLaborItem: true,
@@ -184,6 +185,7 @@ export class QuotesService {
       tax: dto.tax === undefined ? Number(current.tax) : dto.tax,
       taxEnabled,
       discountPercent: dto.discountPercent === undefined ? Number(current.discountPercent) : dto.discountPercent,
+      discountAmount: dto.discountAmount === undefined ? Number(current.discountAmount) : dto.discountAmount,
       laborPoints: dto.laborPoints === undefined ? Number(current.laborPoints) : dto.laborPoints,
       pricingMode,
       refreshLaborItem: dto.laborPoints !== undefined || dto.customerId !== undefined || dto.pricingMode !== undefined,
@@ -312,6 +314,7 @@ export class QuotesService {
       tax?: number;
       taxEnabled?: boolean;
       discountPercent?: number;
+      discountAmount?: number;
       laborPoints?: number;
       pricingMode?: QuotePricingMode;
       refreshLaborItem?: boolean;
@@ -361,7 +364,13 @@ export class QuotesService {
       ? this.roundMoney(normalizedItems.reduce((sum, item) => sum + item.subtotal, 0))
       : Number(fallback.subtotal ?? 0);
     const discountPercent = Number(fallback.discountPercent ?? 0);
-    const discountAmount = this.roundMoney(subtotal * (discountPercent / 100));
+    const fallbackDiscountAmount = Number(fallback.discountAmount);
+    const discountAmount = this.roundMoney(
+      Math.min(
+        subtotal,
+        Math.max(0, Number.isFinite(fallbackDiscountAmount) ? fallbackDiscountAmount : subtotal * (discountPercent / 100)),
+      ),
+    );
     const taxableBase = this.roundMoney(Math.max(0, subtotal - discountAmount));
     const tax = normalizedItems.length
       ? this.roundMoney(normalizedItems.reduce((sum, item) => sum + item.taxAmount, 0) * (taxableBase / (subtotal || 1)))

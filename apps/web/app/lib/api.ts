@@ -439,6 +439,7 @@ export type QuotePayload = {
   validUntil?: string;
   taxIncluded?: boolean;
   discountPercent?: number;
+  discountAmount?: number;
   profitMarginPercent?: number;
   laborPoints?: number;
   subtotal?: number;
