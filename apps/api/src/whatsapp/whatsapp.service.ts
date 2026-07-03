@@ -112,10 +112,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException("OpenWA is not configured");
     }
 
-    const [sessions, stats] = await Promise.all([
-      this.openWaRequest<OpenWaSession[]>(apiUrl, apiKey, "/sessions"),
-      this.openWaRequest<Record<string, unknown>>(apiUrl, apiKey, "/sessions/stats/overview"),
-    ]);
+    const sessions = await this.openWaRequest<OpenWaSession[]>(apiUrl, apiKey, "/sessions");
+    const stats = await this.safeOpenWaRequest<Record<string, unknown>>(apiUrl, apiKey, "/sessions/stats/overview", {});
 
     const session =
       sessions.find((item) => item.name === sessionName || item.id === sessionName) ??
@@ -127,8 +125,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     }
 
     const [chats, groups] = await Promise.all([
-      this.openWaRequest<OpenWaChat[]>(apiUrl, apiKey, `/sessions/${session.id}/chats`),
-      this.openWaRequest<OpenWaGroup[]>(apiUrl, apiKey, `/sessions/${session.id}/groups`),
+      this.safeOpenWaRequest<OpenWaChat[]>(apiUrl, apiKey, `/sessions/${session.id}/chats`, []),
+      this.safeOpenWaRequest<OpenWaGroup[]>(apiUrl, apiKey, `/sessions/${session.id}/groups`, []),
     ]);
 
     const sortedChats = [...chats].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
@@ -185,11 +183,51 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         : []),
       {
         path: `/sessions/${session.id}/messages/send-text`,
+        body: { to, message: dto.message },
+      },
+      {
+        path: `/sessions/${session.id}/messages/send-text`,
+        body: { to: chatId, message: dto.message },
+      },
+      {
+        path: `/sessions/${session.id}/messages/send-text`,
+        body: { phone: to, message: dto.message },
+      },
+      {
+        path: `/sessions/${session.id}/messages/send-text`,
+        body: { recipient: chatId, message: dto.message },
+      },
+      {
+        path: `/sessions/${session.id}/messages/send-text`,
         body: { chatId, text: dto.message },
+      },
+      {
+        path: `/sessions/${session.id}/messages/send-text`,
+        body: { chatId, message: dto.message },
+      },
+      {
+        path: `/sessions/${session.id}/messages/send-text`,
+        body: { chatId, content: dto.message },
+      },
+      {
+        path: `/sessions/${session.id}/messages/send`,
+        body: { chatId, text: dto.message },
+      },
+      {
+        path: `/sessions/${session.id}/messages/send`,
+        body: { to, message: dto.message },
       },
       {
         path: "/sendText",
         body: { session: session.name ?? session.id, chatId, text: dto.message },
+      },
+      {
+        path: "/sendText",
+        body: { session: session.name ?? session.id, to, message: dto.message },
+      },
+      {
+        path: "/sendText",
+        body: { sessionId: session.id, chatId, text: dto.message },
       },
       {
         path: `/${session.name ?? session.id}/send-message`,
@@ -204,6 +242,10 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         body: { to, chatId, phone: to, message: dto.message, text: dto.message },
       },
       {
+        path: `/sessions/${session.id}/send-text`,
+        body: { to, chatId, phone: to, message: dto.message, text: dto.message },
+      },
+      {
         path: `/sessions/${session.id}/messages`,
         body: { to, chatId, phone: to, message: dto.message, text: dto.message },
       },
@@ -212,6 +254,9 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         body: { sessionId: session.id, session: session.name ?? session.id, to, chatId, message: dto.message, text: dto.message },
       },
     ]);
+    const attachmentResult = dto.attachment
+      ? await this.openWaSend(apiUrl, apiKey, this.buildAttachmentCandidates(session, chatId, to, dto.attachment))
+      : undefined;
 
     return {
       provider: "OpenWA",
@@ -219,6 +264,59 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       to,
       sentAt: new Date().toISOString(),
       result,
+      attachmentResult,
+    };
+  }
+
+  private buildAttachmentCandidates(
+    session: OpenWaSession,
+    chatId: string,
+    to: string,
+    attachment: { name: string; mimeType: string; dataUrl: string },
+  ) {
+    const { base64, dataUrl } = this.parseDataUrl(attachment.dataUrl);
+    const filename = attachment.name;
+    const mimetype = attachment.mimeType || "application/octet-stream";
+    const caption = filename;
+
+    return [
+      {
+        path: `/sessions/${session.id}/messages/send-file`,
+        body: { chatId, file: dataUrl, filename, mimetype, caption },
+      },
+      {
+        path: `/sessions/${session.id}/messages/send-document`,
+        body: { chatId, document: dataUrl, filename, mimetype, caption },
+      },
+      {
+        path: `/sessions/${session.id}/send-file`,
+        body: { to, chatId, file: dataUrl, filename, mimetype, caption },
+      },
+      {
+        path: "/sendFile",
+        body: { session: session.name ?? session.id, chatId, file: dataUrl, filename, mimetype, caption },
+      },
+      {
+        path: "/messages/send",
+        body: { sessionId: session.id, session: session.name ?? session.id, to, chatId, file: dataUrl, filename, mimetype, caption },
+      },
+      {
+        path: `/sessions/${session.id}/messages/send-media`,
+        body: { chatId, media: dataUrl, base64, filename, mimetype, caption },
+      },
+    ];
+  }
+
+  private parseDataUrl(dataUrl: string) {
+    const match = dataUrl.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.*)$/);
+    if (!match) {
+      throw new BadRequestException("Invalid attachment data");
+    }
+
+    return {
+      mimeType: match[1] || "application/octet-stream",
+      base64: match[2],
+      dataUrl,
     };
   }
 
@@ -412,6 +510,22 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     return response.json() as Promise<T>;
   }
 
+  private async safeOpenWaRequest<T>(
+    apiUrl: string,
+    apiKey: string,
+    path: string,
+    fallback: T,
+    options: { method?: string; body?: Record<string, unknown> } = {},
+  ): Promise<T> {
+    try {
+      return await this.openWaRequest<T>(apiUrl, apiKey, path, options);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`OpenWA endpoint opcional omitido ${path}: ${message}`);
+      return fallback;
+    }
+  }
+
   private async openWaSend(
     apiUrl: string,
     apiKey: string,
@@ -440,10 +554,19 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         return (await this.safeJson(response)) as Record<string, unknown>;
       }
 
-      failures.push(`${candidate.path}: ${response.status}`);
+      failures.push(`${candidate.path}: ${response.status}${await this.responseFailureDetail(response)}`);
     }
 
     throw new ServiceUnavailableException(`OpenWA send failed (${failures.join(", ")})`);
+  }
+
+  private async responseFailureDetail(response: Response) {
+    try {
+      const text = await response.text();
+      return text ? ` ${text.slice(0, 180)}` : "";
+    } catch {
+      return "";
+    }
   }
 
   private async safeJson(response: Response) {

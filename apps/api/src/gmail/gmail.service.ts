@@ -93,17 +93,7 @@ export class GmailService {
 
   async send(dto: SendGmailMessageDto) {
     const accessToken = await this.getAccessToken();
-    const raw = this.toBase64Url(
-      [
-        `To: ${dto.to}`,
-        `Subject: ${this.encodeHeader(dto.subject)}`,
-        "MIME-Version: 1.0",
-        "Content-Type: text/plain; charset=UTF-8",
-        "Content-Transfer-Encoding: 8bit",
-        "",
-        dto.message,
-      ].join("\r\n"),
-    );
+    const raw = this.toBase64Url(this.buildRawMessage(dto));
 
     const result = await this.gmailRequest<{ id: string; threadId?: string }>(
       accessToken,
@@ -123,6 +113,65 @@ export class GmailService {
       messageId: result.id,
       threadId: result.threadId,
     };
+  }
+
+  private buildRawMessage(dto: SendGmailMessageDto) {
+    if (!dto.attachment) {
+      return [
+        `To: ${dto.to}`,
+        `Subject: ${this.encodeHeader(dto.subject)}`,
+        "MIME-Version: 1.0",
+        "Content-Type: text/plain; charset=UTF-8",
+        "Content-Transfer-Encoding: 8bit",
+        "",
+        dto.message,
+      ].join("\r\n");
+    }
+
+    const boundary = `sscc-${Date.now()}`;
+    const attachment = this.parseDataUrl(dto.attachment.dataUrl);
+
+    return [
+      `To: ${dto.to}`,
+      `Subject: ${this.encodeHeader(dto.subject)}`,
+      "MIME-Version: 1.0",
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      dto.message,
+      "",
+      `--${boundary}`,
+      `Content-Type: ${dto.attachment.mimeType || attachment.mimeType}; name="${this.escapeHeader(dto.attachment.name)}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${this.escapeHeader(dto.attachment.name)}"`,
+      "",
+      this.wrapBase64(attachment.base64),
+      `--${boundary}--`,
+      "",
+    ].join("\r\n");
+  }
+
+  private parseDataUrl(dataUrl: string) {
+    const match = dataUrl.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.*)$/);
+    if (!match) {
+      throw new BadRequestException("Invalid attachment data");
+    }
+
+    return {
+      mimeType: match[1] || "application/octet-stream",
+      base64: match[2],
+    };
+  }
+
+  private wrapBase64(value: string) {
+    return value.replace(/(.{76})/g, "$1\r\n");
+  }
+
+  private escapeHeader(value: string) {
+    return value.replace(/"/g, "'");
   }
 
   getAuthorizationUrl() {

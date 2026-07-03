@@ -63,6 +63,12 @@ enum QuoteItemType {
   EXPENSE
 }
 
+enum QuotePricingMode {
+  DIRECT
+  THIRD_PARTY
+  MANUAL
+}
+
 enum InventoryMovementType {
   IN
   OUT
@@ -300,6 +306,7 @@ model Quote {
   title                String
   service              ServiceType    @default(OTHER)
   status               QuoteStatus    @default(DRAFT)
+  pricingMode          QuotePricingMode @default(DIRECT)
   currency             String         @default("UYU")
   issueDate            DateTime       @default(now())
   validUntil           DateTime?

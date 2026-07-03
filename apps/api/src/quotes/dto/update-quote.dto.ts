@@ -23,6 +23,12 @@ enum QuoteStatusDto {
   EXPIRED = "EXPIRED",
 }
 
+enum QuotePricingModeDto {
+  DIRECT = "DIRECT",
+  THIRD_PARTY = "THIRD_PARTY",
+  MANUAL = "MANUAL",
+}
+
 export class UpdateQuoteDto {
   @IsOptional()
   @IsString()
@@ -47,6 +53,10 @@ export class UpdateQuoteDto {
   @IsOptional()
   @IsEnum(QuoteStatusDto)
   status?: QuoteStatusDto;
+
+  @IsOptional()
+  @IsEnum(QuotePricingModeDto)
+  pricingMode?: QuotePricingModeDto;
 
   @IsOptional()
   @IsString()

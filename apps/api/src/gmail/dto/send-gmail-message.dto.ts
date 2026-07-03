@@ -1,4 +1,15 @@
-import { IsEmail, IsOptional, IsString, MinLength } from "class-validator";
+import { IsEmail, IsObject, IsOptional, IsString, MinLength } from "class-validator";
+
+class MessageAttachmentDto {
+  @IsString()
+  name!: string;
+
+  @IsString()
+  mimeType!: string;
+
+  @IsString()
+  dataUrl!: string;
+}
 
 export class SendGmailMessageDto {
   @IsEmail()
@@ -11,6 +22,10 @@ export class SendGmailMessageDto {
   @IsString()
   @MinLength(1)
   message!: string;
+
+  @IsOptional()
+  @IsObject()
+  attachment?: MessageAttachmentDto;
 
   @IsOptional()
   @IsString()

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, QuoteItemType, QuoteStatus, ServiceType } from "@prisma/client";
+import { Prisma, QuoteItemType, QuotePricingMode, QuoteStatus, ServiceType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateQuoteDto, CreateQuoteItemDto } from "./dto/create-quote.dto";
 import { UpdateQuoteDto } from "./dto/update-quote.dto";
@@ -86,11 +86,14 @@ export class QuotesService {
     if (dto.meetingId) {
       await this.ensureMeeting(dto.meetingId);
     }
+    const taxEnabled = dto.taxIncluded ?? true;
     const totals = await this.calculateTotals(dto.customerId, dto.items ?? [], {
       subtotal: dto.subtotal,
       tax: dto.tax,
+      taxEnabled,
       discountPercent: dto.discountPercent,
       laborPoints: dto.laborPoints,
+      pricingMode: (dto.pricingMode as QuotePricingMode | undefined) ?? "DIRECT",
       refreshLaborItem: true,
     });
 
@@ -102,10 +105,11 @@ export class QuotesService {
         title: dto.title.trim(),
         service: (dto.service as ServiceType | undefined) ?? "OTHER",
         status: (dto.status as QuoteStatus | undefined) ?? "DRAFT",
+        pricingMode: (dto.pricingMode as QuotePricingMode | undefined) ?? "DIRECT",
         currency: dto.currency?.trim() || "UYU",
         issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
         validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
-        taxIncluded: dto.taxIncluded ?? false,
+        taxIncluded: taxEnabled,
         discountPercent: dto.discountPercent ?? 0,
         profitMarginPercent: dto.profitMarginPercent ?? 0,
         laborPoints: dto.laborPoints ?? 0,
@@ -173,12 +177,16 @@ export class QuotesService {
         unitCost: Number(item.unitCost),
       }));
     const effectiveCustomerId = dto.customerId ?? current.customerId;
+    const pricingMode = (dto.pricingMode as QuotePricingMode | undefined) ?? current.pricingMode;
+    const taxEnabled = dto.taxIncluded ?? current.taxIncluded;
     const totals = await this.calculateTotals(effectiveCustomerId, itemsForCalculation, {
       subtotal: dto.subtotal === undefined ? Number(current.subtotal) : dto.subtotal,
       tax: dto.tax === undefined ? Number(current.tax) : dto.tax,
+      taxEnabled,
       discountPercent: dto.discountPercent === undefined ? Number(current.discountPercent) : dto.discountPercent,
       laborPoints: dto.laborPoints === undefined ? Number(current.laborPoints) : dto.laborPoints,
-      refreshLaborItem: dto.laborPoints !== undefined || dto.customerId !== undefined,
+      pricingMode,
+      refreshLaborItem: dto.laborPoints !== undefined || dto.customerId !== undefined || dto.pricingMode !== undefined,
     });
     const status = dto.acceptedAt ? "APPROVED" : (dto.status as QuoteStatus | undefined);
     const acceptedAt =
@@ -204,6 +212,7 @@ export class QuotesService {
           title: this.cleanOptional(dto.title),
           service: dto.service as ServiceType | undefined,
           status,
+          pricingMode: dto.pricingMode as QuotePricingMode | undefined,
           currency: this.cleanOptional(dto.currency),
           issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
           validUntil: dto.validUntil === "" ? null : dto.validUntil ? new Date(dto.validUntil) : undefined,
@@ -298,11 +307,22 @@ export class QuotesService {
   private async calculateTotals(
     customerId: string,
     items: QuoteItemInput[],
-    fallback: { subtotal?: number; tax?: number; discountPercent?: number; laborPoints?: number; refreshLaborItem?: boolean },
+    fallback: {
+      subtotal?: number;
+      tax?: number;
+      taxEnabled?: boolean;
+      discountPercent?: number;
+      laborPoints?: number;
+      pricingMode?: QuotePricingMode;
+      refreshLaborItem?: boolean;
+    },
   ): Promise<QuoteTotals> {
     const fallbackSubtotal = Number(fallback.subtotal) || 0;
+    const pricingMode = fallback.pricingMode ?? "DIRECT";
+    const taxEnabled = fallback.taxEnabled ?? true;
+    const shouldUseFallbackSubtotal = pricingMode === "MANUAL" || !items.length;
     const baseItems =
-      items.length || fallbackSubtotal <= 0
+      items.length || fallbackSubtotal <= 0 || !shouldUseFallbackSubtotal
         ? items
         : [
             {
@@ -316,11 +336,14 @@ export class QuotesService {
               unitCost: 0,
             },
           ];
-    const pricedItems = await this.withAutomaticLaborItem(customerId, baseItems, fallback.laborPoints ?? 0, fallback.refreshLaborItem ?? false);
+    const pricedItems =
+      pricingMode === "THIRD_PARTY"
+        ? await this.withAutomaticLaborItem(customerId, baseItems, fallback.laborPoints ?? 0, fallback.refreshLaborItem ?? false)
+        : baseItems.filter((item) => !(item.type === "LABOR" && item.unit === "punta"));
     const normalizedItems = pricedItems.map((item, index) => {
       const quantity = Number(item.quantity) || 0;
       const unitPrice = Number(item.unitPrice) || 0;
-      const taxRate = item.taxRate === undefined ? 22 : Number(item.taxRate);
+      const taxRate = taxEnabled ? 22 : 0;
       const subtotal = this.roundMoney(quantity * unitPrice);
       const taxAmount = this.roundMoney(subtotal * (taxRate / 100));
       return {
@@ -342,7 +365,9 @@ export class QuotesService {
     const taxableBase = this.roundMoney(Math.max(0, subtotal - discountAmount));
     const tax = normalizedItems.length
       ? this.roundMoney(normalizedItems.reduce((sum, item) => sum + item.taxAmount, 0) * (taxableBase / (subtotal || 1)))
-      : Number(fallback.tax ?? this.roundMoney(taxableBase * 0.22));
+      : taxEnabled
+        ? Number(fallback.tax ?? this.roundMoney(taxableBase * 0.22))
+        : 0;
     const total = this.roundMoney(taxableBase + tax);
     const costTotal = this.roundMoney(
       normalizedItems.reduce((sum, item) => sum + (Number(item.unitCost) || 0) * (Number(item.quantity) || 0), 0),

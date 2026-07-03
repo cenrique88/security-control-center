@@ -62,8 +62,11 @@ import {
   MeetingType,
   Payment,
   PaymentPayload,
+  PriceBookItem,
   Quote,
   QuotePayload,
+  QuoteItemType,
+  QuotePricingMode,
   QuoteStatus,
   SitePayload,
   Vehicle,
@@ -156,12 +159,38 @@ type MessageComposeState = {
   to: string;
   subject: string;
   message: string;
+  attachment?: {
+    name: string;
+    mimeType: string;
+    dataUrl: string;
+  };
   customerId?: string;
   workOrderId?: string;
 };
 
+type MessageRecipientOption = {
+  label: string;
+  value: string;
+  detail?: string;
+};
+
 type InventorySortKey = "reference" | "date" | "brand" | "model" | "installed" | "status";
 type InventoryColumnKey = InventorySortKey | "actions";
+
+type QuoteCatalogOption = {
+  id: string;
+  code: string;
+  name: string;
+  type: QuoteItemType;
+  category: string;
+  description?: string | null;
+  unit: string;
+  unitPrice: number;
+  unitCost: number;
+  taxRate: number;
+  currency?: string | null;
+  source: "INVENTORY" | "PRICE_BOOK";
+};
 
 const inventoryColumnDefaults: Record<InventoryColumnKey, number> = {
   reference: 124,
@@ -239,8 +268,9 @@ const emptyQuoteForm: QuotePayload = {
   title: "",
   service: "CCTV",
   status: "DRAFT",
+  pricingMode: "DIRECT",
   currency: "UYU",
-  taxIncluded: false,
+  taxIncluded: true,
   discountPercent: 0,
   profitMarginPercent: 0,
   laborPoints: 0,
@@ -460,6 +490,7 @@ export default function Home() {
   const [agendaOrders, setAgendaOrders] = useState<WorkOrder[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [priceBookItems, setPriceBookItems] = useState<PriceBookItem[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
@@ -705,6 +736,43 @@ export default function Home() {
     () => notifications.filter((notification) => notification.severity === "critical").length,
     [notifications],
   );
+
+  const messageRecipientOptions = useMemo<MessageRecipientOption[]>(() => {
+    if (!messageCompose) {
+      return [];
+    }
+
+    const options: MessageRecipientOption[] = [];
+    const seen = new Set<string>();
+    const addOption = (option: MessageRecipientOption) => {
+      const value = option.value.trim();
+      if (!value || seen.has(value)) {
+        return;
+      }
+
+      seen.add(value);
+      options.push({ ...option, value });
+    };
+
+    if (messageCompose.channel === "mail") {
+      customers.forEach((customer) => {
+        if (customer.email) {
+          addOption({ label: customer.name, value: customer.email, detail: customer.reference ?? "Cliente" });
+        }
+      });
+      return options;
+    }
+
+    customers.forEach((customer) => {
+      if (customer.phone) {
+        addOption({ label: customer.name, value: customer.phone, detail: customer.reference ?? "Cliente" });
+      }
+    });
+    whatsAppSync.chats.forEach((chat) => addOption({ label: chat.name || chat.id, value: chat.id, detail: "Chat WhatsApp" }));
+    whatsAppSync.groups.forEach((group) => addOption({ label: group.name || group.id, value: group.id, detail: "Grupo WhatsApp" }));
+
+    return options;
+  }, [customers, messageCompose, whatsAppSync.chats, whatsAppSync.groups]);
 
   const normalCustomers = useMemo(
     () => customers.filter((customer) => (customer.type ?? "NORMAL") === "NORMAL"),
@@ -970,6 +1038,7 @@ export default function Home() {
     void loadAgenda(token);
     void loadMeetings(token, null);
     void loadQuotes(token);
+    void loadPriceBook(token);
     void loadPayments(token);
     void loadInventory(token);
     void loadVehicles(token);
@@ -1009,7 +1078,11 @@ export default function Home() {
         void loadMeetings(token, null);
         break;
       case "Presupuestos":
-        void loadQuotes(token);
+        void Promise.all([
+          loadQuotes(token),
+          loadPriceBook(token),
+          loadInventory(token, { mode: "all", category: "ALL", supplier: "ALL", search: "" }),
+        ]);
         break;
       case "Cobros":
         void loadPayments(token);
@@ -1348,7 +1421,7 @@ export default function Home() {
     }
   }
 
-  async function loadQuotes(activeToken = token, customerId = selectedCustomerId) {
+  async function loadQuotes(activeToken = token, customerId: string | null = null) {
     if (!activeToken) {
       return;
     }
@@ -1376,6 +1449,21 @@ export default function Home() {
       setQuoteError("No se pudieron cargar los presupuestos");
     } finally {
       setQuotesLoading(false);
+    }
+  }
+
+  async function loadPriceBook(activeToken = token) {
+    if (!activeToken) {
+      return;
+    }
+
+    try {
+      const data = await apiRequest<PriceBookItem[]>("/api/price-book?active=true", {
+        token: activeToken,
+      });
+      setPriceBookItems(data);
+    } catch {
+      setQuoteError("No se pudo cargar la base de precios");
     }
   }
 
@@ -1847,9 +1935,9 @@ export default function Home() {
       return;
     }
 
-    const customerId = quoteForm.customerId || selectedCustomerId || "";
+    const customerId = quoteForm.customerId || "";
     if (!customerId || !quoteForm.title.trim()) {
-      setQuoteError("Selecciona un cliente y escribe el titulo del presupuesto");
+      setQuoteError("Selecciona un cliente de las sugerencias y escribe el titulo del presupuesto");
       return;
     }
 
@@ -2261,8 +2349,19 @@ export default function Home() {
     }
   }
 
-  async function acceptQuote(id: string) {
+  async function acceptQuote(id: string, scheduledAt?: string) {
     if (!token) {
+      return;
+    }
+
+    const quote = quotes.find((item) => item.id === id);
+    if (!quote) {
+      setQuoteError("No se encontro el presupuesto para aprobar");
+      return;
+    }
+
+    if (!scheduledAt) {
+      setQuoteError("Selecciona dia y hora de ejecucion para crear la orden de trabajo y enviarla a la agenda.");
       return;
     }
 
@@ -2274,9 +2373,22 @@ export default function Home() {
         method: "PATCH",
         body: JSON.stringify({ status: "APPROVED", acceptedAt: new Date().toISOString() }),
       });
-      await Promise.all([loadQuotes(token), loadCustomers(token)]);
-    } catch {
-      setQuoteError("No se pudo aceptar el presupuesto");
+      await apiRequest<WorkOrder>("/api/work-orders", {
+        token,
+        method: "POST",
+        body: JSON.stringify({
+          customerId: quote.customerId,
+          title: quote.title,
+          type: quote.service,
+          status: "SCHEDULED",
+          scheduledAt,
+          notes: buildQuoteWorkOrderNotes(quote),
+        } satisfies WorkOrderPayload),
+      });
+      await Promise.all([loadQuotes(token), loadCustomers(token), loadWorkOrders(token), loadAgenda(token), loadSummary(token)]);
+      setStatus("Presupuesto aprobado. Orden de trabajo creada y enviada a agenda.");
+    } catch (error) {
+      setQuoteError(`No se pudo aceptar el presupuesto: ${getErrorMessage(error)}`);
     } finally {
       setQuotesLoading(false);
     }
@@ -2378,7 +2490,7 @@ export default function Home() {
     void loadDevices(token, customerId);
     void loadWorkOrders(token, customerId);
     void loadMeetings(token, customerId);
-    void loadQuotes(token, customerId);
+    void loadQuotes(token);
     void loadPayments(token, customerId);
   }
 
@@ -2648,6 +2760,34 @@ export default function Home() {
     });
   }
 
+  async function composeQuoteWhatsApp(quote: Quote) {
+    const attachment = await buildQuoteTemplateAttachment(quote);
+    setMessageError("");
+    setMessageCompose({
+      channel: "whatsapp",
+      title: `WhatsApp - ${quote.customer.name}`,
+      to: quote.customer.phone ?? "",
+      subject: `Presupuesto ${quote.number} - ${quote.title}`,
+      message: `Hola ${quote.customer.name}, te enviamos el presupuesto ${quote.number} adjunto.\n\nQuedamos a las ordenes.\nSecurity Solutions`,
+      attachment,
+      customerId: quote.customer.id,
+    });
+  }
+
+  async function composeQuoteMail(quote: Quote) {
+    const attachment = await buildQuoteTemplateAttachment(quote);
+    setMessageError("");
+    setMessageCompose({
+      channel: "mail",
+      title: `Mail - ${quote.customer.name}`,
+      to: quote.customer.email ?? "",
+      subject: `Presupuesto ${quote.number} - ${quote.title}`,
+      message: `Hola ${quote.customer.name},\n\nTe enviamos adjunto el presupuesto ${quote.number}: ${quote.title}.\n\nQuedamos a las ordenes.\nSecurity Solutions`,
+      attachment,
+      customerId: quote.customer.id,
+    });
+  }
+
   function composeCustomerWhatsApp(customer: Customer) {
     setMessageError("");
     setMessageCompose({
@@ -2723,6 +2863,7 @@ export default function Home() {
           body: JSON.stringify({
             to: messageCompose.to,
             message: messageCompose.message,
+            attachment: messageCompose.attachment,
             customerId: messageCompose.customerId,
             workOrderId: messageCompose.workOrderId,
           }),
@@ -2735,6 +2876,7 @@ export default function Home() {
             to: messageCompose.to,
             subject: messageCompose.subject,
             message: messageCompose.message,
+            attachment: messageCompose.attachment,
             customerId: messageCompose.customerId,
             workOrderId: messageCompose.workOrderId,
           }),
@@ -3138,12 +3280,15 @@ export default function Home() {
             quoteError={quoteError}
             quoteForm={quoteForm}
             quoteLaborPreview={quoteLaborPreview}
+            inventoryItems={inventoryItems}
+            priceBookItems={priceBookItems}
             quoteSearch={quoteSearch}
             quoteStats={quoteStats}
             quoteStatus={quoteStatus}
             quotes={quotes}
-            selectedCustomerId={selectedCustomerId}
             onAccept={acceptQuote}
+            onComposeMail={composeQuoteMail}
+            onComposeWhatsApp={composeQuoteWhatsApp}
             onFormChange={setQuoteForm}
             onRefresh={() => loadQuotes()}
             onSave={saveQuote}
@@ -3294,6 +3439,7 @@ export default function Home() {
         compose={messageCompose}
         error={messageError}
         loading={messageSending}
+        recipientOptions={messageRecipientOptions}
         onChange={setMessageCompose}
         onClose={() => {
           setMessageCompose(null);
@@ -3311,6 +3457,7 @@ function MessageComposeModal({
   compose,
   error,
   loading,
+  recipientOptions,
   onChange,
   onClose,
   onSend,
@@ -3318,12 +3465,15 @@ function MessageComposeModal({
   compose: MessageComposeState;
   error: string;
   loading: boolean;
+  recipientOptions: MessageRecipientOption[];
   onChange: (compose: MessageComposeState) => void;
   onClose: () => void;
   onSend: () => void;
 }) {
   const channelLabel = compose.channel === "whatsapp" ? "WhatsApp" : "Mail";
   const destinationLabel = compose.channel === "whatsapp" ? "Telefono" : "Email";
+  const selectedRecipientValue = recipientOptions.some((option) => option.value === compose.to) ? compose.to : "";
+  const [manualRecipient, setManualRecipient] = useState(!selectedRecipientValue && Boolean(compose.to));
 
   return (
     <div className="deviceDetailOverlay customerProfileOverlay" onClick={onClose}>
@@ -3336,7 +3486,7 @@ function MessageComposeModal({
           <div>
             <span>{channelLabel}</span>
             <h2>{compose.title}</h2>
-            <p>Edita el mensaje antes de enviarlo desde el CRM.</p>
+            <p>{compose.attachment ? "Edita el mensaje; la plantilla se enviara adjunta." : "Edita el mensaje antes de enviarlo desde el CRM."}</p>
           </div>
           <div className="documentToolbarActions">
             <button type="button" className="secondaryButton" onClick={onSend} disabled={loading || !compose.to || !compose.message.trim()}>
@@ -3352,14 +3502,53 @@ function MessageComposeModal({
         {error ? <p className="formError">{error}</p> : null}
 
         <div className="messageComposeGrid">
+          {compose.attachment ? (
+            <div className="messageAttachmentPreview wideField">
+              <Paperclip size={17} />
+              <div>
+                <strong>{compose.attachment.name}</strong>
+                <span>Plantilla de presupuesto adjunta</span>
+              </div>
+            </div>
+          ) : null}
           <label>
-            {destinationLabel}
-            <input
-              value={compose.to}
-              onChange={(event) => onChange({ ...compose, to: event.target.value })}
-              placeholder={compose.channel === "whatsapp" ? "099 000 000" : "cliente@empresa.com"}
-            />
+            Enviar a
+            <select
+              value={selectedRecipientValue}
+              onChange={(event) => {
+                const option = recipientOptions.find((item) => item.value === event.target.value);
+                setManualRecipient(false);
+                onChange({
+                  ...compose,
+                  to: event.target.value,
+                  title: option ? `${channelLabel} - ${option.label}` : compose.title,
+                });
+              }}
+            >
+              <option value="">Seleccionar contacto</option>
+              {recipientOptions.map((option) => (
+                <option key={`${option.value}-${option.label}`} value={option.value}>
+                  {option.label}{option.detail ? ` - ${option.detail}` : ""}
+                </option>
+              ))}
+            </select>
           </label>
+          <div className="manualRecipientPanel">
+            {manualRecipient ? (
+              <label>
+                {destinationLabel}
+                <input
+                  value={compose.to}
+                  onChange={(event) => onChange({ ...compose, to: event.target.value })}
+                  placeholder={compose.channel === "whatsapp" ? "099 000 000" : "cliente@empresa.com"}
+                />
+              </label>
+            ) : (
+              <button type="button" className="secondaryButton" onClick={() => setManualRecipient(true)}>
+                Escribir manual
+              </button>
+            )}
+          </div>
           {compose.channel === "mail" ? (
             <label>
               Asunto
@@ -6097,12 +6286,15 @@ function QuotesView({
   quoteError,
   quoteForm,
   quoteLaborPreview,
+  inventoryItems,
+  priceBookItems,
   quoteSearch,
   quoteStats,
   quoteStatus,
   quotes,
-  selectedCustomerId,
   onAccept,
+  onComposeMail,
+  onComposeWhatsApp,
   onFormChange,
   onRefresh,
   onSave,
@@ -6115,12 +6307,15 @@ function QuotesView({
   quoteError: string;
   quoteForm: QuotePayload;
   quoteLaborPreview: LaborPointCalculation | null;
+  inventoryItems: InventoryItem[];
+  priceBookItems: PriceBookItem[];
   quoteSearch: string;
   quoteStats: Array<{ label: string; value: number | string }>;
   quoteStatus: "ALL" | QuoteStatus;
   quotes: Quote[];
-  selectedCustomerId: string | null;
-  onAccept: (id: string) => void;
+  onAccept: (id: string, scheduledAt?: string) => void;
+  onComposeMail: (quote: Quote) => void;
+  onComposeWhatsApp: (quote: Quote) => void;
   onFormChange: (form: QuotePayload) => void;
   onRefresh: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
@@ -6128,14 +6323,258 @@ function QuotesView({
   onSelectCustomer: (customerId: string) => void;
   onStatusChange: (value: "ALL" | QuoteStatus) => void;
 }) {
-  const manualSubtotal = Number(quoteForm.subtotal) || 0;
-  const laborSubtotal = quoteLaborPreview?.subtotal ?? 0;
-  const subtotal = manualSubtotal + laborSubtotal;
+  const quoteItems = quoteForm.items ?? [];
+  const catalogSubtotal = quoteItems.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0);
+  const manualSubtotal = quoteForm.pricingMode === "MANUAL" ? Number(quoteForm.subtotal) || 0 : 0;
+  const laborSubtotal = quoteForm.pricingMode === "THIRD_PARTY" ? quoteLaborPreview?.subtotal ?? 0 : 0;
+  const subtotal = catalogSubtotal + manualSubtotal + laborSubtotal;
   const discount = subtotal * ((Number(quoteForm.discountPercent) || 0) / 100);
   const taxableBase = Math.max(0, subtotal - discount);
-  const manualTax = Number(quoteForm.tax);
-  const tax = quoteLaborPreview || quoteForm.tax === undefined || Number.isNaN(manualTax) || manualTax <= 0 ? taxableBase * 0.22 : manualTax;
+  const taxEnabled = quoteForm.taxIncluded !== false;
+  const tax = taxEnabled ? taxableBase * 0.22 : 0;
   const total = taxableBase + tax;
+  const selectedQuoteCustomer = customers.find((customer) => customer.id === quoteForm.customerId) ?? null;
+  const [quoteCustomerQuery, setQuoteCustomerQuery] = useState(selectedQuoteCustomer?.name ?? "");
+  const [quoteCustomerOpen, setQuoteCustomerOpen] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogQuantity, setCatalogQuantity] = useState(1);
+  const [selectedCatalogItem, setSelectedCatalogItem] = useState<QuoteCatalogOption | null>(null);
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
+  const [catalogUnitPrice, setCatalogUnitPrice] = useState<number>(0);
+  const [quoteExchangeRate, setQuoteExchangeRate] = useState("40");
+  const [quoteExecutionAt, setQuoteExecutionAt] = useState("");
+  const quoteCurrency = (quoteForm.currency || "UYU").toUpperCase();
+  const normalizedExchangeRate = Math.max(0, Number(quoteExchangeRate) || 0);
+  const normalizedQuoteCustomerQuery = quoteCustomerQuery.trim().toLowerCase();
+  const selectedQuote = quotes.find((quote) => quote.id === selectedQuoteId) ?? null;
+  const quoteCustomerResults = customers
+    .filter((customer) => {
+      if (quoteForm.pricingMode === "THIRD_PARTY") {
+        return customer.type === "THIRD_PARTY";
+      }
+
+      if (quoteForm.pricingMode === "DIRECT") {
+        return customer.type !== "THIRD_PARTY";
+      }
+
+      return true;
+    })
+    .filter((customer) => {
+      if (!normalizedQuoteCustomerQuery) {
+        return true;
+      }
+
+      return [customer.name, customer.reference, customer.legalName, customer.taxId, customer.phone, customer.email]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedQuoteCustomerQuery));
+    })
+    .slice(0, 8);
+
+  useEffect(() => {
+    setQuoteCustomerQuery(selectedQuoteCustomer?.name ?? "");
+  }, [selectedQuoteCustomer?.id, selectedQuoteCustomer?.name]);
+
+  useEffect(() => {
+    setQuoteExecutionAt("");
+  }, [selectedQuote?.id]);
+
+  useEffect(() => {
+    if (selectedCatalogItem?.source === "INVENTORY") {
+      const inventoryItem = inventoryItems.find((item) => item.id === selectedCatalogItem.id);
+      const priceWithTax = Number(inventoryItem?.priceWithTax ?? inventoryItem?.costPrice ?? 0) || 0;
+      const netPrice = quoteForm.taxIncluded === false ? priceWithTax : priceWithTax / 1.22;
+      setCatalogUnitPrice(convertQuotePrice(netPrice, inventoryItem?.currency));
+    } else if (selectedCatalogItem?.source === "PRICE_BOOK") {
+      const priceBookItem = priceBookItems.find((item) => item.id === selectedCatalogItem.id);
+      setCatalogUnitPrice(convertQuotePrice(Number(priceBookItem?.salePrice ?? 0) || 0, priceBookItem?.currency));
+    }
+  }, [inventoryItems, priceBookItems, quoteCurrency, normalizedExchangeRate, quoteForm.taxIncluded, selectedCatalogItem?.id, selectedCatalogItem?.source]);
+
+  function convertQuotePrice(amount: number, sourceCurrency?: string | null) {
+    const source = (sourceCurrency || quoteCurrency).toUpperCase();
+    let converted = amount;
+
+    if (source !== quoteCurrency && normalizedExchangeRate > 0) {
+      if (source === "USD" && quoteCurrency === "UYU") {
+        converted = amount * normalizedExchangeRate;
+      } else if (source === "UYU" && quoteCurrency === "USD") {
+        converted = amount / normalizedExchangeRate;
+      }
+    }
+
+    return Math.round(converted * 100) / 100;
+  }
+
+  function convertBetweenQuoteCurrencies(amount: number, fromCurrency: string, toCurrency: string) {
+    const from = fromCurrency.toUpperCase();
+    const to = toCurrency.toUpperCase();
+
+    if (from === to || normalizedExchangeRate <= 0) {
+      return Math.round(amount * 100) / 100;
+    }
+
+    if (from === "USD" && to === "UYU") {
+      return Math.round(amount * normalizedExchangeRate * 100) / 100;
+    }
+
+    if (from === "UYU" && to === "USD") {
+      return Math.round((amount / normalizedExchangeRate) * 100) / 100;
+    }
+
+    return Math.round(amount * 100) / 100;
+  }
+
+  function convertQuoteItemsCurrency(items: NonNullable<QuotePayload["items"]>, fromCurrency: string, toCurrency: string) {
+    return items.map((item) => ({
+      ...item,
+      unitPrice: convertBetweenQuoteCurrencies(Number(item.unitPrice) || 0, fromCurrency, toCurrency),
+      unitCost: convertBetweenQuoteCurrencies(Number(item.unitCost) || 0, fromCurrency, toCurrency),
+    }));
+  }
+
+  function toCatalogQuantity(value: string) {
+    return Math.max(1, Math.floor(Number(value) || 1));
+  }
+
+  function normalizeDecimalInput(value: string) {
+    const clean = value.replace(",", ".").replace(/[^\d.]/g, "");
+    const [integer = "", ...decimalParts] = clean.split(".");
+    const integerWithoutLeadingZeros = integer.replace(/^0+(?=\d)/, "");
+    const decimal = decimalParts.join("");
+    return decimalParts.length ? `${integerWithoutLeadingZeros || "0"}.${decimal}` : integerWithoutLeadingZeros;
+  }
+
+  function selectQuoteCustomer(customer: Customer) {
+    setQuoteCustomerQuery(customer.name);
+    setQuoteCustomerOpen(false);
+    onSelectCustomer(customer.id);
+    onFormChange({ ...quoteForm, customerId: customer.id });
+  }
+
+  function updateQuoteCustomerQuery(value: string) {
+    setQuoteCustomerQuery(value);
+    setQuoteCustomerOpen(true);
+    const cleanValue = value.trim().toLowerCase();
+    const exactCustomer = customers.find((customer) => customer.name.toLowerCase() === cleanValue || customer.reference.toLowerCase() === cleanValue);
+
+    if (exactCustomer) {
+      onSelectCustomer(exactCustomer.id);
+      onFormChange({ ...quoteForm, customerId: exactCustomer.id });
+      return;
+    }
+
+    onFormChange({ ...quoteForm, customerId: "" });
+  }
+
+  const normalizedCatalogQuery = catalogQuery.trim().toLowerCase();
+  const catalogModeItems: QuoteCatalogOption[] =
+    quoteForm.pricingMode === "THIRD_PARTY"
+      ? priceBookItems
+          .filter((item) => item.code.startsWith("SEGURA-PUNTAS-") || item.category.toLowerCase().includes("puntas"))
+          .map((item) => ({
+            id: item.id,
+            code: item.code,
+            name: item.name,
+            type: item.type,
+            category: item.category,
+            description: item.description,
+            unit: item.unit || "unidad",
+            unitPrice: convertQuotePrice(Number(item.salePrice) || 0, item.currency),
+            unitCost: convertQuotePrice(Number(item.costPrice) || 0, item.currency),
+            taxRate: Number(item.taxRate) || 22,
+            currency: quoteCurrency,
+            source: "PRICE_BOOK" as const,
+          }))
+      : inventoryItems.map((item) => {
+          const priceWithTax = Number(item.priceWithTax ?? item.costPrice ?? 0) || 0;
+          const netPrice = quoteForm.taxIncluded === false ? priceWithTax : priceWithTax / 1.22;
+          return {
+            id: item.id,
+            code: item.sku || item.reference,
+            name: item.name,
+            type: "EQUIPMENT" as QuoteItemType,
+            category: item.supplierCategory || (item.category ? deviceTypeLabels[item.category] : "Almacén"),
+            description: [item.supplier, item.supplierCategory, item.notes].filter(Boolean).join(" - "),
+            unit: item.unit || "unidad",
+            unitPrice: convertQuotePrice(netPrice, item.currency),
+            unitCost: convertQuotePrice(Number(item.costPrice ?? 0) || 0, item.currency),
+            taxRate: 22,
+            currency: quoteCurrency,
+            source: "INVENTORY" as const,
+          };
+        });
+  const catalogResults = catalogModeItems
+    .filter((item) => {
+      if (!normalizedCatalogQuery) {
+        return true;
+      }
+
+      return [item.code, item.name, item.category, item.description]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedCatalogQuery));
+    })
+    .slice(0, 10);
+
+  function selectCatalogItem(item: QuoteCatalogOption) {
+    setSelectedCatalogItem(item);
+    setCatalogQuery(item.name);
+    setCatalogUnitPrice(Number(item.unitPrice) || 0);
+    setCatalogOpen(false);
+  }
+
+  function addCatalogItem() {
+    if (!selectedCatalogItem) {
+      return;
+    }
+
+    const nextItem: NonNullable<QuotePayload["items"]>[number] = {
+      priceBookItemId: selectedCatalogItem.source === "PRICE_BOOK" ? selectedCatalogItem.id : undefined,
+      type: selectedCatalogItem.type,
+      category: selectedCatalogItem.category,
+      description: selectedCatalogItem.name,
+      quantity: toCatalogQuantity(String(catalogQuantity)),
+      unit: selectedCatalogItem.unit || "unidad",
+      unitPrice: Number(catalogUnitPrice) || 0,
+      taxRate: Number(selectedCatalogItem.taxRate) || 22,
+      unitCost: Number(selectedCatalogItem.unitCost) || 0,
+    };
+
+    onFormChange({ ...quoteForm, items: [...quoteItems, nextItem], subtotal: 0 });
+    setSelectedCatalogItem(null);
+    setCatalogQuery("");
+    setCatalogUnitPrice(0);
+    setCatalogQuantity(1);
+  }
+
+  function removeQuoteItem(index: number) {
+    onFormChange({ ...quoteForm, items: quoteItems.filter((_, itemIndex) => itemIndex !== index) });
+  }
+
+  function setPricingMode(pricingMode: QuotePricingMode) {
+    const keepsCustomer =
+      pricingMode === "THIRD_PARTY"
+        ? selectedQuoteCustomer?.type === "THIRD_PARTY"
+        : pricingMode === "DIRECT"
+          ? selectedQuoteCustomer?.type !== "THIRD_PARTY"
+          : true;
+
+    if (!keepsCustomer) {
+      setQuoteCustomerQuery("");
+    }
+    setSelectedCatalogItem(null);
+    setCatalogQuery("");
+    setCatalogUnitPrice(0);
+
+    onFormChange({
+      ...quoteForm,
+      customerId: keepsCustomer ? quoteForm.customerId : "",
+      pricingMode,
+      laborPoints: pricingMode === "THIRD_PARTY" ? quoteForm.laborPoints : 0,
+      subtotal: pricingMode === "MANUAL" ? quoteForm.subtotal : 0,
+      items: pricingMode === quoteForm.pricingMode ? quoteForm.items : [],
+    });
+  }
 
   return (
     <section className="quotesModule">
@@ -6158,22 +6597,64 @@ function QuotesView({
           </div>
 
           <div className="formGrid">
+            <div className="wideField quoteModeSelector">
+              <span>Modalidad de presupuesto</span>
+              <div>
+                {[
+                  { value: "DIRECT", label: "Security Solutions", detail: "Catálogo propio" },
+                  { value: "THIRD_PARTY", label: "Tercerizado", detail: "Tarifa por cliente" },
+                  { value: "MANUAL", label: "Manual", detail: "Importe libre" },
+                ].map((mode) => (
+                  <button
+                    key={mode.value}
+                    type="button"
+                    className={quoteForm.pricingMode === mode.value ? "active" : ""}
+                    onClick={() => setPricingMode(mode.value as QuotePricingMode)}
+                  >
+                    <strong>{mode.label}</strong>
+                    <small>{mode.detail}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <label>
               Cliente
-              <select
-                value={quoteForm.customerId || selectedCustomerId || ""}
-                onChange={(event) => {
-                  onSelectCustomer(event.target.value);
-                  onFormChange({ ...quoteForm, customerId: event.target.value });
-                }}
-              >
-                <option value="">Seleccionar cliente</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.name}
-                  </option>
-                ))}
-              </select>
+              <div className="autocompleteField">
+                <input
+                  value={quoteCustomerQuery}
+                  onChange={(event) => updateQuoteCustomerQuery(event.target.value)}
+                  onFocus={() => setQuoteCustomerOpen(true)}
+                  onBlur={() => window.setTimeout(() => setQuoteCustomerOpen(false), 120)}
+                  placeholder="Escribir cliente o tercerizado"
+                  autoComplete="off"
+                />
+                {quoteCustomerOpen ? (
+                  <div className="autocompleteResults">
+                    {quoteCustomerResults.map((customer) => (
+                      <button
+                        key={customer.id}
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectQuoteCustomer(customer)}
+                      >
+                        <strong>{customer.name}</strong>
+                        <span>
+                          {[
+                            customer.type === "THIRD_PARTY" ? "Tercerizado" : "Cliente",
+                            customer.reference,
+                            customer.phone,
+                            customer.taxId,
+                          ]
+                            .filter(Boolean)
+                            .join(" - ")}
+                        </span>
+                      </button>
+                    ))}
+                    {!quoteCustomerResults.length ? <p>No hay clientes con ese nombre.</p> : null}
+                  </div>
+                ) : null}
+              </div>
             </label>
             <label>
               Numero
@@ -6208,23 +6689,58 @@ function QuotesView({
               Moneda
               <select
                 value={quoteForm.currency || "UYU"}
-                onChange={(event) => onFormChange({ ...quoteForm, currency: event.target.value })}
+                onChange={(event) => {
+                  const nextCurrency = event.target.value;
+                  const convertedItems = convertQuoteItemsCurrency(quoteItems, quoteCurrency, nextCurrency);
+                  setSelectedCatalogItem(null);
+                  setCatalogQuery("");
+                  setCatalogUnitPrice(0);
+                  onFormChange({
+                    ...quoteForm,
+                    currency: nextCurrency,
+                    items: convertedItems,
+                    subtotal:
+                      quoteForm.pricingMode === "MANUAL"
+                        ? convertBetweenQuoteCurrencies(Number(quoteForm.subtotal) || 0, quoteCurrency, nextCurrency)
+                        : quoteForm.subtotal,
+                  });
+                }}
               >
                 <option value="UYU">UYU</option>
                 <option value="USD">USD</option>
               </select>
             </label>
-            <label>
-              Puntas mano de obra
-              <input
-                type="number"
-                min="0"
-                step="0.25"
-                value={quoteForm.laborPoints}
-                onChange={(event) => onFormChange({ ...quoteForm, laborPoints: Number(event.target.value) })}
-              />
-            </label>
-            {quoteLaborPreview ? (
+            {quoteForm.pricingMode === "DIRECT" ? (
+              <label>
+                Tipo de cambio USD/UYU
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={quoteExchangeRate}
+                  onChange={(event) => {
+                    setQuoteExchangeRate(normalizeDecimalInput(event.target.value));
+                    setSelectedCatalogItem(null);
+                    setCatalogQuery("");
+                    setCatalogUnitPrice(0);
+                  }}
+                  placeholder="Ej: 40"
+                />
+              </label>
+            ) : null}
+            {quoteForm.pricingMode === "THIRD_PARTY" ? (
+              <label>
+                Puntas adicionales
+                <input
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  value={quoteForm.laborPoints}
+                  onChange={(event) => onFormChange({ ...quoteForm, laborPoints: Number(event.target.value) })}
+                  placeholder="Cantidad de puntas"
+                />
+              </label>
+            ) : null}
+            {quoteForm.pricingMode === "THIRD_PARTY" && quoteLaborPreview ? (
               <div className="quoteTotalBox">
                 <span>{quoteLaborPreview.source === "CUSTOMER" ? "Tarifa del cliente" : "Tarifa Security Solutions"}</span>
                 <strong>
@@ -6235,21 +6751,105 @@ function QuotesView({
                 </small>
               </div>
             ) : null}
+            {quoteForm.pricingMode === "DIRECT" || quoteForm.pricingMode === "THIRD_PARTY" ? (
+              <div className="wideField quoteCatalogBuilder">
+                <span>{quoteForm.pricingMode === "THIRD_PARTY" ? "Catálogo tercerizado Segura" : "Catálogo de Almacén"}</span>
+                <div className="quoteCatalogControls">
+                  <div className="autocompleteField">
+                    <input
+                      value={catalogQuery}
+                      onChange={(event) => {
+                        setCatalogQuery(event.target.value);
+                        setSelectedCatalogItem(null);
+                        setCatalogOpen(true);
+                      }}
+                      onFocus={() => setCatalogOpen(true)}
+                      onBlur={() => window.setTimeout(() => setCatalogOpen(false), 120)}
+                      placeholder={quoteForm.pricingMode === "THIRD_PARTY" ? "Buscar servicio por puntas" : "Buscar en Almacén por equipo, SKU o importador"}
+                      autoComplete="off"
+                    />
+                    {catalogOpen ? (
+                      <div className="autocompleteResults">
+                        {catalogResults.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => selectCatalogItem(item)}
+                          >
+                            <strong>{item.name}</strong>
+                            <span>
+                              {[item.code, item.category, item.description, formatPrice(item.unitPrice, item.currency)].filter(Boolean).join(" - ")}
+                            </span>
+                          </button>
+                        ))}
+                        {!catalogResults.length ? <p>No hay ítems con ese texto.</p> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                  <label className="inlineCatalogField">
+                    Cantidad
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={catalogQuantity}
+                      onChange={(event) => setCatalogQuantity(toCatalogQuantity(event.target.value))}
+                      aria-label="Cantidad"
+                    />
+                  </label>
+                  {quoteForm.pricingMode === "DIRECT" ? (
+                    <label className="inlineCatalogField">
+                      Precio unit. ({quoteCurrency})
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={catalogUnitPrice}
+                        onChange={(event) => setCatalogUnitPrice(Number(event.target.value) || 0)}
+                        aria-label="Precio unitario"
+                      />
+                    </label>
+                  ) : null}
+                  <button type="button" className="secondaryButton" onClick={addCatalogItem} disabled={!selectedCatalogItem}>
+                    Agregar
+                  </button>
+                </div>
+                {quoteItems.length ? (
+                  <div className="quoteItemList">
+                    {quoteItems.map((item, index) => (
+                      <article key={`${item.description}-${index}`}>
+                        <div>
+                          <strong>{item.description}</strong>
+                          <span>
+                            {item.quantity} {item.unit} x {formatPrice(item.unitPrice, quoteCurrency)}
+                          </span>
+                        </div>
+                        <b>{formatPrice((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), quoteCurrency)}</b>
+                        <button type="button" className="iconButton" onClick={() => removeQuoteItem(index)} aria-label="Quitar ítem">
+                          <X size={16} />
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <label>
               Subtotal
               <input
                 type="number"
                 min="0"
                 step="0.01"
-                value={quoteForm.subtotal}
+                value={quoteForm.pricingMode === "MANUAL" ? quoteForm.subtotal : Math.round(subtotal * 100) / 100}
                 onChange={(event) => {
                   const nextSubtotal = Number(event.target.value);
                   onFormChange({
                     ...quoteForm,
                     subtotal: nextSubtotal,
-                    tax: Math.round(nextSubtotal * 22) / 100,
                   });
                 }}
+                disabled={quoteForm.pricingMode !== "MANUAL"}
               />
             </label>
             <label>
@@ -6274,13 +6874,19 @@ function QuotesView({
             </label>
             <label>
               IVA
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={quoteForm.tax}
-                onChange={(event) => onFormChange({ ...quoteForm, tax: Number(event.target.value) })}
-              />
+              <select
+                value={quoteForm.taxIncluded === false ? "NO" : "YES"}
+                onChange={(event) =>
+                  onFormChange({
+                    ...quoteForm,
+                    taxIncluded: event.target.value === "YES",
+                    tax: event.target.value === "YES" ? undefined : 0,
+                  })
+                }
+              >
+                <option value="YES">Aplicar IVA 22%</option>
+                <option value="NO">Sin IVA</option>
+              </select>
             </label>
             <label className="wideField">
               Condiciones comerciales
@@ -6316,7 +6922,7 @@ function QuotesView({
             </label>
             <div className="quoteTotalBox">
               <span>Total</span>
-              <strong>{formatCurrency(total)}</strong>
+              <strong>{formatPrice(total, quoteCurrency)}</strong>
             </div>
           </div>
 
@@ -6356,16 +6962,16 @@ function QuotesView({
             </button>
           </div>
 
-          <div className="quoteGrid">
+          <div className="quoteGrid quoteList">
             {quotes.map((quote) => (
-              <article key={quote.id} className="quoteCard">
+              <article key={quote.id} className="quoteCard" onClick={() => setSelectedQuoteId(quote.id)}>
                 <div className="quoteCardHeader">
                   <span className={`statusPill ${quote.status === "APPROVED" ? "completed" : quote.status === "REJECTED" ? "cancelled" : "scheduled"}`}>
                     {quoteStatusLabels[quote.status]}
                   </span>
                   <strong>{quote.number}</strong>
                 </div>
-                <h3>{quote.title}</h3>
+                <p>{quote.title}</p>
                 <dl>
                   <div>
                     <dt>Cliente</dt>
@@ -6377,28 +6983,221 @@ function QuotesView({
                   </div>
                   <div>
                     <dt>Subtotal</dt>
-                    <dd>{formatCurrency(quote.subtotal)}</dd>
+                    <dd>{formatPrice(quote.subtotal, quote.currency)}</dd>
                   </div>
                   <div>
                     <dt>Total</dt>
-                    <dd>{formatCurrency(quote.total)}</dd>
+                    <dd>{formatPrice(quote.total, quote.currency)}</dd>
                   </div>
                 </dl>
-                <div className="quoteActions">
-                  <button
-                    type="button"
-                    className="secondaryButton"
-                    onClick={() => onAccept(quote.id)}
-                    disabled={quote.status === "APPROVED"}
-                  >
-                    <Save size={16} />
-                    Aceptar
-                  </button>
-                </div>
               </article>
             ))}
             {!quotes.length ? <p className="emptyPanel">No hay presupuestos para los filtros actuales.</p> : null}
           </div>
+
+          {selectedQuote && typeof document !== "undefined"
+            ? createPortal(
+                <div className="deviceDetailOverlay customerProfileOverlay" onClick={() => setSelectedQuoteId(null)}>
+                  <section
+                    className="customerProfileModal printableCustomerProfile quoteDetailModal"
+                    aria-label="Detalle del presupuesto"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <img className="customerProfilePrintWatermark" src="/security-solutions-logo-bw.png" alt="" aria-hidden="true" />
+                    <header className="deviceDetailHeader">
+                      <div className="printCompanyIdentity" aria-hidden="true">
+                        <img src="/security-solutions-logo.png" alt="" />
+                        <div>
+                          <strong>Security Solutions</strong>
+                          <span>Presupuesto comercial</span>
+                        </div>
+                      </div>
+                      <div className="customerProfileTitleBlock">
+                        <span>Presupuesto</span>
+                        <h2>{selectedQuote.title}</h2>
+                        <p>
+                          {[selectedQuote.number, selectedQuote.customer.name, quoteStatusLabels[selectedQuote.status], selectedQuote.currency]
+                            .filter(Boolean)
+                            .join(" - ")}
+                        </p>
+                      </div>
+                      <div className="documentToolbarActions">
+                        <button type="button" className="secondaryButton printHidden" onClick={() => window.print()}>
+                          <Printer size={16} />
+                          Imprimir
+                        </button>
+                        <button type="button" className="secondaryButton" onClick={() => onComposeWhatsApp(selectedQuote)}>
+                          <MessageSquare size={16} />
+                          WhatsApp
+                        </button>
+                        <button type="button" className="secondaryButton" onClick={() => onComposeMail(selectedQuote)}>
+                          <Mail size={16} />
+                          Mail
+                        </button>
+                        <button
+                          type="button"
+                          className="secondaryButton"
+                          onClick={() => onAccept(selectedQuote.id, quoteExecutionAt ? new Date(quoteExecutionAt).toISOString() : undefined)}
+                          disabled={selectedQuote.status === "APPROVED"}
+                        >
+                          <Save size={16} />
+                          Aprobar
+                        </button>
+                        <button type="button" className="iconButton printHidden" onClick={() => setSelectedQuoteId(null)} aria-label="Cerrar presupuesto">
+                          <X size={18} />
+                        </button>
+                      </div>
+                    </header>
+
+                    <section className="customerProfileSection quoteApprovalSection printHidden">
+                      <label className="fieldGroup">
+                        Dia y hora de ejecucion
+                        <input
+                          type="datetime-local"
+                          value={quoteExecutionAt}
+                          onChange={(event) => setQuoteExecutionAt(event.target.value)}
+                        />
+                      </label>
+                      <p>Al aprobar, se crea una orden de trabajo y queda programada en Agenda con esta fecha y hora.</p>
+                    </section>
+
+                    <dl className="customerProfileGrid">
+                      <div>
+                        <dt>Cliente</dt>
+                        <dd>{selectedQuote.customer.name}</dd>
+                      </div>
+                      <div>
+                        <dt>Servicio</dt>
+                        <dd>{deviceTypeLabels[selectedQuote.service]}</dd>
+                      </div>
+                      <div>
+                        <dt>Estado</dt>
+                        <dd>{quoteStatusLabels[selectedQuote.status]}</dd>
+                      </div>
+                      <div>
+                        <dt>Moneda</dt>
+                        <dd>{selectedQuote.currency}</dd>
+                      </div>
+                      <div>
+                        <dt>Emision</dt>
+                        <dd>{formatDateTime(selectedQuote.issueDate)}</dd>
+                      </div>
+                      <div>
+                        <dt>Vencimiento</dt>
+                        <dd>{selectedQuote.validUntil ? formatDateTime(selectedQuote.validUntil) : "Sin fecha"}</dd>
+                      </div>
+                      <div>
+                        <dt>IVA</dt>
+                        <dd>{selectedQuote.taxIncluded ? "Aplicado" : "Sin IVA"}</dd>
+                      </div>
+                      <div>
+                        <dt>Margen</dt>
+                        <dd>{toMoneyNumber(selectedQuote.estimatedMargin).toFixed(2)}%</dd>
+                      </div>
+                    </dl>
+
+                    <section className="customerProfileSection">
+                      <div className="customerProfileSectionHeader">
+                        <h3>Materiales</h3>
+                      </div>
+                      <div className="quoteDetailItems">
+                        {(selectedQuote.items ?? []).map((item, index) => (
+                          <article key={item.id ?? `${item.description}-${index}`}>
+                            <div>
+                              <strong>{item.description}</strong>
+                            </div>
+                            <span>{item.quantity} {item.unit}</span>
+                            <span>{formatPrice(item.unitPrice, selectedQuote.currency)}</span>
+                            <b>{formatPrice(item.subtotal ?? (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), selectedQuote.currency)}</b>
+                          </article>
+                        ))}
+                        {!selectedQuote.items?.length ? <p className="emptyPanel">Sin materiales cargados.</p> : null}
+                      </div>
+                    </section>
+
+                    <section className="customerProfileSection">
+                      <div className="customerProfileSectionHeader">
+                        <h3>Condiciones</h3>
+                      </div>
+                      <dl className="customerProfileGrid">
+                        <div>
+                          <dt>Tiempo de ejecucion</dt>
+                          <dd>{formatQuoteTerm(selectedQuote.executionTime, "dia")}</dd>
+                        </div>
+                        <div>
+                          <dt>Garantia</dt>
+                          <dd>{formatQuoteTerm(selectedQuote.warranty, "mes")}</dd>
+                        </div>
+                        <div>
+                          <dt>Forma de pago</dt>
+                          <dd>{selectedQuote.paymentTerms || "Sin definir"}</dd>
+                        </div>
+                        <div>
+                          <dt>Condiciones comerciales</dt>
+                          <dd>{selectedQuote.commercialTerms || "Sin condiciones"}</dd>
+                        </div>
+                      </dl>
+                    </section>
+
+                    <section className="customerProfileSection">
+                      <div className="customerProfileSectionHeader">
+                        <h3>Totales</h3>
+                      </div>
+                      <dl className="customerProfileGrid quoteTotalsGrid">
+                        <div>
+                          <dt>Materiales</dt>
+                          <dd>{formatPrice(selectedQuote.materialsSubtotal, selectedQuote.currency)}</dd>
+                        </div>
+                        <div>
+                          <dt>Mano de obra</dt>
+                          <dd>{formatPrice(selectedQuote.laborSubtotal, selectedQuote.currency)}</dd>
+                        </div>
+                        <div>
+                          <dt>Gastos</dt>
+                          <dd>{formatPrice(selectedQuote.expensesSubtotal, selectedQuote.currency)}</dd>
+                        </div>
+                        <div>
+                          <dt>Subtotal</dt>
+                          <dd>{formatPrice(selectedQuote.subtotal, selectedQuote.currency)}</dd>
+                        </div>
+                        <div>
+                          <dt>Descuento</dt>
+                          <dd>{formatPrice(selectedQuote.discountAmount, selectedQuote.currency)}</dd>
+                        </div>
+                        <div>
+                          <dt>IVA</dt>
+                          <dd>{formatPrice(selectedQuote.tax, selectedQuote.currency)}</dd>
+                        </div>
+                        <div className="quoteTotalHighlight">
+                          <dt>Total</dt>
+                          <dd>{formatPrice(selectedQuote.total, selectedQuote.currency)}</dd>
+                        </div>
+                        <div>
+                          <dt>Ganancia estimada</dt>
+                          <dd>{formatPrice(selectedQuote.estimatedProfit, selectedQuote.currency)}</dd>
+                        </div>
+                      </dl>
+                    </section>
+
+                    {selectedQuote.history?.length ? (
+                      <section className="customerProfileSection printHidden">
+                        <div className="customerProfileSectionHeader">
+                          <h3>Historial</h3>
+                        </div>
+                        <div className="movementList inventoryDetailMovements">
+                          {selectedQuote.history.map((entry) => (
+                            <span key={entry.id}>
+                              {formatDateTime(entry.createdAt)} - {entry.comment || entry.action}
+                            </span>
+                          ))}
+                        </div>
+                      </section>
+                    ) : null}
+                  </section>
+                </div>,
+                document.body,
+              )
+            : null}
         </section>
       </div>
     </section>
@@ -7644,6 +8443,7 @@ function WhatsAppView({
   onRefresh: () => void;
   onReply: (chat: WhatsAppChat) => void;
 }) {
+  const [showOpenWaChecklist, setShowOpenWaChecklist] = useState(false);
   const contactOptions = [
     ...sync.chats.map((chat) => ({ id: chat.id, label: chat.name || chat.id })),
     ...sync.groups.map((group) => ({ id: group.id, label: group.name || group.id })),
@@ -7681,29 +8481,44 @@ function WhatsAppView({
 
       {whatsAppError ? <p className="formError">{whatsAppError}</p> : null}
 
+      <section className="integrationPanel compactSettingsPanel">
+        <div>
+          <p>Configuracion</p>
+          <strong>OpenWA</strong>
+          <span>
+            {status.checks.filter((check) => check.configured).length}/{status.checks.length || 4} datos listos
+          </span>
+        </div>
+        <button type="button" className="iconButton" onClick={() => setShowOpenWaChecklist((current) => !current)} aria-label="Ver configuracion OpenWA">
+          <Menu size={20} />
+        </button>
+      </section>
+
       <div className="integrationLayout">
-        <section className="integrationPanel">
-          <div className="sectionHeader compactHeader">
-            <div>
-              <p>Checklist</p>
-              <h2>Configuracion OpenWA</h2>
+        {showOpenWaChecklist ? (
+          <section className="integrationPanel">
+            <div className="sectionHeader compactHeader">
+              <div>
+                <p>Checklist</p>
+                <h2>Configuracion OpenWA</h2>
+              </div>
             </div>
-          </div>
-          <div className="integrationChecklist">
-            {status.checks.map((check) => (
-              <article key={check.key}>
-                <span className={`statusPill ${check.configured ? "completed" : "scheduled"}`}>
-                  {check.configured ? "Listo" : "Pendiente"}
-                </span>
-                <div>
-                  <strong>{check.label}</strong>
-                  <small>{check.key}</small>
-                </div>
-              </article>
-            ))}
-            {!status.checks.length ? <p className="emptyPanel">No hay variables de OpenWA definidas todavia.</p> : null}
-          </div>
-        </section>
+            <div className="integrationChecklist">
+              {status.checks.map((check) => (
+                <article key={check.key}>
+                  <span className={`statusPill ${check.configured ? "completed" : "scheduled"}`}>
+                    {check.configured ? "Listo" : "Pendiente"}
+                  </span>
+                  <div>
+                    <strong>{check.label}</strong>
+                    <small>{check.key}</small>
+                  </div>
+                </article>
+              ))}
+              {!status.checks.length ? <p className="emptyPanel">No hay variables de OpenWA definidas todavia.</p> : null}
+            </div>
+          </section>
+        ) : null}
 
         <section className="integrationPanel dailySummaryPanel">
           <div className="sectionHeader compactHeader">
@@ -8221,15 +9036,16 @@ function cleanQuotePayload(form: QuotePayload): QuotePayload {
     title: form.title.trim(),
     service: form.service || "OTHER",
     status: form.status || "DRAFT",
+    pricingMode: form.pricingMode || "DIRECT",
     currency: form.currency?.trim() || "UYU",
     issueDate: form.issueDate || undefined,
     validUntil: form.validUntil || undefined,
-    taxIncluded: form.taxIncluded ?? false,
+    taxIncluded: form.taxIncluded ?? true,
     discountPercent: Number(form.discountPercent) || 0,
     profitMarginPercent: Number(form.profitMarginPercent) || 0,
     laborPoints: Number(form.laborPoints) || 0,
     subtotal: Number(form.subtotal) || 0,
-    tax: form.tax === undefined ? undefined : Number(form.tax) || 0,
+    tax: form.taxIncluded === false ? 0 : undefined,
     internalNotes: form.internalNotes?.trim() || undefined,
     commercialTerms: form.commercialTerms?.trim() || undefined,
     executionTime: form.executionTime?.trim() || undefined,
@@ -8396,6 +9212,29 @@ function formatPrice(value?: string | number | null, currency?: string | null) {
     currency: currency || "USD",
     maximumFractionDigits: 2,
   }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+function formatQuoteTerm(value?: string | null, unit: "dia" | "mes" = "dia") {
+  const clean = value?.trim();
+  if (!clean) {
+    return "Sin definir";
+  }
+
+  if (!/^\d+(?:[.,]\d+)?$/.test(clean)) {
+    return clean;
+  }
+
+  const amount = Number(clean.replace(",", "."));
+  const label =
+    unit === "dia"
+      ? amount === 1
+        ? "dia"
+        : "dias"
+      : amount === 1
+        ? "mes"
+        : "meses";
+
+  return `${clean} ${label}`;
 }
 
 function formatAddressParts(value?: string | null) {
@@ -8884,6 +9723,214 @@ function buildWorkOrderShareText(workOrder: WorkOrder) {
     "",
     "Security Solutions",
   ].join("\n");
+}
+
+function buildQuoteShareText(quote: Quote) {
+  const items = quote.items?.length
+    ? quote.items
+        .map((item) => `- ${item.description}: ${item.quantity} ${item.unit} x ${formatPrice(item.unitPrice, quote.currency)}`)
+        .join("\n")
+    : "- Segun detalle acordado";
+
+  return [
+    `Presupuesto ${quote.number}`,
+    `Cliente: ${quote.customer.name}`,
+    `Servicio: ${deviceTypeLabels[quote.service]}`,
+    `Titulo: ${quote.title}`,
+    "",
+    "Items:",
+    items,
+    "",
+    `Subtotal: ${formatPrice(quote.subtotal, quote.currency)}`,
+    quote.discountAmount ? `Descuento: ${formatPrice(quote.discountAmount, quote.currency)}` : "",
+    quote.taxIncluded ? `IVA 22%: ${formatPrice(quote.tax, quote.currency)}` : "IVA: no aplicado",
+    `Total: ${formatPrice(quote.total, quote.currency)}`,
+    "",
+    quote.executionTime ? `Tiempo de ejecucion: ${formatQuoteTerm(quote.executionTime, "dia")}` : "",
+    quote.warranty ? `Garantia: ${formatQuoteTerm(quote.warranty, "mes")}` : "",
+    quote.paymentTerms ? `Forma de pago: ${quote.paymentTerms}` : "",
+    quote.commercialTerms ? `Condiciones: ${quote.commercialTerms}` : "",
+    "",
+    "Quedamos a las ordenes.",
+    "Security Solutions",
+  ].filter(Boolean).join("\n");
+}
+
+function buildQuoteWorkOrderNotes(quote: Quote) {
+  const items = quote.items?.length
+    ? quote.items
+        .map((item) => `- ${item.description}: ${item.quantity} ${item.unit} x ${formatPrice(item.unitPrice, quote.currency)}`)
+        .join("\n")
+    : "Sin items cargados";
+
+  return [
+    `Generado desde presupuesto ${quote.number}`,
+    `Cliente: ${quote.customer.name}`,
+    `Servicio: ${deviceTypeLabels[quote.service]}`,
+    `Total aprobado: ${formatPrice(quote.total, quote.currency)}`,
+    quote.executionTime ? `Tiempo de ejecucion estimado: ${formatQuoteTerm(quote.executionTime, "dia")}` : "",
+    quote.warranty ? `Garantia: ${formatQuoteTerm(quote.warranty, "mes")}` : "",
+    quote.paymentTerms ? `Forma de pago: ${quote.paymentTerms}` : "",
+    quote.commercialTerms ? `Condiciones comerciales: ${quote.commercialTerms}` : "",
+    "",
+    "Items aprobados:",
+    items,
+  ].filter(Boolean).join("\n");
+}
+
+async function buildQuoteTemplateAttachment(quote: Quote) {
+  const [logo, watermark] = await Promise.all([
+    imageToDataUrl("/security-solutions-logo.png"),
+    imageToDataUrl("/security-solutions-logo-bw.png"),
+  ]);
+  const html = buildQuoteTemplateHtml(quote, logo, watermark);
+
+  return {
+    name: `${quote.number}-${sanitizeFileName(quote.title || "presupuesto")}.html`,
+    mimeType: "text/html",
+    dataUrl: `data:text/html;charset=utf-8;base64,${base64EncodeUnicode(html)}`,
+  };
+}
+
+async function imageToDataUrl(path: string) {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  try {
+    const response = await fetch(path);
+    const blob = await response.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return "";
+  }
+}
+
+function buildQuoteTemplateHtml(quote: Quote, logoDataUrl: string, watermarkDataUrl: string) {
+  const materialRows = quote.items?.length
+    ? quote.items
+        .map(
+          (item) => `
+            <tr>
+              <td>${escapeHtml(item.description)}</td>
+              <td>${escapeHtml(`${item.quantity} ${item.unit}`)}</td>
+              <td>${escapeHtml(formatPrice(item.unitPrice, quote.currency))}</td>
+              <td>${escapeHtml(formatPrice(item.subtotal ?? (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), quote.currency))}</td>
+            </tr>`,
+        )
+        .join("")
+    : `<tr><td colspan="4">Sin materiales cargados.</td></tr>`;
+
+  return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(`Presupuesto ${quote.number}`)}</title>
+  <style>
+    @page { size: A4; margin: 8mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #fff; color: #101827; font-family: Arial, Helvetica, sans-serif; font-size: 11px; }
+    .page { position: relative; min-height: 281mm; border: 1px solid #dbe7ef; padding: 0; overflow: hidden; }
+    .watermark { position: fixed; inset: 50% auto auto 50%; width: 150mm; max-height: 210mm; object-fit: contain; opacity: .08; transform: translate(-50%, -50%); z-index: 0; }
+    .content { position: relative; z-index: 1; display: grid; gap: 4mm; padding: 0 0 4mm; }
+    header { display: grid; grid-template-columns: 42mm 1fr 42mm; align-items: center; min-height: 27mm; padding: 4mm 0; border-bottom: 1px solid #94a3b8; }
+    .brand { display: flex; align-items: center; gap: 2mm; padding-left: 0; }
+    .brand img { width: 14mm; height: 14mm; object-fit: contain; }
+    .brand strong, .brand span { display: block; }
+    .brand strong { font-size: 11px; line-height: 1.1; }
+    .brand span { color: #334155; font-size: 7.5px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+    h1 { margin: 0; text-align: center; color: #334155; font-size: 30px; letter-spacing: .03em; text-transform: uppercase; }
+    section { margin: 0 3.2mm; padding: 3.2mm; border: 1px solid rgba(71,85,105,.22); border-radius: 5px; background: rgba(255,255,255,.36); break-inside: avoid; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm 18mm; }
+    dl { margin: 0; }
+    dt { color: #334155; font-size: 10px; font-weight: 900; text-transform: uppercase; }
+    dd { margin: 1mm 0 2mm; font-size: 11px; }
+    h2 { margin: 0 0 3mm; font-size: 14px; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0 2mm; }
+    td { padding: 3mm; background: rgba(15,23,42,.34); font-weight: 850; }
+    td:first-child { border-radius: 5px 0 0 5px; }
+    td:last-child { border-radius: 0 5px 5px 0; text-align: right; }
+    td:nth-child(2), td:nth-child(3) { text-align: center; white-space: nowrap; }
+    .total { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm 20mm; }
+    .highlight { margin-top: 1mm; padding: 2mm; background: rgba(45,212,191,.14); }
+    .highlight dd { font-size: 22px; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    ${watermarkDataUrl ? `<img class="watermark" src="${watermarkDataUrl}" alt="" />` : ""}
+    <div class="content">
+      <header>
+        <div class="brand">
+          ${logoDataUrl ? `<img src="${logoDataUrl}" alt="" />` : ""}
+          <div><strong>Security Solutions</strong><span>Presupuesto comercial</span></div>
+        </div>
+        <h1>Presupuesto</h1>
+        <div></div>
+      </header>
+
+      <section>
+        <dl class="grid">
+          <div><dt>Cliente</dt><dd>${escapeHtml(quote.customer.name)}</dd></div>
+          <div><dt>Servicio</dt><dd>${escapeHtml(deviceTypeLabels[quote.service])}</dd></div>
+          <div><dt>Estado</dt><dd>${escapeHtml(quoteStatusLabels[quote.status])}</dd></div>
+          <div><dt>Moneda</dt><dd>${escapeHtml(quote.currency)}</dd></div>
+          <div><dt>Emision</dt><dd>${escapeHtml(formatDateTime(quote.issueDate))}</dd></div>
+          <div><dt>Vencimiento</dt><dd>${escapeHtml(quote.validUntil ? formatDateTime(quote.validUntil) : "Sin fecha")}</dd></div>
+          <div><dt>IVA</dt><dd>${escapeHtml(quote.taxIncluded ? "Aplicado" : "Sin IVA")}</dd></div>
+          <div><dt>Margen</dt><dd>${escapeHtml(`${toMoneyNumber(quote.estimatedMargin).toFixed(2)}%`)}</dd></div>
+        </dl>
+      </section>
+
+      <section><h2>Materiales</h2><table>${materialRows}</table></section>
+      <section>
+        <h2>Condiciones</h2>
+        <dl class="grid">
+          <div><dt>Tiempo de ejecucion</dt><dd>${escapeHtml(formatQuoteTerm(quote.executionTime, "dia"))}</dd></div>
+          <div><dt>Garantia</dt><dd>${escapeHtml(formatQuoteTerm(quote.warranty, "mes"))}</dd></div>
+          <div><dt>Forma de pago</dt><dd>${escapeHtml(quote.paymentTerms || "Sin definir")}</dd></div>
+          <div><dt>Condiciones comerciales</dt><dd>${escapeHtml(quote.commercialTerms || "Sin condiciones")}</dd></div>
+        </dl>
+      </section>
+      <section>
+        <h2>Totales</h2>
+        <dl class="total">
+          <div><dt>Materiales</dt><dd>${escapeHtml(formatPrice(quote.materialsSubtotal, quote.currency))}</dd></div>
+          <div><dt>Mano de obra</dt><dd>${escapeHtml(formatPrice(quote.laborSubtotal, quote.currency))}</dd></div>
+          <div><dt>Gastos</dt><dd>${escapeHtml(formatPrice(quote.expensesSubtotal, quote.currency))}</dd></div>
+          <div><dt>Subtotal</dt><dd>${escapeHtml(formatPrice(quote.subtotal, quote.currency))}</dd></div>
+          <div><dt>Descuento</dt><dd>${escapeHtml(formatPrice(quote.discountAmount, quote.currency))}</dd></div>
+          <div><dt>IVA</dt><dd>${escapeHtml(formatPrice(quote.tax, quote.currency))}</dd></div>
+          <div class="highlight"><dt>Total</dt><dd>${escapeHtml(formatPrice(quote.total, quote.currency))}</dd></div>
+          <div><dt>Ganancia estimada</dt><dd>${escapeHtml(formatPrice(quote.estimatedProfit, quote.currency))}</dd></div>
+        </dl>
+      </section>
+    </div>
+  </main>
+</body>
+</html>`;
+}
+
+function base64EncodeUnicode(value: string) {
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+function sanitizeFileName(value: string) {
+  return value.replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-").slice(0, 80);
+}
+
+function escapeHtml(value: string | number | null | undefined) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function formatWorkOrderNumber(workOrder: Pick<WorkOrder, "id" | "createdAt">) {

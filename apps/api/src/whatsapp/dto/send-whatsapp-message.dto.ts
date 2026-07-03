@@ -1,4 +1,15 @@
-import { IsOptional, IsString, MinLength } from "class-validator";
+import { IsObject, IsOptional, IsString, MinLength } from "class-validator";
+
+class MessageAttachmentDto {
+  @IsString()
+  name!: string;
+
+  @IsString()
+  mimeType!: string;
+
+  @IsString()
+  dataUrl!: string;
+}
 
 export class SendWhatsAppMessageDto {
   @IsString()
@@ -8,6 +19,10 @@ export class SendWhatsAppMessageDto {
   @IsString()
   @MinLength(1)
   message!: string;
+
+  @IsOptional()
+  @IsObject()
+  attachment?: MessageAttachmentDto;
 
   @IsOptional()
   @IsString()

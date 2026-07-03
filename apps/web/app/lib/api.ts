@@ -355,6 +355,7 @@ export type Quote = {
   title: string;
   service: DeviceType;
   status: QuoteStatus;
+  pricingMode: QuotePricingMode;
   currency: string;
   issueDate: string;
   validUntil?: string | null;
@@ -394,6 +395,7 @@ export type Quote = {
 };
 
 export type QuoteStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED" | "EXPIRED";
+export type QuotePricingMode = "DIRECT" | "THIRD_PARTY" | "MANUAL";
 
 export type QuoteItemType = "EQUIPMENT" | "MATERIAL" | "SUPPLY" | "LABOR" | "EXPENSE";
 
@@ -431,6 +433,7 @@ export type QuotePayload = {
   title: string;
   service?: DeviceType;
   status?: QuoteStatus;
+  pricingMode?: QuotePricingMode;
   currency?: string;
   issueDate?: string;
   validUntil?: string;
