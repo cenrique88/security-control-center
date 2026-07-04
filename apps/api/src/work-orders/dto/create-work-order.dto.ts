@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsOptional, IsString } from "class-validator";
+import { IsArray, IsDateString, IsEnum, IsOptional, IsString } from "class-validator";
 
 enum ServiceTypeDto {
   CCTV = "CCTV",
@@ -50,4 +50,28 @@ export class CreateWorkOrderDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  reportBeforeNotes?: string;
+
+  @IsOptional()
+  @IsString()
+  reportAfterNotes?: string;
+
+  @IsOptional()
+  @IsString()
+  reportTasks?: string;
+
+  @IsOptional()
+  @IsString()
+  reportTests?: string;
+
+  @IsOptional()
+  @IsString()
+  reportRecommendations?: string;
+
+  @IsOptional()
+  @IsArray()
+  reportPhotos?: unknown[];
 }

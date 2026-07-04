@@ -4,6 +4,7 @@ import { AuthModule } from "./auth/auth.module";
 import { CustomersModule } from "./customers/customers.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { DevicesModule } from "./devices/devices.module";
+import { FuelModule } from "./fuel/fuel.module";
 import { GmailModule } from "./gmail/gmail.module";
 import { InventoryModule } from "./inventory/inventory.module";
 import { MeetingsModule } from "./meetings/meetings.module";
@@ -23,6 +24,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     DashboardModule,
     CustomersModule,
     DevicesModule,
+    FuelModule,
     WorkOrdersModule,
     QuotesModule,
     PaymentsModule,

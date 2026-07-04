@@ -215,6 +215,12 @@ export type WorkOrder = {
   scheduledAt?: string | null;
   completedAt?: string | null;
   notes?: string | null;
+  reportBeforeNotes?: string | null;
+  reportAfterNotes?: string | null;
+  reportTasks?: string | null;
+  reportTests?: string | null;
+  reportRecommendations?: string | null;
+  reportPhotos?: WorkOrderReportPhoto[] | null;
   createdAt: string;
   updatedAt: string;
   customer: {
@@ -234,6 +240,14 @@ export type WorkOrder = {
   inventoryMovements?: InventoryMovement[];
 };
 
+export type WorkOrderReportPhoto = {
+  id?: string;
+  stage: "BEFORE" | "AFTER";
+  name: string;
+  dataUrl: string;
+  caption?: string;
+};
+
 export type WorkOrderPayload = {
   customerId: string;
   siteId?: string;
@@ -243,6 +257,12 @@ export type WorkOrderPayload = {
   scheduledAt?: string;
   completedAt?: string;
   notes?: string;
+  reportBeforeNotes?: string;
+  reportAfterNotes?: string;
+  reportTasks?: string;
+  reportTests?: string;
+  reportRecommendations?: string;
+  reportPhotos?: WorkOrderReportPhoto[];
 };
 
 export type CustomerDocument = {
@@ -704,6 +724,10 @@ export type WhatsAppChat = {
   unreadCount?: number;
   timestamp?: number;
   lastMessage?: string;
+  labels?: Array<string | { name?: string; label?: string; title?: string }>;
+  label?: string;
+  category?: string;
+  type?: string;
 };
 
 export type WhatsAppSync = {

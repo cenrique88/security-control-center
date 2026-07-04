@@ -22,11 +22,18 @@ type OpenWaChat = {
   unreadCount?: number;
   timestamp?: number;
   lastMessage?: string;
+  labels?: Array<string | { name?: string; label?: string; title?: string }>;
+  label?: string;
+  category?: string;
+  type?: string;
 };
 
 type OpenWaGroup = {
   id: string;
   name?: string;
+  labels?: Array<string | { name?: string; label?: string; title?: string }>;
+  label?: string;
+  category?: string;
 };
 
 @Injectable()

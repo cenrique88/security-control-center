@@ -2511,6 +2511,204 @@ button:disabled {
   background: rgba(8, 19, 31, 0.46);
 }
 
+.workOrderReportEditor,
+.workOrderTechnicalReport {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(126, 197, 210, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 19, 31, 0.46);
+}
+
+.workOrderReportEditor h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+}
+
+.workOrderReportEditor .compactHeader {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.workOrderReportEditor .compactHeader > span {
+  justify-self: end;
+  padding: 7px 10px;
+  border: 1px solid rgba(48, 213, 200, 0.2);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.reportFieldGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.reportFieldGrid textarea {
+  min-height: 78px;
+}
+
+.workOrderReportPhotoGrid,
+.technicalReportPhotos,
+.documentReportPhotos {
+  display: grid;
+  gap: 12px;
+}
+
+.technicalReportPhotos,
+.documentReportPhotos {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.reportPhotoPicker,
+.technicalReportPhotos > section,
+.documentReportPhotos > section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(126, 197, 210, 0.14);
+  border-radius: 8px;
+  background: rgba(13, 29, 44, 0.64);
+}
+
+.reportPhotoPicker > div:first-child {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.reportPhotoPicker > div:first-child > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.reportPhotoPicker strong {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.reportPhotoPicker span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.reportPhotoPicker .secondaryButton {
+  min-height: 42px;
+  padding: 8px 12px;
+}
+
+.reportPhotoPicker input[type="file"] {
+  display: none;
+}
+
+.reportPhotoPicker p,
+.technicalReportPhotos p,
+.documentReportPhotos p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.reportPhotoThumbGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.reportPhotoThumbGrid figure {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+.reportPhotoThumbGrid img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.reportPhotoThumbGrid figcaption {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reportPhotoThumbGrid button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(15, 23, 42, 0.38);
+  border-radius: 999px;
+  background: rgba(3, 10, 18, 0.78);
+  color: var(--text);
+}
+
+.reportInlineActions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.reportInlineActions span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.technicalReportGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.technicalReportGrid article {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(126, 197, 210, 0.14);
+  border-radius: 8px;
+  background: rgba(13, 29, 44, 0.64);
+}
+
+.technicalReportGrid span {
+  display: block;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.technicalReportGrid p {
+  margin: 7px 0 0;
+  color: var(--ink);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 .workOrderDetailNotes {
   margin: 0;
   padding: 12px;
@@ -3643,6 +3841,60 @@ button:disabled {
   gap: 10px;
 }
 
+.whatsAppSectionList {
+  display: grid;
+  gap: 14px;
+}
+
+.whatsAppChatSection {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(126, 197, 210, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 19, 31, 0.46);
+}
+
+.whatsAppChatSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(126, 197, 210, 0.14);
+}
+
+.whatsAppChatSectionHeader span,
+.whatsAppChatSectionHeader strong {
+  display: block;
+}
+
+.whatsAppChatSectionHeader span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.whatsAppChatSectionHeader strong {
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 20px;
+}
+
+.whatsAppChatSectionHeader em {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(42, 224, 214, 0.14);
+  color: var(--accent);
+  font-style: normal;
+  font-weight: 950;
+}
+
 .whatsAppChatList article {
   position: relative;
   display: grid;
@@ -3872,6 +4124,49 @@ button:disabled {
 
 .quoteLaborControls > button {
   white-space: normal;
+}
+
+.quoteTravelControls {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.quoteTravelSummary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid rgba(48, 213, 200, 0.2);
+  border-radius: 8px;
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.quoteTravelSummary svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.quoteTravelSummary div {
+  min-width: 0;
+}
+
+.quoteTravelSummary strong,
+.quoteTravelSummary span {
+  display: block;
+}
+
+.quoteTravelSummary strong {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.quoteTravelSummary span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
 }
 
 .quoteItemList {
@@ -5154,7 +5449,11 @@ body {
 @media (max-width: 760px) {
   .workOrderDetailModal > .deviceDetailHeader,
   .workOrderScheduleBand,
-  .workOrderQuoteFacts {
+  .workOrderQuoteFacts,
+  .workOrderReportPhotoGrid,
+  .technicalReportPhotos,
+  .documentReportPhotos,
+  .technicalReportGrid {
     grid-template-columns: 1fr;
   }
 

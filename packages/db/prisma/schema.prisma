@@ -160,6 +160,12 @@ model WorkOrder {
   scheduledAt DateTime?
   completedAt DateTime?
   notes       String?
+  reportBeforeNotes String?
+  reportAfterNotes  String?
+  reportTasks       String?
+  reportTests       String?
+  reportRecommendations String?
+  reportPhotos Json?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   customer    Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)

@@ -10,6 +10,7 @@ import {
   DollarSign,
   Edit3,
   FileText,
+  Fuel,
   LogOut,
   Mail,
   MapPin,
@@ -78,6 +79,7 @@ import {
   WhatsAppStatus,
   WorkOrder,
   WorkOrderPayload,
+  WorkOrderReportPhoto,
   WorkOrderStatus,
 } from "./lib/api";
 
@@ -260,6 +262,12 @@ const emptyWorkOrderForm: WorkOrderPayload = {
   status: "SCHEDULED",
   scheduledAt: "",
   notes: "",
+  reportBeforeNotes: "",
+  reportAfterNotes: "",
+  reportTasks: "",
+  reportTests: "",
+  reportRecommendations: "",
+  reportPhotos: [],
 };
 
 const emptyQuoteForm: QuotePayload = {
@@ -1897,6 +1905,12 @@ export default function Home() {
       scheduledAt: workOrder.scheduledAt ? toDateTimeLocalValue(new Date(workOrder.scheduledAt)) : "",
       completedAt: workOrder.completedAt ?? "",
       notes: workOrder.notes ?? "",
+      reportBeforeNotes: workOrder.reportBeforeNotes ?? "",
+      reportAfterNotes: workOrder.reportAfterNotes ?? "",
+      reportTasks: workOrder.reportTasks ?? "",
+      reportTests: workOrder.reportTests ?? "",
+      reportRecommendations: workOrder.reportRecommendations ?? "",
+      reportPhotos: workOrder.reportPhotos ?? [],
     });
     setWorkOrderError("");
   }
@@ -3438,6 +3452,7 @@ export default function Home() {
           />
         ) : activeModule === "WhatsApp" ? (
           <WhatsAppView
+            customers={customers}
             loading={whatsAppLoading}
             status={whatsAppStatus}
             sync={whatsAppSync}
@@ -3651,6 +3666,17 @@ function WorkOrderDocumentModal({
 }) {
   const movements = groupWorkOrderMaterials(workOrder.inventoryMovements ?? []);
   const documentNumber = formatWorkOrderNumber(workOrder);
+  const reportPhotos = workOrder.reportPhotos ?? [];
+  const beforePhotos = reportPhotos.filter((photo) => photo.stage === "BEFORE");
+  const afterPhotos = reportPhotos.filter((photo) => photo.stage === "AFTER");
+  const hasTechnicalReport = Boolean(
+    workOrder.reportBeforeNotes ||
+      workOrder.reportAfterNotes ||
+      workOrder.reportTasks ||
+      workOrder.reportTests ||
+      workOrder.reportRecommendations ||
+      reportPhotos.length,
+  );
 
   return (
     <div className="documentOverlay">
@@ -3769,6 +3795,48 @@ function WorkOrderDocumentModal({
             </table>
           </div>
         </section>
+
+        {hasTechnicalReport ? (
+          <section className="documentSection documentTechnicalReport">
+            <h2>Informe tecnico</h2>
+            <div className="documentInfoGrid">
+              {workOrder.reportBeforeNotes ? (
+                <article>
+                  <span>Antes</span>
+                  <p>{workOrder.reportBeforeNotes}</p>
+                </article>
+              ) : null}
+              {workOrder.reportTasks ? (
+                <article>
+                  <span>Trabajo realizado</span>
+                  <p>{workOrder.reportTasks}</p>
+                </article>
+              ) : null}
+              {workOrder.reportAfterNotes ? (
+                <article>
+                  <span>Despues</span>
+                  <p>{workOrder.reportAfterNotes}</p>
+                </article>
+              ) : null}
+              {workOrder.reportTests ? (
+                <article>
+                  <span>Pruebas</span>
+                  <p>{workOrder.reportTests}</p>
+                </article>
+              ) : null}
+              {workOrder.reportRecommendations ? (
+                <article>
+                  <span>Recomendaciones</span>
+                  <p>{workOrder.reportRecommendations}</p>
+                </article>
+              ) : null}
+            </div>
+            <div className="documentReportPhotos">
+              <ReportPhotoPreview title="Antes" photos={beforePhotos} />
+              <ReportPhotoPreview title="Despues" photos={afterPhotos} />
+            </div>
+          </section>
+        ) : null}
 
         <section className="documentSignatures">
           <div>
@@ -5774,6 +5842,52 @@ function WorkOrdersView({
       .slice(0, 6);
   }
 
+  function addReportPhotos(event: ChangeEvent<HTMLInputElement>, stage: WorkOrderReportPhoto["stage"]) {
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) {
+      return;
+    }
+
+    const validFiles = files.filter((file) => file.type.startsWith("image/") && file.size <= 5 * 1024 * 1024);
+    if (validFiles.length !== files.length) {
+      window.alert("Solo se agregan imagenes de hasta 5 MB.");
+    }
+
+    Promise.all(
+      validFiles.map(
+        (file) =>
+          new Promise<WorkOrderReportPhoto>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              resolve({
+                id: `${Date.now()}-${file.name}`,
+                stage,
+                name: file.name,
+                dataUrl: typeof reader.result === "string" ? reader.result : "",
+              });
+            };
+            reader.readAsDataURL(file);
+          }),
+      ),
+    ).then((photos) => {
+      onFormChange({
+        ...workOrderForm,
+        reportPhotos: [...(workOrderForm.reportPhotos ?? []), ...photos.filter((photo) => photo.dataUrl)],
+      });
+    });
+    event.target.value = "";
+  }
+
+  function removeReportPhoto(photoId?: string) {
+    onFormChange({
+      ...workOrderForm,
+      reportPhotos: (workOrderForm.reportPhotos ?? []).filter((photo) => photo.id !== photoId),
+    });
+  }
+
+  const reportBeforePhotos = (workOrderForm.reportPhotos ?? []).filter((photo) => photo.stage === "BEFORE");
+  const reportAfterPhotos = (workOrderForm.reportPhotos ?? []).filter((photo) => photo.stage === "AFTER");
+
   return (
     <section className="workOrdersModule">
       <div className="summaryGrid customerStats" aria-label="Resumen de trabajos">
@@ -5886,6 +6000,81 @@ function WorkOrdersView({
               />
             </label>
           </div>
+
+          <section className="workOrderReportEditor">
+            <div className="sectionHeader compactHeader">
+              <div>
+                <p>Informe tecnico</p>
+                <h3>Antes y despues</h3>
+              </div>
+              <span>
+                {reportBeforePhotos.length} antes / {reportAfterPhotos.length} despues
+              </span>
+            </div>
+            <div className="reportFieldGrid">
+              <label className="wideField">
+                Antes
+                <textarea
+                  value={workOrderForm.reportBeforeNotes ?? ""}
+                  onChange={(event) => onFormChange({ ...workOrderForm, reportBeforeNotes: event.target.value })}
+                  placeholder="Como estaba el sistema, fallas encontradas, riesgos o condiciones del lugar"
+                />
+              </label>
+              <label className="wideField">
+                Trabajo realizado
+                <textarea
+                  value={workOrderForm.reportTasks ?? ""}
+                  onChange={(event) => onFormChange({ ...workOrderForm, reportTasks: event.target.value })}
+                  placeholder="Tareas realizadas, equipos instalados, ajustes, configuraciones"
+                />
+              </label>
+              <label className="wideField">
+                Despues
+                <textarea
+                  value={workOrderForm.reportAfterNotes ?? ""}
+                  onChange={(event) => onFormChange({ ...workOrderForm, reportAfterNotes: event.target.value })}
+                  placeholder="Como quedo el trabajo terminado y que diferencia se aprecia"
+                />
+              </label>
+              <label className="wideField">
+                Pruebas tecnicas
+                <textarea
+                  value={workOrderForm.reportTests ?? ""}
+                  onChange={(event) => onFormChange({ ...workOrderForm, reportTests: event.target.value })}
+                  placeholder="Pruebas de imagen, grabacion, red, alarma, acceso, tension, comunicacion"
+                />
+              </label>
+              <label className="wideField">
+                Recomendaciones al cliente
+                <textarea
+                  value={workOrderForm.reportRecommendations ?? ""}
+                  onChange={(event) => onFormChange({ ...workOrderForm, reportRecommendations: event.target.value })}
+                  placeholder="Mantenimientos sugeridos, mejoras, cuidados, pendientes"
+                />
+              </label>
+            </div>
+            <div className="workOrderReportPhotoGrid">
+              <ReportPhotoPicker
+                title="Fotos antes"
+                photos={reportBeforePhotos}
+                onAdd={(event) => addReportPhotos(event, "BEFORE")}
+                onRemove={removeReportPhoto}
+              />
+              <ReportPhotoPicker
+                title="Fotos despues"
+                photos={reportAfterPhotos}
+                onAdd={(event) => addReportPhotos(event, "AFTER")}
+                onRemove={removeReportPhoto}
+              />
+            </div>
+            <div className="reportInlineActions">
+              <span>Estos datos quedan guardados dentro de la orden y salen en el informe al cliente.</span>
+              <button type="submit" className="secondaryButton" disabled={loading}>
+                <Save size={16} />
+                Guardar informe
+              </button>
+            </div>
+          </section>
 
           {workOrderError ? <p className="formError">{workOrderError}</p> : null}
 
@@ -6141,6 +6330,17 @@ function WorkOrdersView({
             const installAsDevice = Boolean(form.installAsDevice);
             const quoteSummary = parseWorkOrderQuoteNotes(selectedWorkOrder.notes);
             const operationalNotes = quoteSummary ? selectedWorkOrder.site?.address : selectedWorkOrder.notes || selectedWorkOrder.site?.address;
+            const reportPhotos = selectedWorkOrder.reportPhotos ?? [];
+            const detailBeforePhotos = reportPhotos.filter((photo) => photo.stage === "BEFORE");
+            const detailAfterPhotos = reportPhotos.filter((photo) => photo.stage === "AFTER");
+            const hasTechnicalReport = Boolean(
+              selectedWorkOrder.reportBeforeNotes ||
+                selectedWorkOrder.reportAfterNotes ||
+                selectedWorkOrder.reportTasks ||
+                selectedWorkOrder.reportTests ||
+                selectedWorkOrder.reportRecommendations ||
+                reportPhotos.length,
+            );
 
             return (
               <div className="deviceDetailOverlay customerProfileOverlay" onClick={() => setSelectedWorkOrderId(null)}>
@@ -6263,6 +6463,55 @@ function WorkOrdersView({
                   ) : (
                     <p className="workOrderDetailNotes">{operationalNotes || "Sin notas operativas"}</p>
                   )}
+
+                  <section className="workOrderTechnicalReport">
+                    <div className="workOrderMaterialsHeader">
+                      <strong>Informe tecnico</strong>
+                      <span>{hasTechnicalReport ? "Cargado" : "Pendiente"}</span>
+                    </div>
+                    {hasTechnicalReport ? (
+                      <>
+                        <div className="technicalReportGrid">
+                          {selectedWorkOrder.reportBeforeNotes ? (
+                            <article>
+                              <span>Antes</span>
+                              <p>{selectedWorkOrder.reportBeforeNotes}</p>
+                            </article>
+                          ) : null}
+                          {selectedWorkOrder.reportTasks ? (
+                            <article>
+                              <span>Trabajo realizado</span>
+                              <p>{selectedWorkOrder.reportTasks}</p>
+                            </article>
+                          ) : null}
+                          {selectedWorkOrder.reportAfterNotes ? (
+                            <article>
+                              <span>Despues</span>
+                              <p>{selectedWorkOrder.reportAfterNotes}</p>
+                            </article>
+                          ) : null}
+                          {selectedWorkOrder.reportTests ? (
+                            <article>
+                              <span>Pruebas</span>
+                              <p>{selectedWorkOrder.reportTests}</p>
+                            </article>
+                          ) : null}
+                          {selectedWorkOrder.reportRecommendations ? (
+                            <article>
+                              <span>Recomendaciones</span>
+                              <p>{selectedWorkOrder.reportRecommendations}</p>
+                            </article>
+                          ) : null}
+                        </div>
+                        <div className="technicalReportPhotos">
+                          <ReportPhotoPreview title="Antes" photos={detailBeforePhotos} />
+                          <ReportPhotoPreview title="Despues" photos={detailAfterPhotos} />
+                        </div>
+                      </>
+                    ) : (
+                      <p>Sin informe cargado. Toca Editar para agregar fotos e informacion tecnica.</p>
+                    )}
+                  </section>
 
                   <div className="workOrderMaterials">
                     <div className="workOrderMaterialsHeader">
@@ -6408,6 +6657,69 @@ function WorkOrdersView({
   );
 }
 
+function ReportPhotoPicker({
+  title,
+  photos,
+  onAdd,
+  onRemove,
+}: {
+  title: string;
+  photos: WorkOrderReportPhoto[];
+  onAdd: (event: ChangeEvent<HTMLInputElement>) => void;
+  onRemove: (photoId?: string) => void;
+}) {
+  return (
+    <section className="reportPhotoPicker">
+      <div>
+        <div>
+          <strong>{title}</strong>
+          <span>{photos.length} fotos</span>
+        </div>
+        <label className="secondaryButton">
+          <Paperclip size={16} />
+          Agregar
+          <input type="file" accept="image/*" multiple onChange={onAdd} />
+        </label>
+      </div>
+      {photos.length ? (
+        <div className="reportPhotoThumbGrid">
+          {photos.map((photo, index) => (
+            <figure key={photo.id ?? `${photo.name}-${index}`}>
+              <img src={photo.dataUrl} alt={photo.name} />
+              <figcaption>{photo.name}</figcaption>
+              <button type="button" onClick={() => onRemove(photo.id)} aria-label="Quitar foto">
+                <X size={15} />
+              </button>
+            </figure>
+          ))}
+        </div>
+      ) : (
+        <p>Sin fotos cargadas.</p>
+      )}
+    </section>
+  );
+}
+
+function ReportPhotoPreview({ title, photos }: { title: string; photos: WorkOrderReportPhoto[] }) {
+  return (
+    <section>
+      <strong>{title}</strong>
+      {photos.length ? (
+        <div className="reportPhotoThumbGrid">
+          {photos.map((photo, index) => (
+            <figure key={photo.id ?? `${photo.name}-${index}`}>
+              <img src={photo.dataUrl} alt={photo.name} />
+              <figcaption>{photo.name}</figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : (
+        <p>Sin fotos.</p>
+      )}
+    </section>
+  );
+}
+
 function QuotesView({
   customers,
   editingQuoteId,
@@ -6488,8 +6800,16 @@ function QuotesView({
   const [quoteExecutionAt, setQuoteExecutionAt] = useState("");
   const [discountAmountValue, setDiscountAmountValue] = useState("0");
   const [editingDiscountAmount, setEditingDiscountAmount] = useState(false);
+  const [travelKilometers, setTravelKilometers] = useState<number>(0);
+  const [fuelPricePerLiter, setFuelPricePerLiter] = useState<number>(88.67);
+  const [fuelKmPerLiter, setFuelKmPerLiter] = useState<number>(10);
+  const [fuelUpdating, setFuelUpdating] = useState(false);
+  const [fuelMessage, setFuelMessage] = useState("Nafta Super Uruguay");
   const quoteCurrency = (quoteForm.currency || "UYU").toUpperCase();
   const normalizedExchangeRate = Math.max(0, Number(quoteExchangeRate) || 0);
+  const estimatedFuelLiters = fuelKmPerLiter > 0 ? travelKilometers / fuelKmPerLiter : 0;
+  const travelCostUyu = Math.round(Math.max(0, estimatedFuelLiters * fuelPricePerLiter) * 100) / 100;
+  const travelCost = convertBetweenQuoteCurrencies(travelCostUyu, "UYU", quoteCurrency);
   const normalizedQuoteCustomerQuery = quoteCustomerQuery.trim().toLowerCase();
   const selectedQuote = quotes.find((quote) => quote.id === selectedQuoteId) ?? null;
   const quoteCustomerResults = customers
@@ -6543,6 +6863,10 @@ function QuotesView({
       setCatalogUnitPrice(convertQuotePrice(Number(priceBookItem?.salePrice ?? 0) || 0, priceBookItem?.currency));
     }
   }, [inventoryItems, priceBookItems, quoteCurrency, normalizedExchangeRate, quoteForm.taxIncluded, selectedCatalogItem?.id, selectedCatalogItem?.source]);
+
+  useEffect(() => {
+    refreshFuelPrice();
+  }, []);
 
   function convertQuotePrice(amount: number, sourceCurrency?: string | null) {
     const source = (sourceCurrency || quoteCurrency).toUpperCase();
@@ -6747,6 +7071,39 @@ function QuotesView({
     onFormChange({ ...quoteForm, items: [...quoteItems, nextItem], subtotal: 0 });
     setLaborDescription("");
     setLaborUnitPrice(0);
+  }
+
+  async function refreshFuelPrice() {
+    setFuelUpdating(true);
+    try {
+      const fuel = await apiRequest<{ pricePerLiter: number; updatedAt?: string; fallback?: boolean }>("/api/fuel/uy-super");
+      const nextPrice = Number(fuel.pricePerLiter) || 88.67;
+      setFuelPricePerLiter(Math.round(nextPrice * 100) / 100);
+      setFuelMessage(fuel.fallback ? "Valor de respaldo editable" : "Valor oficial actualizado");
+    } catch {
+      setFuelMessage("No se pudo actualizar; podes editarlo manualmente");
+    } finally {
+      setFuelUpdating(false);
+    }
+  }
+
+  function addTravelExpenseItem() {
+    if (travelKilometers <= 0 || fuelKmPerLiter <= 0 || fuelPricePerLiter <= 0 || travelCost <= 0) {
+      return;
+    }
+
+    const nextItem: NonNullable<QuotePayload["items"]>[number] = {
+      type: "EXPENSE",
+      category: "Combustible",
+      description: `Combustible Nafta Super - ${travelKilometers} km recorridos`,
+      quantity: 1,
+      unit: "recorrido",
+      unitPrice: travelCost,
+      taxRate: 22,
+      unitCost: travelCost,
+    };
+
+    onFormChange({ ...quoteForm, items: [...quoteItems, nextItem], subtotal: 0 });
   }
 
   function printQuoteDetail() {
@@ -7074,6 +7431,55 @@ function QuotesView({
                     </div>
                   </>
                 ) : null}
+                <span>Recorrido / combustible</span>
+                <div className="quoteCatalogControls quoteTravelControls">
+                  <label className="inlineCatalogField">
+                    Km recorridos
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={travelKilometers}
+                      onChange={(event) => setTravelKilometers(Math.max(0, Number(event.target.value) || 0))}
+                    />
+                  </label>
+                  <label className="inlineCatalogField">
+                    Km por litro
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={fuelKmPerLiter}
+                      onChange={(event) => setFuelKmPerLiter(Math.max(0, Number(event.target.value) || 0))}
+                    />
+                  </label>
+                  <label className="inlineCatalogField">
+                    Nafta Super (UYU/L)
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={fuelPricePerLiter}
+                      onChange={(event) => setFuelPricePerLiter(Math.max(0, Number(event.target.value) || 0))}
+                    />
+                  </label>
+                  <div className="quoteTravelSummary">
+                    <Fuel size={18} />
+                    <div>
+                      <strong>{formatPrice(travelCost, quoteCurrency)}</strong>
+                      <span>
+                        {estimatedFuelLiters.toFixed(2)} L - {fuelMessage}
+                      </span>
+                    </div>
+                  </div>
+                  <button type="button" className="secondaryButton" onClick={refreshFuelPrice} disabled={fuelUpdating}>
+                    <RefreshCw size={16} className={fuelUpdating ? "spin" : ""} />
+                    Actualizar precio
+                  </button>
+                  <button type="button" className="secondaryButton" onClick={addTravelExpenseItem} disabled={travelCost <= 0}>
+                    Agregar combustible
+                  </button>
+                </div>
                 {quoteItems.length ? (
                   <div className="quoteItemList">
                     {quoteItems.map((item, index) => (
@@ -8701,6 +9107,7 @@ function GmailView({
 }
 
 function WhatsAppView({
+  customers,
   loading,
   status,
   sync,
@@ -8715,6 +9122,7 @@ function WhatsAppView({
   onRefresh,
   onReply,
 }: {
+  customers: Customer[];
   loading: boolean;
   status: WhatsAppStatus;
   sync: WhatsAppSync;
@@ -8734,6 +9142,7 @@ function WhatsAppView({
     ...sync.chats.map((chat) => ({ id: chat.id, label: chat.name || chat.id })),
     ...sync.groups.map((group) => ({ id: group.id, label: group.name || group.id })),
   ];
+  const chatSections = groupWhatsAppChats(sync.chats, sync.groups, customers);
 
   return (
     <section className="whatsAppModule">
@@ -8917,22 +9326,35 @@ function WhatsAppView({
               <h2>Chats recientes</h2>
             </div>
           </div>
-          <div className="whatsAppChatList">
-            {sync.chats.map((chat) => (
-              <article key={chat.id} className={chat.unreadCount ? "unreadChat" : ""}>
-                <div>
-                  <strong>{chat.name || chat.id}</strong>
-                  <span>{chat.isGroup ? "Grupo" : "Chat"} - {formatWhatsAppTime(chat.timestamp)}</span>
+          <div className="whatsAppSectionList">
+            {chatSections.map((section) => (
+              <section key={section.title} className="whatsAppChatSection">
+                <div className="whatsAppChatSectionHeader">
+                  <div>
+                    <span>{section.caption}</span>
+                    <strong>{section.title}</strong>
+                  </div>
+                  <em>{section.chats.length}</em>
                 </div>
-                <p>{chat.lastMessage || "Sin ultimo mensaje disponible"}</p>
-                <button type="button" className="secondaryButton" onClick={() => onReply(chat)}>
-                  <MessageSquare size={16} />
-                  Responder
-                </button>
-                {chat.unreadCount ? <em>{chat.unreadCount}</em> : null}
-              </article>
+                <div className="whatsAppChatList">
+                  {section.chats.map((chat) => (
+                    <article key={chat.id} className={chat.unreadCount ? "unreadChat" : ""}>
+                      <div>
+                        <strong>{chat.name || chat.id}</strong>
+                        <span>{chat.isGroup ? "Grupo" : "Chat"} - {formatWhatsAppTime(chat.timestamp)}</span>
+                      </div>
+                      <p>{chat.lastMessage || "Sin ultimo mensaje disponible"}</p>
+                      <button type="button" className="secondaryButton" onClick={() => onReply(chat)}>
+                        <MessageSquare size={16} />
+                        Responder
+                      </button>
+                      {chat.unreadCount ? <em>{chat.unreadCount}</em> : null}
+                    </article>
+                  ))}
+                </div>
+              </section>
             ))}
-            {!sync.chats.length ? <p className="emptyPanel">Todavia no hay chats sincronizados.</p> : null}
+            {!sync.chats.length && !sync.groups.length ? <p className="emptyPanel">Todavia no hay chats sincronizados.</p> : null}
           </div>
         </section>
 
@@ -9311,6 +9733,12 @@ function cleanWorkOrderPayload(form: WorkOrderPayload): WorkOrderPayload {
     scheduledAt: form.scheduledAt || undefined,
     completedAt: form.completedAt || undefined,
     notes: form.notes?.trim() || undefined,
+    reportBeforeNotes: form.reportBeforeNotes?.trim() || undefined,
+    reportAfterNotes: form.reportAfterNotes?.trim() || undefined,
+    reportTasks: form.reportTasks?.trim() || undefined,
+    reportTests: form.reportTests?.trim() || undefined,
+    reportRecommendations: form.reportRecommendations?.trim() || undefined,
+    reportPhotos: form.reportPhotos ?? [],
   };
 }
 
@@ -9685,6 +10113,61 @@ function formatTime(value?: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function groupWhatsAppChats(chats: WhatsAppChat[], groups: WhatsAppChat[], customers: Customer[]) {
+  const sections = new Map<string, { title: string; caption: string; chats: WhatsAppChat[] }>();
+  const addToSection = (title: string, caption: string, chat: WhatsAppChat) => {
+    if (!sections.has(title)) {
+      sections.set(title, { title, caption, chats: [] });
+    }
+    sections.get(title)?.chats.push(chat);
+  };
+  const customerPhones = new Set(customers.map((customer) => normalizeWhatsAppComparable(customer.phone)).filter(Boolean));
+
+  chats.forEach((chat) => {
+    const label = getWhatsAppListLabel(chat);
+    if (label) {
+      addToSection(label, "Lista de WhatsApp", chat);
+      return;
+    }
+
+    const chatPhone = normalizeWhatsAppComparable(chat.id);
+    const chatName = `${chat.name ?? ""} ${chat.id}`.toLowerCase();
+    if (customerPhones.has(chatPhone)) {
+      addToSection("Clientes", "Contactos vinculados al CRM", chat);
+    } else if (chatName.includes("security solutions") || chatName.includes("securitysolutions") || chatName.includes("sscc")) {
+      addToSection("Security Solutions", "Equipo interno y operacion", chat);
+    } else {
+      addToSection("Nuevo cliente", "Contactos sin ficha en el CRM", chat);
+    }
+  });
+
+  groups.forEach((group) => {
+    const label = getWhatsAppListLabel(group);
+    addToSection(label || "Grupos", label ? "Lista de WhatsApp" : "Grupos sincronizados", { ...group, isGroup: true });
+  });
+
+  const order = ["Clientes", "Security Solutions", "Nuevo cliente", "Grupos"];
+  return Array.from(sections.values()).sort((left, right) => {
+    const leftIndex = order.indexOf(left.title);
+    const rightIndex = order.indexOf(right.title);
+    if (leftIndex !== -1 || rightIndex !== -1) {
+      return (leftIndex === -1 ? 999 : leftIndex) - (rightIndex === -1 ? 999 : rightIndex);
+    }
+    return left.title.localeCompare(right.title);
+  });
+}
+
+function getWhatsAppListLabel(chat: WhatsAppChat) {
+  const labels = chat.labels
+    ?.map((label) => (typeof label === "string" ? label : label.name || label.label || label.title || ""))
+    .filter(Boolean);
+  return labels?.[0] || chat.label || chat.category || "";
+}
+
+function normalizeWhatsAppComparable(value?: string | null) {
+  return (value ?? "").replace(/\D/g, "").replace(/^598/, "");
 }
 
 function formatWhatsAppTime(value?: number) {
