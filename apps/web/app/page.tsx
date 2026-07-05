@@ -70,7 +70,10 @@ import {
   QuotePricingMode,
   QuoteStatus,
   SitePayload,
+  TraccarGeofenceSync,
+  TraccarSettings,
   Vehicle,
+  VehicleDailySummary,
   VehiclePayload,
   WhatsAppChat,
   WhatsAppDailyMeetingSummary,
@@ -89,6 +92,7 @@ const modules = [
   { name: "Tercerizados", icon: Handshake },
   { name: "Trabajos", icon: Wrench },
   { name: "Agenda", icon: CalendarDays },
+  { name: "Despachador", icon: MapPin },
   { name: "Reuniones", icon: PhoneCall },
   { name: "Presupuestos", icon: ClipboardList },
   { name: "Cobros", icon: DollarSign },
@@ -231,6 +235,8 @@ const emptyCustomerForm: CustomerPayload = {
   email: "",
   phone: "",
   address: "",
+  latitude: undefined,
+  longitude: undefined,
   logoUrl: "",
   type: "NORMAL",
   status: "PROSPECT",
@@ -240,6 +246,8 @@ const emptyCustomerForm: CustomerPayload = {
 const emptySiteForm: SitePayload = {
   name: "",
   address: "",
+  latitude: undefined,
+  longitude: undefined,
   notes: "",
 };
 
@@ -326,6 +334,7 @@ const emptyVehicleForm: VehiclePayload = {
   name: "",
   plate: "",
   traccarDeviceId: "",
+  fuelKmPerLiter: 10,
   active: true,
 };
 
@@ -585,6 +594,7 @@ export default function Home() {
   const [gmailError, setGmailError] = useState("");
   const [whatsAppError, setWhatsAppError] = useState("");
   const [locating, setLocating] = useState(false);
+  const [siteLocating, setSiteLocating] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [workOrderDocument, setWorkOrderDocument] = useState<WorkOrder | null>(null);
@@ -1085,6 +1095,9 @@ export default function Home() {
         break;
       case "Agenda":
         void Promise.all([loadAgenda(token), loadMeetings(token, null)]);
+        break;
+      case "Despachador":
+        void Promise.all([loadAgenda(token), loadMeetings(token, null), loadVehicles(token)]);
         break;
       case "Reuniones":
         void loadMeetings(token, null);
@@ -2513,6 +2526,31 @@ export default function Home() {
     }
   }
 
+  async function deleteVehicle(vehicle: Vehicle) {
+    if (!token) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Eliminar el vehiculo "${vehicle.name}"? Esta accion no se puede deshacer.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setVehiclesLoading(true);
+    setVehicleError("");
+    try {
+      await apiRequest<Vehicle>(`/api/vehicles/${vehicle.id}`, {
+        token,
+        method: "DELETE",
+      });
+      await Promise.all([loadVehicles(token), loadSummary(token)]);
+    } catch {
+      setVehicleError("No se pudo eliminar el vehiculo");
+    } finally {
+      setVehiclesLoading(false);
+    }
+  }
+
   async function updateWorkOrderStatus(id: string, nextStatus: WorkOrderStatus) {
     if (!token) {
       return;
@@ -2550,6 +2588,8 @@ export default function Home() {
       email: customer.email ?? "",
       phone: customer.phone ?? "",
       address: customer.address ?? "",
+      latitude: customer.latitude === null || customer.latitude === undefined ? undefined : Number(customer.latitude),
+      longitude: customer.longitude === null || customer.longitude === undefined ? undefined : Number(customer.longitude),
       logoUrl: customer.logoUrl ?? "",
       type: customer.type ?? "NORMAL",
       status: customer.status,
@@ -2746,11 +2786,15 @@ export default function Home() {
           setCustomerForm((currentForm) => ({
             ...currentForm,
             address: address || `GPS: ${latitude}, ${longitude}`,
+            latitude: Number(latitude),
+            longitude: Number(longitude),
           }));
         } catch {
           setCustomerForm((currentForm) => ({
             ...currentForm,
             address: `GPS: ${latitude}, ${longitude}`,
+            latitude: Number(latitude),
+            longitude: Number(longitude),
           }));
           setCustomerError("No se pudo convertir la ubicacion en direccion");
         } finally {
@@ -2760,6 +2804,70 @@ export default function Home() {
       () => {
         setCustomerError("No se pudo obtener la ubicacion del equipo");
         setLocating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0,
+      },
+    );
+  }
+
+  function captureSiteLocation() {
+    if (!window.isSecureContext) {
+      setSiteError("El navegador bloquea la ubicacion en HTTP. Para usarla desde el celular hay que entrar por HTTPS.");
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      setSiteError("Este navegador no permite geolocalizacion");
+      return;
+    }
+
+    setSiteLocating(true);
+    setSiteError("");
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const latitude = position.coords.latitude.toFixed(6);
+        const longitude = position.coords.longitude.toFixed(6);
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&addressdetails=1`,
+            {
+              headers: {
+                Accept: "application/json",
+              },
+            },
+          );
+
+          if (!response.ok) {
+            throw new Error("Reverse geocoding failed");
+          }
+
+          const data = (await response.json()) as { display_name?: string };
+          const address = data.display_name?.trim();
+
+          setSiteForm((currentForm) => ({
+            ...currentForm,
+            address: address || `GPS: ${latitude}, ${longitude}`,
+            latitude: Number(latitude),
+            longitude: Number(longitude),
+          }));
+        } catch {
+          setSiteForm((currentForm) => ({
+            ...currentForm,
+            address: `GPS: ${latitude}, ${longitude}`,
+            latitude: Number(latitude),
+            longitude: Number(longitude),
+          }));
+          setSiteError("No se pudo convertir la ubicacion en direccion");
+        } finally {
+          setSiteLocating(false);
+        }
+      },
+      () => {
+        setSiteError("No se pudo obtener la ubicacion del equipo");
+        setSiteLocating(false);
       },
       {
         enableHighAccuracy: true,
@@ -3005,35 +3113,16 @@ export default function Home() {
         <nav className="nav">
           {modules.map((module) => {
             const Icon = module.icon;
-            const enabled =
-              module.name === "Dashboard" ||
-              module.name === "Clientes" ||
-              module.name === "Tercerizados" ||
-              module.name === "Trabajos" ||
-              module.name === "Agenda" ||
-              module.name === "Reuniones" ||
-              module.name === "Presupuestos" ||
-              module.name === "Cobros" ||
-              module.name === "Almacen" ||
-              module.name === "Equipos" ||
-              module.name === "Vehiculos" ||
-              module.name === "Gmail" ||
-              module.name === "WhatsApp";
             return (
               <button
                 type="button"
                 key={module.name}
                 className={module.name === activeModule ? "active" : ""}
                 onClick={() => {
-                  if (!enabled) {
-                    return;
-                  }
-
                   setActiveModule(module.name);
                   setMobileMenuOpen(false);
                 }}
-                disabled={!enabled}
-                title={enabled ? module.name : "Modulo pendiente"}
+                title={module.name}
               >
                 <Icon size={18} />
                 <span>{module.name}</span>
@@ -3076,6 +3165,8 @@ export default function Home() {
                       ? loadWorkOrders()
                       : activeModule === "Agenda"
                         ? Promise.all([loadAgenda(), loadMeetings(token, null)])
+                        : activeModule === "Despachador"
+                          ? Promise.all([loadAgenda(), loadMeetings(token, null), loadVehicles()])
                         : activeModule === "Reuniones"
                           ? loadMeetings(token, null)
                           : activeModule === "Presupuestos"
@@ -3194,6 +3285,7 @@ export default function Home() {
             editingCustomerId={editingCustomerId}
             locating={locating}
             loading={customersLoading}
+            siteLocating={siteLocating}
             selectedCustomer={selectedCustomer?.type === "NORMAL" || !selectedCustomer?.type ? selectedCustomer : null}
             selectedCustomerId={selectedCustomer?.type === "NORMAL" || !selectedCustomer?.type ? selectedCustomerId : null}
             siteError={siteError}
@@ -3208,6 +3300,7 @@ export default function Home() {
             onEditCustomer={editCustomer}
             onFormChange={setCustomerForm}
             onLocate={captureCustomerLocation}
+            onLocateSite={captureSiteLocation}
             onAddDocument={addCustomerDocument}
             onComposeMail={composeCustomerMail}
             onComposeWhatsApp={composeCustomerWhatsApp}
@@ -3240,6 +3333,7 @@ export default function Home() {
             editingCustomerId={editingCustomerId}
             locating={locating}
             loading={customersLoading}
+            siteLocating={siteLocating}
             selectedCustomer={selectedCustomer?.type === "THIRD_PARTY" ? selectedCustomer : null}
             selectedCustomerId={selectedCustomer?.type === "THIRD_PARTY" ? selectedCustomerId : null}
             siteError={siteError}
@@ -3254,6 +3348,7 @@ export default function Home() {
             onEditCustomer={editCustomer}
             onFormChange={setCustomerForm}
             onLocate={captureCustomerLocation}
+            onLocateSite={captureSiteLocation}
             onAddDocument={addCustomerDocument}
             onComposeMail={composeCustomerMail}
             onComposeWhatsApp={composeCustomerWhatsApp}
@@ -3322,6 +3417,19 @@ export default function Home() {
             onStatusChange={setAgendaStatus}
             onUpdateMeetingStatus={updateMeetingStatus}
             onUpdateStatus={updateWorkOrderStatus}
+          />
+        ) : activeModule === "Despachador" ? (
+          <DispatcherView
+            agendaDate={agendaDate}
+            loading={agendaLoading}
+            selectedDate={selectedAgendaDate}
+            token={token}
+            vehicles={vehicles}
+            workOrders={agendaToday}
+            onDateChange={setAgendaDate}
+            onRefresh={() => {
+              void Promise.all([loadAgenda(), loadMeetings(token, null), loadVehicles()]);
+            }}
           />
         ) : activeModule === "Reuniones" ? (
           <MeetingsView
@@ -3428,6 +3536,7 @@ export default function Home() {
         ) : activeModule === "Vehiculos" ? (
           <VehiclesView
             loading={vehiclesLoading}
+            token={token}
             vehicleError={vehicleError}
             vehicleForm={vehicleForm}
             vehicleSearch={vehicleSearch}
@@ -3439,6 +3548,7 @@ export default function Home() {
             onSave={saveVehicle}
             onSearchChange={setVehicleSearch}
             onStatusChange={setVehicleStatus}
+            onDelete={deleteVehicle}
             onToggleActive={toggleVehicleActive}
           />
         ) : activeModule === "Gmail" ? (
@@ -3763,7 +3873,7 @@ function WorkOrderDocumentModal({
           <p>{workOrder.notes || "Trabajo finalizado segun lo solicitado por el cliente."}</p>
         </section>
 
-        <section className="documentSection">
+        <section className="documentSection documentMaterialsSection">
           <h2>Materiales y equipos instalados</h2>
           <div className="documentTableWrap">
             <table className="documentTable">
@@ -3955,6 +4065,37 @@ function AddressDisplay({ value, fallback = "Sin direccion" }: { value?: string 
   );
 }
 
+type GeoZoneTarget = {
+  name?: string | null;
+  address?: string | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  traccarGeofenceId?: number | null;
+};
+
+function GeoZoneButton({ target, compact = false }: { target: GeoZoneTarget; compact?: boolean }) {
+  const geo = getGeoZoneInfo(target);
+
+  return (
+    <button
+      type="button"
+      className={`geoZoneButton ${geo.active ? "active" : "inactive"} ${compact ? "compact" : ""}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (geo.mapUrl) {
+          window.open(geo.mapUrl, "_blank", "noopener,noreferrer");
+        }
+      }}
+      disabled={!geo.mapUrl}
+      title={geo.mapUrl ? "Abrir ubicacion en Google Maps" : "Carga coordenadas o direccion para abrir Maps"}
+    >
+      <MapPin size={compact ? 14 : 16} />
+      <span>{geo.active ? "Geozona activa" : "Geozona desactivada"}</span>
+      {geo.synced ? <small>Traccar</small> : null}
+    </button>
+  );
+}
+
 function DashboardView({
   loading,
   summary,
@@ -4036,6 +4177,7 @@ function CustomersView({
   editingCustomerId,
   locating,
   loading,
+  siteLocating,
   selectedCustomer,
   selectedCustomerId,
   siteError,
@@ -4047,6 +4189,7 @@ function CustomersView({
   onEditCustomer,
   onFormChange,
   onLocate,
+  onLocateSite,
   onAddDocument,
   onComposeMail,
   onComposeWhatsApp,
@@ -4077,6 +4220,7 @@ function CustomersView({
   editingCustomerId: string | null;
   locating: boolean;
   loading: boolean;
+  siteLocating: boolean;
   selectedCustomer: Customer | null;
   selectedCustomerId: string | null;
   siteError: string;
@@ -4088,6 +4232,7 @@ function CustomersView({
   onEditCustomer: (customer: Customer) => void;
   onFormChange: (form: CustomerPayload) => void;
   onLocate: () => void;
+  onLocateSite: () => void;
   onAddDocument: (customerId: string, payload: CustomerDocumentPayload) => Promise<void>;
   onComposeMail: (customer: Customer) => void;
   onComposeWhatsApp: (customer: Customer) => void;
@@ -4266,10 +4411,44 @@ function CustomersView({
               </span>
               <input
                 value={customerForm.address}
-                onChange={(event) => onFormChange({ ...customerForm, address: event.target.value })}
-                placeholder="Direccion principal"
+                onChange={(event) => onFormChange(applyCoordinatesFromText({ ...customerForm, address: event.target.value }))}
+                placeholder="Direccion principal, coordenadas o link de Google Maps"
               />
             </label>
+            <label>
+              Latitud
+              <input
+                type="number"
+                step="0.000001"
+                value={customerForm.latitude ?? ""}
+                onChange={(event) =>
+                  onFormChange({
+                    ...customerForm,
+                    latitude: event.target.value === "" ? undefined : Number(event.target.value),
+                  })
+                }
+                placeholder="-34.901112"
+              />
+            </label>
+            <label>
+              Longitud
+              <input
+                type="number"
+                step="0.000001"
+                value={customerForm.longitude ?? ""}
+                onChange={(event) =>
+                  onFormChange({
+                    ...customerForm,
+                    longitude: event.target.value === "" ? undefined : Number(event.target.value),
+                  })
+                }
+                placeholder="-56.164532"
+              />
+            </label>
+            <div className="geoStatus wideField">
+              <MapPin size={16} />
+              <span>{buildGeoStatusText(customerForm.latitude, customerForm.longitude, "Sin coordenadas: no entrara en rutas automaticas hasta cargar GPS.")}</span>
+            </div>
             <label className="wideField">
               <span className="fieldLabelRow">
                 Logo PNG
@@ -4356,6 +4535,7 @@ function CustomersView({
                   <th>{copy.tableName}</th>
                   <th>Contacto</th>
                   <th className="centerColumn">Estado</th>
+                  <th className="centerColumn">Geozona</th>
                   <th className="centerColumn">Sitios</th>
                   <th className="centerColumn">Trabajos</th>
                   <th aria-label="Acciones" />
@@ -4381,6 +4561,9 @@ function CustomersView({
                         {statusLabels[customer.status]}
                       </span>
                     </td>
+                    <td data-label="Geozona" className="centerColumn">
+                      <GeoZoneButton target={customer} />
+                    </td>
                     <td data-label="Sitios" className="centerColumn countCell">{customer._count.sites}</td>
                     <td data-label="Trabajos" className="centerColumn countCell">{customer._count.workOrders}</td>
                     <td data-label="Acciones">
@@ -4400,7 +4583,7 @@ function CustomersView({
                 ))}
                 {!customers.length ? (
                   <tr>
-                    <td colSpan={6} className="emptyTable">
+                    <td colSpan={7} className="emptyTable">
                       {copy.emptyList}
                     </td>
                   </tr>
@@ -4434,11 +4617,49 @@ function CustomersView({
                 />
               </label>
               <label>
-                Direccion
+                <span className="fieldLabelRow">
+                  Direccion
+                  <button type="button" className="geoButton" onClick={onLocateSite} disabled={!selectedCustomer || siteLocating}>
+                    <MapPin size={16} />
+                    {siteLocating ? "Ubicando" : "Usar ubicacion"}
+                  </button>
+                </span>
                 <input
                   value={siteForm.address}
-                  onChange={(event) => onSiteFormChange({ ...siteForm, address: event.target.value })}
-                  placeholder="Direccion de instalacion"
+                  onChange={(event) => onSiteFormChange(applyCoordinatesFromText({ ...siteForm, address: event.target.value }))}
+                  placeholder="Direccion, coordenadas o link de Google Maps"
+                  disabled={!selectedCustomer}
+                />
+              </label>
+              <label>
+                Latitud
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={siteForm.latitude ?? ""}
+                  onChange={(event) =>
+                    onSiteFormChange({
+                      ...siteForm,
+                      latitude: event.target.value === "" ? undefined : Number(event.target.value),
+                    })
+                  }
+                  placeholder="-34.901112"
+                  disabled={!selectedCustomer}
+                />
+              </label>
+              <label>
+                Longitud
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={siteForm.longitude ?? ""}
+                  onChange={(event) =>
+                    onSiteFormChange({
+                      ...siteForm,
+                      longitude: event.target.value === "" ? undefined : Number(event.target.value),
+                    })
+                  }
+                  placeholder="-56.164532"
                   disabled={!selectedCustomer}
                 />
               </label>
@@ -4451,6 +4672,10 @@ function CustomersView({
                   disabled={!selectedCustomer}
                 />
               </label>
+              <div className="geoStatus">
+                <MapPin size={16} />
+                <span>{buildGeoStatusText(siteForm.latitude, siteForm.longitude, "Sin GPS: este sitio quedara fuera de la ruta automatica.")}</span>
+              </div>
               {siteError ? <p className="formError">{siteError}</p> : null}
               <button type="submit" className="primaryButton" disabled={!selectedCustomer || sitesLoading}>
                 <Plus size={18} />
@@ -4469,6 +4694,7 @@ function CustomersView({
                   <div className="siteMeta">
                     <span>{site._count.equipment} equipos</span>
                     <span>{site._count.workOrders} trabajos</span>
+                    <GeoZoneButton target={site} compact />
                   </div>
                 </article>
               ))}
@@ -4690,6 +4916,10 @@ function CustomerProfileModal({
                   <dd><AddressDisplay value={profile.customer.address} /></dd>
                 </div>
                 <div>
+                  <dt>Geozona</dt>
+                  <dd><GeoZoneButton target={profile.customer} /></dd>
+                </div>
+                <div>
                   <dt>Notas</dt>
                   <dd>{profile.customer.notes || "Sin notas"}</dd>
                 </div>
@@ -4703,7 +4933,10 @@ function CustomerProfileModal({
                   <article key={site.id}>
                     <strong>{site.name}</strong>
                     <AddressDisplay value={site.address} />
-                    <small>{site._count.equipment} equipos - {site._count.workOrders} trabajos</small>
+                    <div className="profileGeoRow">
+                      <small>{site._count.equipment} equipos - {site._count.workOrders} trabajos</small>
+                      <GeoZoneButton target={site} compact />
+                    </div>
                   </article>
                 ))}
                 {!profile.sites.length ? <p className="emptyPanel">Sin sitios cargados.</p> : null}
@@ -5044,6 +5277,610 @@ function AgendaView({
           </div>
           <AgendaWorkList workOrders={agendaWeek} emptyText="No hay trabajos en la semana." onUpdateStatus={onUpdateStatus} compact />
           <AgendaMeetingList meetings={agendaMeetingsWeek} emptyText="No hay reuniones en la semana." onUpdateStatus={onUpdateMeetingStatus} compact />
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function DispatcherView({
+  agendaDate,
+  loading,
+  selectedDate,
+  token,
+  vehicles,
+  workOrders,
+  onDateChange,
+  onRefresh,
+}: {
+  agendaDate: string;
+  loading: boolean;
+  selectedDate: Date;
+  token?: string | null;
+  vehicles: Vehicle[];
+  workOrders: WorkOrder[];
+  onDateChange: (value: string) => void;
+  onRefresh: () => void;
+}) {
+  const [stopKinds, setStopKinds] = useState<Record<string, DispatchStopKind>>({});
+  const [stopDurations, setStopDurations] = useState<Record<string, number>>({});
+  const [stopZones, setStopZones] = useState<Record<string, string>>({});
+  const [stopTimes, setStopTimes] = useState<Record<string, string>>({});
+  const [savingStopId, setSavingStopId] = useState<string | null>(null);
+  const [dispatchMessage, setDispatchMessage] = useState("");
+  const [dailySummary, setDailySummary] = useState<VehicleDailySummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [selectedVehicleId, setSelectedVehicleId] = useState("");
+  const [routeCopied, setRouteCopied] = useState(false);
+  const [routeReviewed, setRouteReviewed] = useState(false);
+  const [materialsConfirmed, setMaterialsConfirmed] = useState(false);
+  const [baseForm, setBaseForm] = useState({
+    companyName: "Security Solutions",
+    companyAddress: "",
+    companyLatitude: undefined as number | undefined,
+    companyLongitude: undefined as number | undefined,
+  });
+  const [baseSaving, setBaseSaving] = useState(false);
+  const [baseMessage, setBaseMessage] = useState("");
+  const plan = useMemo(
+    () => buildDispatchPlan(workOrders, baseForm, { durations: stopDurations, zones: stopZones }),
+    [workOrders, baseForm, stopDurations, stopZones],
+  );
+  const activeVehicles = vehicles.filter((vehicle) => vehicle.active);
+  const selectedVehicle = activeVehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? activeVehicles[0] ?? null;
+  const mapsUrl = useMemo(() => buildGoogleMapsRouteUrl(plan.orderedStops, plan.baseLocation), [plan.orderedStops, plan.baseLocation]);
+  const dispatchSummary = useMemo(() => buildDispatcherDailySummary(plan, workOrders, selectedVehicle, dailySummary), [plan, workOrders, selectedVehicle, dailySummary]);
+  const routeReady = routeReviewed || Boolean(mapsUrl && plan.orderedStops.length && !plan.missingLocation.length);
+  const materialsReady =
+    materialsConfirmed ||
+    (workOrders.length > 0 && workOrders.every((workOrder) => (workOrder.inventoryMovements?.length ?? 0) > 0));
+
+  useEffect(() => {
+    setRouteReviewed(false);
+    setMaterialsConfirmed(false);
+    setStopDurations({});
+    setStopZones({});
+    setStopTimes({});
+    setDispatchMessage("");
+  }, [agendaDate, workOrders]);
+
+  useEffect(() => {
+    if (!token || !selectedVehicle?.traccarDeviceId) {
+      setDailySummary(null);
+      return;
+    }
+
+    let active = true;
+    async function loadDailySummary() {
+      setSummaryLoading(true);
+      try {
+        const data = await apiRequest<VehicleDailySummary>(
+          `/api/vehicles/${selectedVehicle!.id}/traccar/daily?date=${encodeURIComponent(agendaDate)}`,
+          { token: token! },
+        );
+        if (active) {
+          setDailySummary(data);
+        }
+      } catch {
+        if (active) {
+          setDailySummary(null);
+        }
+      } finally {
+        if (active) {
+          setSummaryLoading(false);
+        }
+      }
+    }
+
+    void loadDailySummary();
+    const timer = window.setInterval(loadDailySummary, 5 * 60 * 1000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [agendaDate, selectedVehicle?.id, selectedVehicle?.traccarDeviceId, token]);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    let active = true;
+    apiRequest<TraccarSettings>("/api/vehicles/traccar/settings", { token })
+      .then((settings) => {
+        if (!active) {
+          return;
+        }
+        setBaseForm({
+          companyName: settings.companyName ?? "Security Solutions",
+          companyAddress: settings.companyAddress ?? "",
+          companyLatitude: hasCoordinates(settings.companyLatitude, settings.companyLongitude) ? Number(settings.companyLatitude) : undefined,
+          companyLongitude: hasCoordinates(settings.companyLatitude, settings.companyLongitude) ? Number(settings.companyLongitude) : undefined,
+        });
+      })
+      .catch((error) => {
+        if (active) {
+          setBaseMessage(`No se pudo cargar la base operativa: ${getErrorMessage(error)}`);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  async function copyRouteSummary() {
+    const text = buildDispatchRouteText(plan.orderedStops, selectedVehicle, plan.baseLocation);
+    if (!text) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setRouteCopied(true);
+      window.setTimeout(() => setRouteCopied(false), 1800);
+    } catch {
+      setRouteCopied(false);
+      window.alert(text);
+    }
+  }
+
+  async function saveBaseSettings() {
+    if (!token) {
+      return;
+    }
+
+    const coords = resolveDispatchBaseLocation(baseForm);
+    const normalizedCoordinates = normalizeCompanyCoordinates(
+      coords?.latitude ?? baseForm.companyLatitude,
+      coords?.longitude ?? baseForm.companyLongitude,
+    );
+    if (!normalizedCoordinates) {
+      setBaseMessage("Coordenadas invalidas. En Uruguay usa latitud -34.xxxxxx y longitud -56.xxxxxx.");
+      return;
+    }
+
+    setBaseSaving(true);
+    setBaseMessage("");
+    try {
+      const settings = await apiRequest<TraccarSettings>("/api/vehicles/traccar/settings", {
+        token,
+        method: "PATCH",
+        body: JSON.stringify({
+          companyName: baseForm.companyName || "Security Solutions",
+          companyAddress: baseForm.companyAddress,
+          companyLatitude: normalizedCoordinates.latitude,
+          companyLongitude: normalizedCoordinates.longitude,
+        }),
+      });
+      setBaseForm({
+        companyName: settings.companyName ?? "Security Solutions",
+        companyAddress: settings.companyAddress ?? "",
+        companyLatitude: hasCoordinates(settings.companyLatitude, settings.companyLongitude) ? Number(settings.companyLatitude) : undefined,
+        companyLongitude: hasCoordinates(settings.companyLatitude, settings.companyLongitude) ? Number(settings.companyLongitude) : undefined,
+      });
+      setBaseMessage("Base operativa guardada.");
+    } catch (error) {
+      setBaseMessage(`No se pudo guardar la base: ${getErrorMessage(error)}`);
+    } finally {
+      setBaseSaving(false);
+    }
+  }
+
+  async function updateStopTime(workOrder: WorkOrder, time: string) {
+    if (!token || !time) {
+      return;
+    }
+
+    const nextDate = mergeDateAndTime(selectedDate, time);
+    setSavingStopId(workOrder.id);
+    setDispatchMessage("");
+    try {
+      await apiRequest<WorkOrder>(`/api/work-orders/${workOrder.id}`, {
+        token,
+        method: "PATCH",
+        body: JSON.stringify({ scheduledAt: nextDate.toISOString() }),
+      });
+      setDispatchMessage("Hora de agenda actualizada.");
+      onRefresh();
+    } catch (error) {
+      setDispatchMessage(`No se pudo guardar la hora: ${getErrorMessage(error)}`);
+    } finally {
+      setSavingStopId(null);
+    }
+  }
+
+  return (
+    <section className="dispatcherModule">
+      <div className="summaryGrid customerStats" aria-label="Resumen del despachador">
+        <article>
+          <span>Trabajos del dia</span>
+          <strong>{workOrders.length}</strong>
+        </article>
+        <article>
+          <span>Con ubicacion</span>
+          <strong>{plan.routableStops.length}</strong>
+        </article>
+        <article>
+          <span>Sin ubicacion</span>
+          <strong>{plan.missingLocation.length}</strong>
+        </article>
+        <article>
+          <span>Km estimados</span>
+          <strong>{formatNumber(plan.estimatedKm)} km</strong>
+        </article>
+      </div>
+
+      <section className="dispatcherToolbar">
+        <div>
+          <p>Despachador inteligente</p>
+          <h2>{formatFullDate(selectedDate)}</h2>
+          <span>
+            {selectedVehicle ? `Movil asignado: ${selectedVehicle.name}` : "Sin vehiculo activo asignado"}
+          </span>
+        </div>
+        <div className="agendaControls">
+          <input type="date" value={agendaDate} onChange={(event) => onDateChange(event.target.value)} />
+          <select value={selectedVehicle?.id ?? ""} onChange={(event) => setSelectedVehicleId(event.target.value)}>
+            {activeVehicles.length ? null : <option value="">Sin vehiculos</option>}
+            {activeVehicles.map((vehicle) => (
+              <option key={vehicle.id} value={vehicle.id}>
+                {vehicle.name}
+              </option>
+            ))}
+          </select>
+          <button type="button" onClick={copyRouteSummary} disabled={!plan.orderedStops.length}>
+            <FileText size={18} />
+            {routeCopied ? "Copiada" : "Copiar ruta"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (mapsUrl) {
+                window.open(mapsUrl, "_blank", "noopener,noreferrer");
+                setRouteReviewed(true);
+              }
+            }}
+            disabled={!mapsUrl}
+          >
+            <MapPin size={18} />
+            Abrir Maps
+          </button>
+          <button type="button" onClick={onRefresh}>
+            <RefreshCw size={18} className={loading ? "spin" : ""} />
+            Organizar dia
+          </button>
+        </div>
+      </section>
+
+      <div className="dispatcherLayout">
+        <section className="dispatcherRoutePanel">
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Ruta sugerida</p>
+              <h2>Linea de paradas</h2>
+            </div>
+            <span className="statusPill completed">{plan.strategy}</span>
+          </div>
+
+          <div className="dispatchTimeline">
+            <article className="dispatchStop dispatchBaseStop">
+              <span className="dispatchStopIndex">0</span>
+              <div>
+                <strong>{baseForm.companyName || "Base / Empresa"}</strong>
+                <p>{plan.baseLocation?.address || "Punto inicial de salida"}</p>
+                <small>
+                  {plan.baseLocation
+                    ? "Salida desde la base configurada"
+                    : "Configura coordenadas de empresa para calcular salida"}
+                </small>
+              </div>
+            </article>
+
+            {plan.orderedStops.map((stop, index) => {
+              const kind = stopKinds[stop.workOrder.id] ?? "CLIENT";
+              return (
+                <article key={stop.workOrder.id} className="dispatchStop">
+                  <span className="dispatchStopIndex">{index + 1}</span>
+                  <div className="dispatchStopBody">
+                    <header>
+                      <div>
+                        <strong>{stop.workOrder.title}</strong>
+                        <p>{stop.workOrder.customer.name} - {stop.siteLabel}</p>
+                      </div>
+                      <span className={`statusPill ${workOrderStatusClass(stop.workOrder.status)}`}>
+                        {workStatusLabels[stop.workOrder.status]}
+                      </span>
+                    </header>
+                    <dl className="dispatchStopDetails">
+                      <div>
+                        <dt>Hora</dt>
+                        <dd className="dispatchTimeValue">{stopTimes[stop.workOrder.id] || formatInputTime(stop.workOrder.scheduledAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Zona</dt>
+                        <dd>{stop.zone}</dd>
+                      </div>
+                      <div>
+                        <dt>Duracion</dt>
+                        <dd>{formatDuration(stop.estimatedMinutes)}</dd>
+                      </div>
+                      <div>
+                        <dt>Tramo</dt>
+                        <dd>{stop.legKm ? `${formatNumber(stop.legKm)} km` : "Inicio"}</dd>
+                      </div>
+                    </dl>
+                    <div className="dispatchStopControls">
+                      <label>
+                        Hora visible
+                        <input
+                          type="time"
+                          value={stopTimes[stop.workOrder.id] ?? formatInputTime(stop.workOrder.scheduledAt)}
+                          onChange={(event) =>
+                            setStopTimes((current) => ({
+                              ...current,
+                              [stop.workOrder.id]: event.target.value,
+                            }))
+                          }
+                          onBlur={(event) => {
+                            if (event.target.value !== formatInputTime(stop.workOrder.scheduledAt)) {
+                              void updateStopTime(stop.workOrder, event.target.value);
+                            }
+                          }}
+                          disabled={savingStopId === stop.workOrder.id}
+                        />
+                      </label>
+                      <label>
+                        Tipo de parada
+                        <select
+                          value={kind}
+                          onChange={(event) => setStopKinds((current) => ({ ...current, [stop.workOrder.id]: event.target.value as DispatchStopKind }))}
+                        >
+                          <option value="CLIENT">Cliente</option>
+                          <option value="NOT_CLIENT">No cliente</option>
+                          <option value="WAREHOUSE">Deposito</option>
+                          <option value="LUNCH">Almuerzo</option>
+                          <option value="TRANSFER">Traslado</option>
+                        </select>
+                      </label>
+                      <label>
+                        Tiempo operativo
+                        <input
+                          type="number"
+                          min="0"
+                          step="5"
+                          value={stopDurations[stop.workOrder.id] ?? stop.estimatedMinutes}
+                          onChange={(event) =>
+                            setStopDurations((current) => ({
+                              ...current,
+                              [stop.workOrder.id]: Math.max(0, Number(event.target.value) || 0),
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Zona operativa
+                        <input
+                          value={stopZones[stop.workOrder.id] ?? stop.zone}
+                          onChange={(event) =>
+                            setStopZones((current) => ({
+                              ...current,
+                              [stop.workOrder.id]: event.target.value,
+                            }))
+                          }
+                          placeholder="Ej: Centro, Carrasco, Pocitos"
+                        />
+                      </label>
+                    </div>
+                    {savingStopId === stop.workOrder.id ? <small>Guardando hora...</small> : null}
+                  </div>
+                </article>
+              );
+            })}
+
+            <article className="dispatchStop dispatchBaseStop">
+              <span className="dispatchStopIndex">{plan.orderedStops.length + 1}</span>
+              <div>
+                <strong>Regreso / cierre</strong>
+                <p>{plan.baseLocation ? plan.baseLocation.name : "Fin de recorrido operativo"}</p>
+                <small>
+                  {plan.returnKm ? `${formatNumber(plan.returnKm)} km de regreso. ` : ""}
+                  {formatDuration(plan.estimatedMinutes)} de trabajo estimado en total
+                </small>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section className="dispatcherSidePanel">
+          <div className="sectionHeader compactHeader">
+            <div>
+              <p>Control</p>
+              <h2>Alertas de planificacion</h2>
+            </div>
+          </div>
+          <div className="dispatcherAlertList">
+            {plan.alerts.map((alert) => (
+              <article key={alert}>
+                <MapPin size={17} />
+                <span>{alert}</span>
+              </article>
+            ))}
+            {!plan.alerts.length ? <p className="emptyPanel">La ruta esta lista para revisar.</p> : null}
+          </div>
+
+          <div className="dispatcherMetrics">
+            <article>
+              <span>Base operativa</span>
+              <strong>{plan.baseLocation ? "Lista" : "Sin GPS"}</strong>
+            </article>
+            <article>
+              <span>Tiempo operativo</span>
+              <strong>{formatDuration(dispatchSummary.operationalMinutes)}</strong>
+            </article>
+            <article>
+              <span>Ruta en Maps</span>
+              <strong>{mapsUrl ? "Lista" : "Sin GPS"}</strong>
+            </article>
+            <article>
+              <span>Zonas</span>
+              <strong>{plan.zones.length || 0}</strong>
+            </article>
+            <article>
+              <span>Vehiculos activos</span>
+              <strong>{activeVehicles.length}</strong>
+            </article>
+          </div>
+          {dispatchMessage ? <p className="dispatcherBaseMessage">{dispatchMessage}</p> : null}
+
+          <section className="dispatcherDailySummary">
+            <div className="sectionHeader compactHeader">
+              <div>
+                <p>Resumen diario</p>
+                <h2>Cierre 23:59</h2>
+              </div>
+              <span className="statusPill completed">{summaryLoading ? "Actualizando" : "En vivo"}</span>
+            </div>
+            <div className="dispatcherSummaryGrid">
+              <article>
+                <span>Km reales</span>
+                <strong>{formatNumber(dispatchSummary.distanceKm)} km</strong>
+              </article>
+              <article>
+                <span>Combustible</span>
+                <strong>{formatNumber(dispatchSummary.estimatedLiters)} L</strong>
+              </article>
+              <article>
+                <span>Gasto estimado</span>
+                <strong>{formatCurrency(dispatchSummary.estimatedFuelCost)}</strong>
+              </article>
+              <article>
+                <span>Clientes visitados</span>
+                <strong>{dispatchSummary.visitedClients}</strong>
+              </article>
+            </div>
+            <p>
+              Se actualiza durante el dia con Traccar cada 5 minutos. A las 23:59 queda como resumen final del dia.
+            </p>
+            <div className="dispatcherVisitList">
+              {dispatchSummary.visitNames.slice(0, 6).map((visit) => (
+                <span key={visit}>{visit}</span>
+              ))}
+              {!dispatchSummary.visitNames.length ? <span>Sin visitas confirmadas todavia</span> : null}
+            </div>
+          </section>
+
+          <section className="dispatcherChecklist">
+            <h3>Checklist de salida</h3>
+            <ul>
+              <li className={selectedVehicle ? "ready" : "pending"}>
+                <span>Vehiculo asignado</span>
+                <strong>{selectedVehicle ? "Listo" : "Pendiente"}</strong>
+              </li>
+              <li className={plan.baseLocation ? "ready" : "pending"}>
+                <span>Base configurada</span>
+                <strong>{plan.baseLocation ? "Listo" : "Pendiente"}</strong>
+              </li>
+              <li className={!plan.missingLocation.length && plan.orderedStops.length ? "ready" : "pending"}>
+                <span>Ubicaciones completas</span>
+                <strong>{!plan.missingLocation.length && plan.orderedStops.length ? "Listo" : "Pendiente"}</strong>
+              </li>
+              <li className={routeReady ? "ready" : "pending"}>
+                <span>Ruta revisada</span>
+                <button type="button" onClick={() => setRouteReviewed(true)} disabled={!plan.orderedStops.length}>
+                  {routeReady ? "Listo" : "Confirmar"}
+                </button>
+              </li>
+              <li className={materialsReady ? "ready" : "pending"}>
+                <span>Materiales confirmados</span>
+                <button type="button" onClick={() => setMaterialsConfirmed(true)}>
+                  {materialsReady ? "Listo" : "Confirmar"}
+                </button>
+              </li>
+            </ul>
+          </section>
+
+          {plan.missingLocation.length ? (
+            <section className="missingLocationPanel">
+              <h3>Falta ubicacion</h3>
+              {plan.missingLocation.map((workOrder) => (
+                <article key={workOrder.id}>
+                  <strong>{workOrder.title}</strong>
+                  <span>{workOrder.customer.name}</span>
+                  <small>{workOrder.site?.address || "Sin sitio/direccion con coordenadas"}</small>
+                </article>
+              ))}
+            </section>
+          ) : null}
+
+          <section className="dispatcherBasePanel">
+            <h3>Base operativa</h3>
+            <label>
+              Nombre
+              <input
+                value={baseForm.companyName}
+                onChange={(event) => setBaseForm((form) => ({ ...form, companyName: event.target.value }))}
+                placeholder="Security Solutions"
+              />
+            </label>
+            <label>
+              Direccion o Maps
+              <input
+                value={baseForm.companyAddress}
+                onChange={(event) => {
+                  const companyAddress = event.target.value;
+                  const coords = parseCoordinatesFromText(companyAddress);
+                  setBaseForm((form) => ({
+                    ...form,
+                    companyAddress,
+                    companyLatitude: coords?.latitude ?? form.companyLatitude,
+                    companyLongitude: coords?.longitude ?? form.companyLongitude,
+                  }));
+                }}
+                placeholder="Pega direccion o enlace de Google Maps"
+              />
+            </label>
+            <div className="dispatcherBaseCoords">
+              <label>
+                Latitud
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={baseForm.companyLatitude ?? ""}
+                  onChange={(event) =>
+                    setBaseForm((form) => ({
+                      ...form,
+                      companyLatitude: event.target.value === "" ? undefined : Number(event.target.value),
+                    }))
+                  }
+                  placeholder="-34.901112"
+                />
+              </label>
+              <label>
+                Longitud
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={baseForm.companyLongitude ?? ""}
+                  onChange={(event) =>
+                    setBaseForm((form) => ({
+                      ...form,
+                      companyLongitude: event.target.value === "" ? undefined : Number(event.target.value),
+                    }))
+                  }
+                  placeholder="-56.164532"
+                />
+              </label>
+            </div>
+            <button type="button" className="secondaryButton" onClick={saveBaseSettings} disabled={baseSaving}>
+              <Save size={16} />
+              {baseSaving ? "Guardando" : "Guardar base"}
+            </button>
+            <small className="dispatcherBaseHint">
+              En Uruguay la latitud suele ser negativa y la longitud tambien, por ejemplo -34.xxxxxx / -56.xxxxxx.
+            </small>
+            {baseMessage ? <p className="dispatcherBaseMessage">{baseMessage}</p> : null}
+          </section>
         </section>
       </div>
     </section>
@@ -6125,6 +6962,7 @@ function WorkOrdersView({
                 : Math.max(1, form.quantity);
               const workOrderSiteId = workOrder.siteId ?? workOrder.site?.id ?? "";
               const installAsDevice = Boolean(form.installAsDevice);
+              const reportPhotoCount = workOrder.reportPhotos?.length ?? 0;
 
               return (
               <article
@@ -6138,6 +6976,12 @@ function WorkOrdersView({
                     {workStatusLabels[workOrder.status]}
                   </span>
                   <strong>{workOrder.title}</strong>
+                  {reportPhotoCount ? (
+                    <span className="attachmentPill" title={`${reportPhotoCount} fotos adjuntas`}>
+                      <Paperclip size={14} />
+                      {reportPhotoCount}
+                    </span>
+                  ) : null}
                 </div>
                 <dl>
                   <div>
@@ -6687,8 +7531,9 @@ function ReportPhotoPicker({
             <figure key={photo.id ?? `${photo.name}-${index}`}>
               <img src={photo.dataUrl} alt={photo.name} />
               <figcaption>{photo.name}</figcaption>
-              <button type="button" onClick={() => onRemove(photo.id)} aria-label="Quitar foto">
+              <button type="button" onClick={() => onRemove(photo.id)} aria-label="Eliminar foto" title="Eliminar foto">
                 <X size={15} />
+                <span>Eliminar</span>
               </button>
             </figure>
           ))}
@@ -8086,6 +8931,7 @@ function PaymentsView({
 
 function VehiclesView({
   loading,
+  token,
   vehicleError,
   vehicleForm,
   vehicleSearch,
@@ -8097,9 +8943,11 @@ function VehiclesView({
   onSave,
   onSearchChange,
   onStatusChange,
+  onDelete,
   onToggleActive,
 }: {
   loading: boolean;
+  token?: string | null;
   vehicleError: string;
   vehicleForm: VehiclePayload;
   vehicleSearch: string;
@@ -8111,8 +8959,160 @@ function VehiclesView({
   onSave: (event: FormEvent<HTMLFormElement>) => void;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: "ALL" | "ACTIVE" | "INACTIVE") => void;
+  onDelete: (vehicle: Vehicle) => void;
   onToggleActive: (vehicle: Vehicle) => void;
 }) {
+  const today = useMemo(() => toDateInputValue(new Date()), []);
+  const [traccarSettings, setTraccarSettings] = useState<TraccarSettings | null>(null);
+  const [traccarForm, setTraccarForm] = useState({
+    baseUrl: "",
+    token: "",
+    username: "",
+    password: "",
+    matchRadiusMeters: 120,
+    minStopMinutes: 5,
+    companyName: "Security Solutions",
+    companyAddress: "",
+    companyLatitude: undefined as number | undefined,
+    companyLongitude: undefined as number | undefined,
+  });
+  const [traccarDate, setTraccarDate] = useState(today);
+  const [selectedVehicleId, setSelectedVehicleId] = useState("");
+  const [selectedVehicleDetailId, setSelectedVehicleDetailId] = useState<string | null>(null);
+  const [vehicleDaily, setVehicleDaily] = useState<VehicleDailySummary | null>(null);
+  const [geofenceSync, setGeofenceSync] = useState<TraccarGeofenceSync | null>(null);
+  const [traccarLoading, setTraccarLoading] = useState(false);
+  const [traccarError, setTraccarError] = useState("");
+  const selectedVehicleDetail = vehicles.find((vehicle) => vehicle.id === selectedVehicleDetailId) ?? null;
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    let active = true;
+    apiRequest<TraccarSettings>("/api/vehicles/traccar/settings", { token })
+      .then((settings) => {
+        if (!active) {
+          return;
+        }
+        setTraccarSettings(settings);
+        setTraccarForm({
+          baseUrl: settings.baseUrl ?? "",
+          token: settings.token ?? "",
+          username: settings.username ?? "",
+          password: settings.password ?? "",
+          matchRadiusMeters: Number(settings.matchRadiusMeters) || 120,
+          minStopMinutes: Number(settings.minStopMinutes) || 5,
+          companyName: settings.companyName ?? "Security Solutions",
+          companyAddress: settings.companyAddress ?? "",
+          companyLatitude: hasCoordinates(settings.companyLatitude, settings.companyLongitude) ? Number(settings.companyLatitude) : undefined,
+          companyLongitude: hasCoordinates(settings.companyLatitude, settings.companyLongitude) ? Number(settings.companyLongitude) : undefined,
+        });
+      })
+      .catch((error) => {
+        if (active) {
+          setTraccarError(`No se pudo cargar Traccar: ${getErrorMessage(error)}`);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!selectedVehicleId && vehicles.length) {
+      setSelectedVehicleId(vehicles[0].id);
+    }
+  }, [selectedVehicleId, vehicles]);
+
+  async function saveTraccarSettings() {
+    if (!token) {
+      return;
+    }
+
+    const normalizedCoordinates = normalizeCompanyCoordinates(traccarForm.companyLatitude, traccarForm.companyLongitude);
+    if (!normalizedCoordinates) {
+      setTraccarError("Coordenadas invalidas. En Uruguay usa latitud -34.xxxxxx y longitud -56.xxxxxx.");
+      return;
+    }
+
+    setTraccarLoading(true);
+    setTraccarError("");
+    try {
+      const settings = await apiRequest<TraccarSettings>("/api/vehicles/traccar/settings", {
+        token,
+        method: "PATCH",
+        body: JSON.stringify({
+          ...traccarForm,
+          matchRadiusMeters: Number(traccarForm.matchRadiusMeters) || 120,
+          minStopMinutes: Number(traccarForm.minStopMinutes) || 5,
+          companyLatitude: normalizedCoordinates.latitude,
+          companyLongitude: normalizedCoordinates.longitude,
+        }),
+      });
+      setTraccarSettings(settings);
+      setTraccarForm({
+        baseUrl: settings.baseUrl ?? "",
+        token: settings.token ?? "",
+        username: settings.username ?? "",
+        password: settings.password ?? "",
+        matchRadiusMeters: Number(settings.matchRadiusMeters) || 120,
+        minStopMinutes: Number(settings.minStopMinutes) || 5,
+        companyName: settings.companyName ?? "Security Solutions",
+        companyAddress: settings.companyAddress ?? "",
+        companyLatitude: hasCoordinates(settings.companyLatitude, settings.companyLongitude) ? Number(settings.companyLatitude) : undefined,
+        companyLongitude: hasCoordinates(settings.companyLatitude, settings.companyLongitude) ? Number(settings.companyLongitude) : undefined,
+      });
+    } catch (error) {
+      setTraccarError(`No se pudo guardar Traccar: ${getErrorMessage(error)}`);
+    } finally {
+      setTraccarLoading(false);
+    }
+  }
+
+  async function loadVehicleDaily(vehicleId = selectedVehicleId) {
+    if (!token || !vehicleId) {
+      return;
+    }
+
+    setSelectedVehicleId(vehicleId);
+    setTraccarLoading(true);
+    setTraccarError("");
+    try {
+      const data = await apiRequest<VehicleDailySummary>(
+        `/api/vehicles/${vehicleId}/traccar/daily?date=${encodeURIComponent(traccarDate)}`,
+        { token },
+      );
+      setVehicleDaily(data);
+    } catch (error) {
+      setTraccarError(`No se pudo generar el resumen GPS: ${getErrorMessage(error)}`);
+    } finally {
+      setTraccarLoading(false);
+    }
+  }
+
+  async function syncGeofences() {
+    if (!token) {
+      return;
+    }
+
+    setTraccarLoading(true);
+    setTraccarError("");
+    try {
+      const data = await apiRequest<TraccarGeofenceSync>("/api/vehicles/traccar/geofences/sync", {
+        token,
+        method: "POST",
+      });
+      setGeofenceSync(data);
+    } catch (error) {
+      setTraccarError(`No se pudieron sincronizar geozonas: ${getErrorMessage(error)}`);
+    } finally {
+      setTraccarLoading(false);
+    }
+  }
+
   return (
     <section className="vehiclesModule">
       <div className="summaryGrid customerStats" aria-label="Resumen de vehiculos">
@@ -8158,6 +9158,17 @@ function VehiclesView({
                 placeholder="ID del dispositivo GPS"
               />
             </label>
+            <label>
+              Consumo km/l
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={vehicleForm.fuelKmPerLiter ?? 10}
+                onChange={(event) => onFormChange({ ...vehicleForm, fuelKmPerLiter: Number(event.target.value) || 0 })}
+                placeholder="Ej: 10"
+              />
+            </label>
             <label className="toggleField wideField">
               <input
                 type="checkbox"
@@ -8201,41 +9212,376 @@ function VehiclesView({
             </button>
           </div>
 
-          <div className="vehicleGrid">
+          <div className="vehicleList" role="list">
+            {vehicles.length ? (
+              <div className="vehicleListHeader" aria-hidden="true">
+                <span>Vehiculo</span>
+                <span>Matricula</span>
+                <span>Traccar</span>
+                <span>Consumo</span>
+                <span>Estado</span>
+                <span>Actualizado</span>
+              </div>
+            ) : null}
             {vehicles.map((vehicle) => (
-              <article key={vehicle.id} className="vehicleCard">
-                <div className="vehicleCardHeader">
+              <button
+                key={vehicle.id}
+                type="button"
+                className="vehicleListRow"
+                onClick={() => {
+                  setSelectedVehicleDetailId(vehicle.id);
+                  setSelectedVehicleId(vehicle.id);
+                  setVehicleDaily(null);
+                  setTraccarError("");
+                }}
+              >
+                <span className="vehicleListCell" data-label="Vehiculo">
+                  <strong>{vehicle.name}</strong>
+                  <small>{vehicle.traccarDeviceId ? "GPS vinculado" : "Sin GPS vinculado"}</small>
+                </span>
+                <span className="vehicleListCell" data-label="Matricula">
+                  <strong>{vehicle.plate || "Sin matricula"}</strong>
+                </span>
+                <span className="vehicleListCell" data-label="Traccar">
+                  <strong>{vehicle.traccarDeviceId || "Sin vincular"}</strong>
+                </span>
+                <span className="vehicleListCell" data-label="Consumo">
+                  <strong>{vehicle.fuelKmPerLiter ? `${formatNumber(Number(vehicle.fuelKmPerLiter))} km/l` : "Sin dato"}</strong>
+                </span>
+                <span className="vehicleListCell" data-label="Estado">
                   <span className={`statusPill ${vehicle.active ? "completed" : "inactive"}`}>
                     {vehicle.active ? "Activo" : "Inactivo"}
                   </span>
-                  <strong>{vehicle.name}</strong>
-                </div>
-                <dl>
-                  <div>
-                    <dt>Matricula</dt>
-                    <dd>{vehicle.plate || "Sin matricula"}</dd>
-                  </div>
-                  <div>
-                    <dt>Traccar</dt>
-                    <dd>{vehicle.traccarDeviceId || "Sin vincular"}</dd>
-                  </div>
-                  <div>
-                    <dt>Actualizado</dt>
-                    <dd>{formatShortDate(vehicle.updatedAt)}</dd>
-                  </div>
-                </dl>
-                <div className="vehicleActions">
-                  <button type="button" className="secondaryButton" onClick={() => onToggleActive(vehicle)}>
-                    {vehicle.active ? "Desactivar" : "Activar"}
-                  </button>
-                </div>
-              </article>
+                </span>
+                <span className="vehicleListCell" data-label="Actualizado">
+                  <strong>{formatShortDate(vehicle.updatedAt)}</strong>
+                </span>
+              </button>
             ))}
             {!vehicles.length ? <p className="emptyPanel">No hay vehiculos para los filtros actuales.</p> : null}
           </div>
         </section>
       </div>
+
+      <section className="traccarPanel">
+        <div className="sectionHeader compactHeader">
+          <div>
+            <p>Seguimiento GPS</p>
+            <h2>Control Traccar</h2>
+          </div>
+          <span className={`statusPill ${traccarSettings?.configured ? "completed" : "pending"}`}>
+            {traccarSettings?.configured ? "Configurado" : "Pendiente"}
+          </span>
+        </div>
+
+        <div className="traccarConfigGrid">
+          <label className="wideField">
+            URL Traccar
+            <input
+              value={traccarForm.baseUrl}
+              onChange={(event) => setTraccarForm((form) => ({ ...form, baseUrl: event.target.value }))}
+              placeholder="https://tu-traccar.com"
+            />
+          </label>
+          <label>
+            Token
+            <input
+              value={traccarForm.token}
+              onChange={(event) => setTraccarForm((form) => ({ ...form, token: event.target.value }))}
+              placeholder="Token o ********"
+            />
+          </label>
+          <label>
+            Usuario
+            <input
+              value={traccarForm.username}
+              onChange={(event) => setTraccarForm((form) => ({ ...form, username: event.target.value }))}
+              placeholder="Opcional"
+            />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              value={traccarForm.password}
+              onChange={(event) => setTraccarForm((form) => ({ ...form, password: event.target.value }))}
+              placeholder="Opcional"
+            />
+          </label>
+          <label>
+            Radio visita (m)
+            <input
+              type="number"
+              min="20"
+              value={traccarForm.matchRadiusMeters}
+              onChange={(event) => setTraccarForm((form) => ({ ...form, matchRadiusMeters: Number(event.target.value) || 120 }))}
+            />
+          </label>
+          <label>
+            Min. parada
+            <input
+              type="number"
+              min="1"
+              value={traccarForm.minStopMinutes}
+              onChange={(event) => setTraccarForm((form) => ({ ...form, minStopMinutes: Number(event.target.value) || 5 }))}
+            />
+          </label>
+          <label>
+            Empresa / base
+            <input
+              value={traccarForm.companyName}
+              onChange={(event) => setTraccarForm((form) => ({ ...form, companyName: event.target.value }))}
+              placeholder="Security Solutions"
+            />
+          </label>
+          <label className="wideField">
+            Ubicacion de salida
+            <input
+              value={traccarForm.companyAddress}
+              onChange={(event) => {
+                const companyAddress = event.target.value;
+                const coords = parseCoordinatesFromText(companyAddress);
+                setTraccarForm((form) => ({
+                  ...form,
+                  companyAddress,
+                  companyLatitude: coords?.latitude ?? form.companyLatitude,
+                  companyLongitude: coords?.longitude ?? form.companyLongitude,
+                }));
+              }}
+              placeholder="Direccion o enlace de Google Maps de la empresa"
+            />
+          </label>
+          <label>
+            Latitud base
+            <input
+              type="number"
+              step="0.000001"
+              value={traccarForm.companyLatitude ?? ""}
+              onChange={(event) =>
+                setTraccarForm((form) => ({
+                  ...form,
+                  companyLatitude: event.target.value === "" ? undefined : Number(event.target.value),
+                }))
+              }
+              placeholder="-34.901112"
+            />
+          </label>
+          <label>
+            Longitud base
+            <input
+              type="number"
+              step="0.000001"
+              value={traccarForm.companyLongitude ?? ""}
+              onChange={(event) =>
+                setTraccarForm((form) => ({
+                  ...form,
+                  companyLongitude: event.target.value === "" ? undefined : Number(event.target.value),
+                }))
+              }
+              placeholder="-56.164532"
+            />
+          </label>
+          <button type="button" className="primaryButton" onClick={saveTraccarSettings} disabled={traccarLoading}>
+            <Save size={18} />
+            Guardar Traccar
+          </button>
+          <button type="button" className="secondaryButton traccarSyncButton" onClick={syncGeofences} disabled={traccarLoading}>
+            <MapPin size={18} />
+            Sincronizar geozonas
+          </button>
+        </div>
+
+        {traccarError ? <p className="formError">{traccarError}</p> : null}
+        {geofenceSync ? (
+          <div className="traccarSyncSummary">
+            <article>
+              <span>Nuevas</span>
+              <strong>{geofenceSync.created}</strong>
+            </article>
+            <article>
+              <span>Actualizadas</span>
+              <strong>{geofenceSync.updated}</strong>
+            </article>
+            <article>
+              <span>Vinculos GPS</span>
+              <strong>{geofenceSync.linked}</strong>
+            </article>
+            <article>
+              <span>Sin coordenadas</span>
+              <strong>{geofenceSync.skipped}</strong>
+            </article>
+            <p>{geofenceSync.message}</p>
+          </div>
+        ) : null}
+        <p className="emptyPanel">Toca un vehiculo de la lista para abrir el resumen GPS y las acciones.</p>
+      </section>
+
+      {selectedVehicleDetail && typeof document !== "undefined"
+        ? createPortal(
+            <VehicleDetailModal
+              date={traccarDate}
+              error={traccarError}
+              loading={traccarLoading}
+              summary={vehicleDaily}
+              vehicle={selectedVehicleDetail}
+              onClose={() => setSelectedVehicleDetailId(null)}
+              onDateChange={setTraccarDate}
+              onDelete={() => {
+                setSelectedVehicleDetailId(null);
+                onDelete(selectedVehicleDetail);
+              }}
+              onLoadSummary={() => loadVehicleDaily(selectedVehicleDetail.id)}
+              onToggleActive={() => onToggleActive(selectedVehicleDetail)}
+            />,
+            document.body,
+          )
+        : null}
     </section>
+  );
+}
+
+function VehicleDetailModal({
+  date,
+  error,
+  loading,
+  summary,
+  vehicle,
+  onClose,
+  onDateChange,
+  onDelete,
+  onLoadSummary,
+  onToggleActive,
+}: {
+  date: string;
+  error: string;
+  loading: boolean;
+  summary: VehicleDailySummary | null;
+  vehicle: Vehicle;
+  onClose: () => void;
+  onDateChange: (value: string) => void;
+  onDelete: () => void;
+  onLoadSummary: () => void;
+  onToggleActive: () => void;
+}) {
+  return (
+    <div className="deviceDetailOverlay customerProfileOverlay" onClick={onClose}>
+      <section className="customerProfileModal vehicleDetailModal" aria-label="Detalle del vehiculo" onClick={(event) => event.stopPropagation()}>
+        <header className="deviceDetailHeader">
+          <div>
+            <span>Vehiculo</span>
+            <h2>{vehicle.name}</h2>
+            <p>
+              {vehicle.plate || "Sin matricula"} - Traccar {vehicle.traccarDeviceId || "sin vincular"}
+            </p>
+          </div>
+          <button type="button" className="iconButton" onClick={onClose} aria-label="Cerrar detalle">
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="vehicleDetailFacts">
+          <article>
+            <span>Estado</span>
+            <strong>{vehicle.active ? "Activo" : "Inactivo"}</strong>
+          </article>
+          <article>
+            <span>Consumo</span>
+            <strong>{vehicle.fuelKmPerLiter ? `${formatNumber(Number(vehicle.fuelKmPerLiter))} km/l` : "Sin dato"}</strong>
+          </article>
+          <article>
+            <span>Actualizado</span>
+            <strong>{formatShortDate(vehicle.updatedAt)}</strong>
+          </article>
+        </div>
+
+        <div className="vehicleDetailActions">
+          <input type="date" value={date} onChange={(event) => onDateChange(event.target.value)} />
+          <button type="button" className="secondaryButton" onClick={onLoadSummary} disabled={loading || !vehicle.traccarDeviceId}>
+            <RefreshCw size={18} className={loading ? "spin" : ""} />
+            Generar resumen GPS
+          </button>
+          <button type="button" className="secondaryButton" onClick={onToggleActive}>
+            {vehicle.active ? "Desactivar" : "Activar"}
+          </button>
+          <button type="button" className="secondaryButton vehicleDeleteButton" onClick={onDelete}>
+            <X size={18} />
+            Eliminar vehiculo
+          </button>
+        </div>
+
+        {error ? <p className="formError">{error}</p> : null}
+        {summary?.message ? <p className="emptyPanel">{summary.message}</p> : null}
+
+        {summary ? (
+          <>
+            <div className="vehicleTrackingSummary">
+              <article>
+                <span>Kilometros</span>
+                <strong>{formatNumber(summary.distanceKm)} km</strong>
+                <small>{summary.positions} puntos GPS</small>
+              </article>
+              <article>
+                <span>Velocidad min.</span>
+                <strong>{formatNumber(summary.minSpeedKmh, 1)} km/h</strong>
+                <small>En movimiento</small>
+              </article>
+              <article>
+                <span>Velocidad prom.</span>
+                <strong>{formatNumber(summary.averageSpeedKmh, 1)} km/h</strong>
+                <small>{formatDuration(summary.movingMinutes)} movimiento</small>
+              </article>
+              <article>
+                <span>Velocidad max.</span>
+                <strong>{formatNumber(summary.maxSpeedKmh, 1)} km/h</strong>
+                <small>{summary.stops.length} paradas</small>
+              </article>
+              <article>
+                <span>Combustible estimado</span>
+                <strong>{formatNumber(summary.estimatedLiters)} l</strong>
+                <small>{formatCurrency(summary.estimatedFuelCost)} aprox.</small>
+              </article>
+            </div>
+
+            <div className="traccarLists">
+              <section>
+                <h3>Visitas detectadas</h3>
+                <div className="vehicleVisitList">
+                  {summary.visits.map((visit) => (
+                    <article key={`${visit.stopIndex}-${visit.customerId}-${visit.siteId ?? "customer"}`}>
+                      <div>
+                        <strong>{visit.customerName}</strong>
+                        <span>{visit.siteName || visit.address || "Cliente identificado"}</span>
+                      </div>
+                      <span className="visitMatchPill">{visit.match}</span>
+                      <small>
+                        {formatShortDateTime(visit.arrival)} - {formatDuration(visit.durationMinutes)}
+                      </small>
+                    </article>
+                  ))}
+                  {!summary.visits.length ? <p className="emptyPanel">No se detectaron visitas a clientes.</p> : null}
+                </div>
+              </section>
+
+              <section>
+                <h3>Paradas sin cliente</h3>
+                <div className="vehicleStopList">
+                  {summary.unmatchedStops.slice(0, 8).map((stop) => (
+                    <article key={stop.index}>
+                      <strong>{formatShortDateTime(stop.arrival)}</strong>
+                      <span>{stop.address || `${formatNumber(stop.latitude)}, ${formatNumber(stop.longitude)}`}</span>
+                      <small>{formatDuration(stop.durationMinutes)}</small>
+                    </article>
+                  ))}
+                  {!summary.unmatchedStops.length ? <p className="emptyPanel">Todas las paradas coinciden con clientes o sitios.</p> : null}
+                </div>
+              </section>
+            </div>
+          </>
+        ) : (
+          <p className="emptyPanel">Genera el resumen para ver kilometros, paradas y visitas del dia seleccionado.</p>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -9688,6 +11034,9 @@ function DevicesView({
 }
 
 function cleanCustomerPayload(form: CustomerPayload): CustomerPayload {
+  const coords = parseCoordinatesFromText(form.address);
+  const directCoords = resolveOperationalCoordinates(form.latitude, form.longitude);
+  const shouldClearInvalidCoords = hasCoordinates(form.latitude, form.longitude) && !directCoords;
   return {
     name: form.name.trim(),
     legalName: form.legalName?.trim() || undefined,
@@ -9695,6 +11044,8 @@ function cleanCustomerPayload(form: CustomerPayload): CustomerPayload {
     email: form.email?.trim() || undefined,
     phone: form.phone?.trim() || undefined,
     address: form.address?.trim() || undefined,
+    latitude: directCoords?.latitude ?? coords?.latitude ?? (shouldClearInvalidCoords ? null : undefined),
+    longitude: directCoords?.longitude ?? coords?.longitude ?? (shouldClearInvalidCoords ? null : undefined),
     logoUrl: form.logoUrl?.trim() || undefined,
     type: form.type ?? "NORMAL",
     status: form.status,
@@ -9703,9 +11054,14 @@ function cleanCustomerPayload(form: CustomerPayload): CustomerPayload {
 }
 
 function cleanSitePayload(form: SitePayload): SitePayload {
+  const coords = parseCoordinatesFromText(form.address);
+  const directCoords = resolveOperationalCoordinates(form.latitude, form.longitude);
+  const shouldClearInvalidCoords = hasCoordinates(form.latitude, form.longitude) && !directCoords;
   return {
     name: form.name.trim(),
     address: form.address.trim(),
+    latitude: directCoords?.latitude ?? coords?.latitude ?? (shouldClearInvalidCoords ? null : undefined),
+    longitude: directCoords?.longitude ?? coords?.longitude ?? (shouldClearInvalidCoords ? null : undefined),
     notes: form.notes?.trim() || undefined,
   };
 }
@@ -9828,6 +11184,7 @@ function cleanVehiclePayload(form: VehiclePayload): VehiclePayload {
     name: form.name.trim(),
     plate: form.plate?.trim() || undefined,
     traccarDeviceId: form.traccarDeviceId?.trim() || undefined,
+    fuelKmPerLiter: Number(form.fuelKmPerLiter) || undefined,
     active: form.active,
   };
 }
@@ -9895,6 +11252,26 @@ function meetingStatusClass(status: MeetingStatus) {
   return status === "CANCELLED" ? "cancelled" : "scheduled";
 }
 
+function workOrderStatusClass(status: WorkOrderStatus) {
+  if (status === "COMPLETED") {
+    return "completed";
+  }
+
+  if (status === "CANCELLED") {
+    return "cancelled";
+  }
+
+  if (status === "IN_PROGRESS") {
+    return "in_progress";
+  }
+
+  if (status === "WAITING_CUSTOMER") {
+    return "waiting_customer";
+  }
+
+  return "scheduled";
+}
+
 function readMeetingAttachment(file: File): Promise<NonNullable<MeetingPayload["attachments"]>[number]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -9927,6 +11304,544 @@ function formatCurrency(value: string | number) {
     currency: "UYU",
     maximumFractionDigits: 2,
   }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+function formatNumber(value: string | number, maximumFractionDigits = 2) {
+  const amount = toMoneyNumber(value);
+  return new Intl.NumberFormat("es-UY", {
+    maximumFractionDigits,
+  }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+function formatDuration(totalMinutes: string | number) {
+  const minutes = Math.max(0, Math.round(toMoneyNumber(totalMinutes)));
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes ? `${hours} h ${remainingMinutes} min` : `${hours} h`;
+}
+
+type DispatchStopKind = "CLIENT" | "NOT_CLIENT" | "WAREHOUSE" | "LUNCH" | "TRANSFER";
+
+type DispatchRouteStop = {
+  workOrder: WorkOrder;
+  latitude: number;
+  longitude: number;
+  siteLabel: string;
+  zone: string;
+  estimatedMinutes: number;
+  legKm: number;
+};
+
+type DispatchBaseSettings = {
+  companyName?: string | null;
+  companyAddress?: string | null;
+  companyLatitude?: string | number | null;
+  companyLongitude?: string | number | null;
+};
+
+type DispatchBaseLocation = {
+  name: string;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+};
+
+type DispatchPlanOverrides = {
+  durations?: Record<string, number>;
+  zones?: Record<string, string>;
+};
+
+function buildDispatchPlan(workOrders: WorkOrder[], baseSettings?: DispatchBaseSettings | null, overrides: DispatchPlanOverrides = {}) {
+  const baseLocation = resolveDispatchBaseLocation(baseSettings);
+  const scheduledOrders = [...workOrders].sort((left, right) => {
+    const leftTime = left.scheduledAt ? new Date(left.scheduledAt).getTime() : Number.MAX_SAFE_INTEGER;
+    const rightTime = right.scheduledAt ? new Date(right.scheduledAt).getTime() : Number.MAX_SAFE_INTEGER;
+    return leftTime - rightTime;
+  });
+  const routableStops = scheduledOrders
+    .map((workOrder) => {
+      const location = resolveWorkOrderLocation(workOrder);
+      if (!location) {
+        return null;
+      }
+
+      return {
+        workOrder,
+        ...location,
+        siteLabel: getWorkOrderRouteSite(workOrder)?.name || getWorkOrderRouteSite(workOrder)?.address || workOrder.customer.address || "Sin sitio",
+        zone: overrides.zones?.[workOrder.id]?.trim() || inferZone(getWorkOrderRouteSite(workOrder)?.address || workOrder.customer.address || workOrder.customer.name),
+        estimatedMinutes: overrides.durations?.[workOrder.id] ?? estimateWorkOrderMinutes(workOrder),
+        legKm: 0,
+      } satisfies DispatchRouteStop;
+    })
+    .filter((stop): stop is DispatchRouteStop => Boolean(stop));
+
+  const missingLocation = scheduledOrders.filter((workOrder) => !resolveWorkOrderLocation(workOrder));
+  const orderedStops = nearestNeighborStops(routableStops, baseLocation);
+  const stopsWithLegs = orderedStops.map((stop, index) => {
+    const previous = orderedStops[index - 1];
+    const origin = previous ?? baseLocation;
+    return {
+      ...stop,
+      legKm: origin ? roundNumber(haversineKm(origin.latitude, origin.longitude, stop.latitude, stop.longitude), 2) : 0,
+    };
+  });
+  const lastStop = stopsWithLegs[stopsWithLegs.length - 1];
+  const returnKm = lastStop && baseLocation
+    ? roundNumber(haversineKm(lastStop.latitude, lastStop.longitude, baseLocation.latitude, baseLocation.longitude), 2)
+    : 0;
+  const estimatedKm = roundNumber(stopsWithLegs.reduce((sum, stop) => sum + stop.legKm, 0) + returnKm, 2);
+  const estimatedMinutes = stopsWithLegs.reduce((sum, stop) => sum + stop.estimatedMinutes, 0);
+  const zones = Array.from(new Set(stopsWithLegs.map((stop) => stop.zone).filter(Boolean)));
+  const alerts = [
+    !baseLocation ? "Configura coordenadas de empresa para calcular salida y regreso." : "",
+    missingLocation.length ? `${missingLocation.length} trabajo(s) sin coordenadas para optimizar.` : "",
+    stopsWithLegs.length && missingLocation.length ? "La ruta sugerida no incluye trabajos sin ubicacion." : "",
+    !stopsWithLegs.length && workOrders.length ? "Carga ubicacion en clientes/sitios para organizar la ruta." : "",
+    stopsWithLegs.length > 6 ? "Jornada cargada: revisa duraciones antes de confirmar." : "",
+  ].filter(Boolean);
+
+  return {
+    routableStops,
+    orderedStops: stopsWithLegs,
+    missingLocation,
+    baseLocation,
+    returnKm,
+    estimatedKm,
+    estimatedMinutes,
+    zones,
+    alerts,
+    strategy: stopsWithLegs.length > 1 ? "Cercania" : "Manual",
+  };
+}
+
+function buildGoogleMapsRouteUrl(stops: DispatchRouteStop[], baseLocation?: DispatchBaseLocation | null) {
+  if (!stops.length) {
+    return "";
+  }
+
+  const coords = stops.map((stop) => `${stop.latitude},${stop.longitude}`);
+  if (coords.length === 1 && !baseLocation) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(coords[0])}`;
+  }
+
+  const baseCoords = baseLocation ? `${baseLocation.latitude},${baseLocation.longitude}` : "";
+  const origin = baseCoords || coords[0];
+  const destination = baseCoords || coords[coords.length - 1];
+  const waypoints = (baseLocation ? coords : coords.slice(1, -1)).join("|");
+  const params = new URLSearchParams({
+    api: "1",
+    origin,
+    destination,
+    travelmode: "driving",
+  });
+
+  if (waypoints) {
+    params.set("waypoints", waypoints);
+  }
+
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+function buildDispatchRouteText(stops: DispatchRouteStop[], vehicle: Vehicle | null, baseLocation?: DispatchBaseLocation | null) {
+  if (!stops.length) {
+    return "";
+  }
+
+  const lines = [
+    "Ruta operativa Security Solutions",
+    vehicle ? `Movil: ${vehicle.name}${vehicle.plate ? ` (${vehicle.plate})` : ""}` : "Movil: sin asignar",
+    baseLocation ? `Salida: ${baseLocation.name} - ${baseLocation.address || `${baseLocation.latitude},${baseLocation.longitude}`}` : "Salida: sin base configurada",
+    "",
+    ...stops.map((stop, index) => {
+      const time = formatTime(stop.workOrder.scheduledAt);
+      return `${index + 1}. ${time} - ${stop.workOrder.customer.name} - ${stop.siteLabel} - ${stop.workOrder.title}`;
+    }),
+    baseLocation ? `Regreso: ${baseLocation.name}` : "",
+  ];
+
+  return lines.join("\n");
+}
+
+function buildDispatcherDailySummary(
+  plan: ReturnType<typeof buildDispatchPlan>,
+  workOrders: WorkOrder[],
+  vehicle: Vehicle | null,
+  dailySummary: VehicleDailySummary | null,
+) {
+  const fuelKmPerLiter = Number(vehicle?.fuelKmPerLiter) || 10;
+  const fallbackLiters = fuelKmPerLiter > 0 ? roundNumber(plan.estimatedKm / fuelKmPerLiter, 2) : 0;
+  const fallbackFuelCost = roundNumber(fallbackLiters * (dailySummary?.fuelPricePerLiter || 88.67), 2);
+  const visitNames = dailySummary?.visits?.length
+    ? Array.from(new Set(dailySummary.visits.map((visit) => `${visit.customerName}${visit.siteName ? ` - ${visit.siteName}` : ""}`)))
+    : Array.from(new Set(plan.orderedStops.map((stop) => stop.workOrder.customer.name)));
+
+  return {
+    distanceKm: dailySummary?.positions ? dailySummary.distanceKm : plan.estimatedKm,
+    operationalMinutes: dailySummary?.positions ? dailySummary.movingMinutes + dailySummary.stoppedMinutes : plan.estimatedMinutes,
+    estimatedLiters: dailySummary?.positions ? dailySummary.estimatedLiters : fallbackLiters,
+    estimatedFuelCost: dailySummary?.positions ? dailySummary.estimatedFuelCost : fallbackFuelCost,
+    visitedClients: dailySummary?.visits?.length ? new Set(dailySummary.visits.map((visit) => visit.customerId)).size : workOrders.length,
+    visitNames,
+  };
+}
+
+function mergeDateAndTime(date: Date, time: string) {
+  const [hours = "0", minutes = "0"] = time.split(":");
+  const merged = new Date(date);
+  merged.setHours(Number(hours) || 0, Number(minutes) || 0, 0, 0);
+  return merged;
+}
+
+function formatInputTime(value?: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function nearestNeighborStops(stops: DispatchRouteStop[], baseLocation?: DispatchBaseLocation | null) {
+  const pending = [...stops];
+  const ordered: DispatchRouteStop[] = [];
+  let current: DispatchRouteStop | DispatchBaseLocation | undefined = baseLocation ?? pending.shift();
+
+  if (current && "workOrder" in current) {
+    ordered.push(current);
+  }
+
+  while (current && pending.length) {
+    let nextIndex = 0;
+    let nextDistance = Number.POSITIVE_INFINITY;
+    pending.forEach((candidate, index) => {
+      const distance = haversineKm(current!.latitude, current!.longitude, candidate.latitude, candidate.longitude);
+      if (distance < nextDistance) {
+        nextDistance = distance;
+        nextIndex = index;
+      }
+    });
+    current = pending.splice(nextIndex, 1)[0];
+    ordered.push(current);
+  }
+
+  return ordered;
+}
+
+function resolveDispatchBaseLocation(baseSettings?: DispatchBaseSettings | null) {
+  if (!baseSettings) {
+    return null;
+  }
+
+  const directCoords = resolveOperationalCoordinates(baseSettings.companyLatitude, baseSettings.companyLongitude);
+  if (directCoords) {
+    return {
+      name: baseSettings.companyName || "Security Solutions",
+      address: baseSettings.companyAddress,
+      ...directCoords,
+    } satisfies DispatchBaseLocation;
+  }
+
+  const addressCoords = parseCoordinatesFromText(baseSettings.companyAddress);
+  return addressCoords
+    ? {
+        name: baseSettings.companyName || "Security Solutions",
+        address: baseSettings.companyAddress,
+        ...addressCoords,
+      } satisfies DispatchBaseLocation
+    : null;
+}
+
+function hasCoordinates(latitude?: string | number | null, longitude?: string | number | null) {
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+  return Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0);
+}
+
+function applyCoordinatesFromText<T extends { address?: string; latitude?: number | null; longitude?: number | null }>(form: T): T {
+  const coords = parseCoordinatesFromText(form.address);
+  if (!coords) {
+    return form;
+  }
+
+  return {
+    ...form,
+    latitude: coords.latitude,
+    longitude: coords.longitude,
+  };
+}
+
+function formatCoordinate(value?: string | number | null) {
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) ? coordinate.toFixed(6) : "";
+}
+
+function buildGeoStatusText(latitude?: string | number | null, longitude?: string | number | null, emptyMessage = "Sin coordenadas") {
+  const coords = resolveOperationalCoordinates(latitude, longitude);
+  if (coords) {
+    return `GPS listo: ${formatCoordinate(coords.latitude)}, ${formatCoordinate(coords.longitude)}`;
+  }
+
+  if (hasCoordinates(latitude, longitude)) {
+    return "Coordenadas fuera de Uruguay o incompletas: corrige latitud y longitud.";
+  }
+
+  return emptyMessage;
+}
+
+function resolveWorkOrderLocation(workOrder: WorkOrder) {
+  const siteCoords = resolveOperationalCoordinates(workOrder.site?.latitude, workOrder.site?.longitude);
+  if (siteCoords) {
+    return siteCoords;
+  }
+
+  const siteAddressCoords = parseCoordinatesFromText(workOrder.site?.address);
+  if (siteAddressCoords) {
+    return siteAddressCoords;
+  }
+
+  const fallbackSite = getWorkOrderRouteSite(workOrder);
+  if (fallbackSite && fallbackSite.id !== workOrder.site?.id) {
+    const fallbackSiteCoords = resolveOperationalCoordinates(fallbackSite.latitude, fallbackSite.longitude);
+    if (fallbackSiteCoords) {
+      return fallbackSiteCoords;
+    }
+
+    const fallbackAddressCoords = parseCoordinatesFromText(fallbackSite.address);
+    if (fallbackAddressCoords) {
+      return fallbackAddressCoords;
+    }
+  }
+
+  const customerCoords = resolveOperationalCoordinates(workOrder.customer.latitude, workOrder.customer.longitude);
+  if (customerCoords) {
+    return customerCoords;
+  }
+
+  return parseCoordinatesFromText(workOrder.customer.address);
+}
+
+function getWorkOrderRouteSite(workOrder: WorkOrder) {
+  if (workOrder.site) {
+    return workOrder.site;
+  }
+
+  return workOrder.customer.sites?.find((site) => resolveOperationalCoordinates(site.latitude, site.longitude) || parseCoordinatesFromText(site.address)) ?? null;
+}
+
+function getGeoZoneInfo(target: GeoZoneTarget) {
+  const directCoordinates = resolveOperationalCoordinates(target.latitude, target.longitude);
+  const parsedCoordinates = directCoordinates ?? parseCoordinatesFromText(target.address);
+  const address = target.address?.trim();
+  const synced = Boolean(target.traccarGeofenceId);
+  const active = Boolean(parsedCoordinates || synced);
+  const mapQuery = parsedCoordinates
+    ? `${parsedCoordinates.latitude},${parsedCoordinates.longitude}`
+    : address || "";
+
+  return {
+    active,
+    synced,
+    mapUrl: mapQuery ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}` : "",
+  };
+}
+
+function estimateWorkOrderMinutes(workOrder: WorkOrder) {
+  const title = `${workOrder.title} ${workOrder.notes ?? ""}`.toLowerCase();
+  if (title.includes("dvr") || title.includes("nvr") || title.includes("rack")) {
+    return 180;
+  }
+  if (title.includes("camara") || title.includes("cámara")) {
+    return 45;
+  }
+  if (title.includes("bateria") || title.includes("batería")) {
+    return 25;
+  }
+  if (title.includes("gps")) {
+    return 30;
+  }
+
+  const byType: Record<DeviceType, number> = {
+    CCTV: 120,
+    ALARM: 75,
+    ACCESS_CONTROL: 90,
+    CABLING: 150,
+    GPS: 30,
+    ELECTRIC_FENCE: 120,
+    AUTOMATION: 120,
+    NETWORKING: 90,
+    MAINTENANCE: 60,
+    OTHER: 60,
+  };
+
+  return byType[workOrder.type] ?? 60;
+}
+
+function inferZone(value?: string | null) {
+  const clean = normalizeText(value);
+  const zones = ["carrasco", "centro", "pocitos", "malvin", "malvín", "ciudad de la costa", "cordon", "cordón", "buceo", "prado"];
+  const zone = zones.find((candidate) => clean.includes(normalizeText(candidate)));
+  return zone ? titleCase(zone.replace("malvin", "malvin").replace("cordon", "cordon")) : "Zona sin clasificar";
+}
+
+function parseCoordinatesFromText(value?: string | null) {
+  const text = value?.trim();
+  if (!text) {
+    return null;
+  }
+
+  const decoded = safeDecodeURIComponent(text);
+  const patterns = [
+    /@(-?\d{1,2}(?:[.,]\d+)?),\s*(-?\d{1,3}(?:[.,]\d+)?)/,
+    /[?&](?:q|query|ll)=(-?\d{1,2}(?:[.,]\d+)?),\s*(-?\d{1,3}(?:[.,]\d+)?)/,
+    /!3d(-?\d{1,2}(?:[.,]\d+)?)!4d(-?\d{1,3}(?:[.,]\d+)?)/,
+    /(?:^|\s)(-?\d{1,2}[.,]\d{3,})\s*,\s*(-?\d{1,3}[.,]\d{3,})(?:\s|$)/,
+    /(?:^|\s)(-?\d{1,2}[.,]\d{3,})\s+(-?\d{1,3}[.,]\d{3,})(?:\s|$)/,
+  ];
+  const match = patterns.map((pattern) => decoded.match(pattern)).find(Boolean);
+  if (!match) {
+    return null;
+  }
+
+  const latitude = Number(match[1].replace(",", "."));
+  const longitude = Number(match[2].replace(",", "."));
+  return isValidLatitude(latitude) && isValidLongitude(longitude) && isUruguayCoordinate(latitude, longitude) && !(latitude === 0 && longitude === 0)
+    ? { latitude, longitude }
+    : null;
+}
+
+function hasOperationalCoordinates(latitude?: string | number | null, longitude?: string | number | null) {
+  return Boolean(resolveOperationalCoordinates(latitude, longitude));
+}
+
+function resolveOperationalCoordinates(latitude?: string | number | null, longitude?: string | number | null) {
+  const normalized = normalizeCompanyCoordinates(toOptionalCoordinateNumber(latitude), toOptionalCoordinateNumber(longitude));
+  if (!normalized || normalized.latitude === undefined || normalized.longitude === undefined) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function toOptionalCoordinateNumber(value?: string | number | null) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) ? coordinate : undefined;
+}
+
+function safeDecodeURIComponent(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function isValidLatitude(value: number) {
+  return Number.isFinite(value) && value >= -90 && value <= 90;
+}
+
+function isValidLongitude(value: number) {
+  return Number.isFinite(value) && value >= -180 && value <= 180;
+}
+
+function normalizeCompanyCoordinates(latitude?: number, longitude?: number) {
+  const normalizedLatitude = normalizePackedUruguayCoordinate(latitude, "latitude");
+  const normalizedLongitude = normalizePackedUruguayCoordinate(longitude, "longitude");
+
+  if (normalizedLatitude === undefined && normalizedLongitude === undefined) {
+    return { latitude: undefined, longitude: undefined };
+  }
+
+  if (normalizedLatitude === undefined || normalizedLongitude === undefined) {
+    return null;
+  }
+
+  if (!isValidLatitude(normalizedLatitude) || !isValidLongitude(normalizedLongitude)) {
+    return null;
+  }
+
+  if (!isUruguayCoordinate(normalizedLatitude, normalizedLongitude)) {
+    return null;
+  }
+
+  return {
+    latitude: normalizedLatitude,
+    longitude: normalizedLongitude,
+  };
+}
+
+function normalizePackedUruguayCoordinate(value: number | undefined, kind: "latitude" | "longitude") {
+  if (value === undefined || value === null || value === 0 || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  if (kind === "latitude" && Math.abs(value) <= 90) {
+    return value;
+  }
+
+  if (kind === "longitude" && Math.abs(value) <= 180) {
+    return value;
+  }
+
+  const sign = value < 0 ? -1 : 1;
+  const digits = String(Math.trunc(Math.abs(value)));
+  const expectedPrefix = kind === "latitude" ? "34" : "56";
+
+  if (digits.startsWith(expectedPrefix) && digits.length > 2) {
+    return sign * (Number(digits.slice(0, 2)) + Number(`0.${digits.slice(2)}`));
+  }
+
+  return value;
+}
+
+function isUruguayCoordinate(latitude: number, longitude: number) {
+  return latitude >= -35.2 && latitude <= -30 && longitude >= -58.6 && longitude <= -53;
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const radius = 6371;
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function toRadians(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function roundNumber(value: number, decimals: number) {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+function normalizeText(value?: string | null) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function titleCase(value: string) {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function formatPrice(value?: string | number | null, currency?: string | null) {
@@ -10044,6 +11959,19 @@ function formatDateTime(value?: string | null) {
   return new Date(value).toLocaleString("es-UY", {
     dateStyle: "short",
     timeStyle: "short",
+  });
+}
+
+function formatShortDateTime(value?: string | null) {
+  if (!value) {
+    return "Sin fecha";
+  }
+
+  return new Date(value).toLocaleString("es-UY", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 

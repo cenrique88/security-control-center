@@ -106,6 +106,9 @@ model Customer {
   email       String?
   phone       String?
   address     String?
+  latitude    Decimal?       @db.Decimal(10, 7)
+  longitude   Decimal?       @db.Decimal(10, 7)
+  traccarGeofenceId Int?
   logoUrl     String?
   type        CustomerType   @default(NORMAL)
   status      CustomerStatus @default(PROSPECT)
@@ -142,6 +145,9 @@ model Site {
   customerId  String
   name        String
   address     String
+  latitude    Decimal?           @db.Decimal(10, 7)
+  longitude   Decimal?           @db.Decimal(10, 7)
+  traccarGeofenceId Int?
   notes       String?
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
@@ -465,7 +471,24 @@ model Vehicle {
   name            String
   plate           String?  @unique
   traccarDeviceId String?
+  fuelKmPerLiter  Decimal? @db.Decimal(8, 2)
   active          Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model TraccarSettings {
+  id          String   @id @default("default")
+  baseUrl     String?
+  token       String?
+  username    String?
+  password    String?
+  matchRadiusMeters Int @default(120)
+  minStopMinutes Int    @default(5)
+  companyName String   @default("Security Solutions")
+  companyAddress String?
+  companyLatitude Decimal? @db.Decimal(10, 7)
+  companyLongitude Decimal? @db.Decimal(10, 7)
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
 }

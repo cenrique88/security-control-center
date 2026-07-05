@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString } from "class-validator";
+import { IsBoolean, IsNumber, IsOptional, IsString, Min } from "class-validator";
 
 export class CreateVehicleDto {
   @IsString()
@@ -11,6 +11,11 @@ export class CreateVehicleDto {
   @IsOptional()
   @IsString()
   traccarDeviceId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  fuelKmPerLiter?: number;
 
   @IsOptional()
   @IsBoolean()

@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsOptional, IsString } from "class-validator";
+import { IsEmail, IsEnum, IsNumber, IsOptional, IsString } from "class-validator";
 
 enum CustomerStatusDto {
   ACTIVE = "ACTIVE",
@@ -34,6 +34,14 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  @IsOptional()
+  @IsNumber()
+  latitude?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  longitude?: number | null;
 
   @IsOptional()
   @IsString()

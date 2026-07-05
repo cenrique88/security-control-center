@@ -252,6 +252,20 @@ export class WorkOrdersService {
           logoUrl: true,
           email: true,
           phone: true,
+          address: true,
+          latitude: true,
+          longitude: true,
+          traccarGeofenceId: true,
+          sites: {
+            select: {
+              id: true,
+              name: true,
+              address: true,
+              latitude: true,
+              longitude: true,
+              traccarGeofenceId: true,
+            },
+          },
         },
       },
       site: {
@@ -259,6 +273,9 @@ export class WorkOrdersService {
           id: true,
           name: true,
           address: true,
+          latitude: true,
+          longitude: true,
+          traccarGeofenceId: true,
         },
       },
       inventoryMovements: {

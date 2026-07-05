@@ -92,6 +92,9 @@ export type Customer = {
   email?: string | null;
   phone?: string | null;
   address?: string | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  traccarGeofenceId?: number | null;
   logoUrl?: string | null;
   type: CustomerType;
   status: CustomerStatus;
@@ -114,6 +117,8 @@ export type CustomerPayload = {
   email?: string;
   phone?: string;
   address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   logoUrl?: string;
   type?: CustomerType;
   status?: CustomerStatus;
@@ -125,6 +130,9 @@ export type CustomerSite = {
   customerId: string;
   name: string;
   address: string;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  traccarGeofenceId?: number | null;
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -137,6 +145,8 @@ export type CustomerSite = {
 export type SitePayload = {
   name: string;
   address: string;
+  latitude?: number | null;
+  longitude?: number | null;
   notes?: string;
 };
 
@@ -231,11 +241,24 @@ export type WorkOrder = {
     logoUrl?: string | null;
     email?: string | null;
     phone?: string | null;
+    address?: string | null;
+    latitude?: string | number | null;
+    longitude?: string | number | null;
+    sites?: Array<{
+      id: string;
+      name: string;
+      address: string;
+      latitude?: string | number | null;
+      longitude?: string | number | null;
+      traccarGeofenceId?: number | null;
+    }>;
   };
   site?: {
     id: string;
     name: string;
     address: string;
+    latitude?: string | number | null;
+    longitude?: string | number | null;
   } | null;
   inventoryMovements?: InventoryMovement[];
 };
@@ -566,6 +589,7 @@ export type Vehicle = {
   name: string;
   plate?: string | null;
   traccarDeviceId?: string | null;
+  fuelKmPerLiter?: string | number | null;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -575,7 +599,86 @@ export type VehiclePayload = {
   name: string;
   plate?: string;
   traccarDeviceId?: string;
+  fuelKmPerLiter?: number;
   active?: boolean;
+};
+
+export type TraccarSettings = {
+  id: string;
+  baseUrl?: string | null;
+  token?: string | null;
+  username?: string | null;
+  password?: string | null;
+  matchRadiusMeters: number;
+  minStopMinutes: number;
+  companyName?: string | null;
+  companyAddress?: string | null;
+  companyLatitude?: string | number | null;
+  companyLongitude?: string | number | null;
+  configured?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type VehicleStop = {
+  index: number;
+  arrival: string;
+  departure: string;
+  durationMinutes: number;
+  latitude: number;
+  longitude: number;
+  address?: string | null;
+};
+
+export type VehicleVisit = {
+  stopIndex: number;
+  customerId: string;
+  customerName: string;
+  siteId?: string;
+  siteName?: string;
+  address?: string;
+  arrival: string;
+  departure: string;
+  durationMinutes: number;
+  match: "GPS" | "ADDRESS" | "NAME";
+  distanceMeters?: number;
+};
+
+export type VehicleDailySummary = {
+  vehicle: Vehicle;
+  date: string;
+  configured: boolean;
+  positions: number;
+  distanceKm: number;
+  movingMinutes: number;
+  stoppedMinutes: number;
+  minSpeedKmh: number;
+  averageSpeedKmh: number;
+  maxSpeedKmh: number;
+  estimatedLiters: number;
+  fuelPricePerLiter: number;
+  estimatedFuelCost: number;
+  stops: VehicleStop[];
+  visits: VehicleVisit[];
+  unmatchedStops: VehicleStop[];
+  message?: string;
+};
+
+export type TraccarGeofenceSync = {
+  configured: boolean;
+  created: number;
+  updated: number;
+  linked: number;
+  skipped: number;
+  message: string;
+  items: Array<{
+    type: "Cliente" | "Sitio";
+    id: string;
+    name: string;
+    status: "created" | "updated" | "skipped" | "error";
+    reason?: string;
+    geofenceId?: number;
+  }>;
 };
 
 export type InventoryMovementType = "IN" | "OUT" | "ADJUST";

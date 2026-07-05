@@ -293,12 +293,15 @@ export class CustomersService {
 
   async createSite(customerId: string, dto: CreateSiteDto) {
     await this.ensureExists(customerId);
+    const coordinates = this.normalizeCoordinates(dto.latitude, dto.longitude);
 
     return this.prisma.site.create({
       data: {
         customerId,
         name: dto.name.trim(),
         address: dto.address.trim(),
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
         notes: this.cleanOptional(dto.notes),
       },
       include: {
@@ -320,6 +323,7 @@ export class CustomersService {
   }
 
   private toCreateData(dto: CreateCustomerDto): Omit<Prisma.CustomerCreateInput, "reference"> {
+    const coordinates = this.normalizeCoordinates(dto.latitude, dto.longitude);
     return {
       name: dto.name.trim(),
       legalName: this.cleanOptional(dto.legalName),
@@ -327,6 +331,8 @@ export class CustomersService {
       email: this.cleanOptional(dto.email),
       phone: this.cleanOptional(dto.phone),
       address: this.cleanOptional(dto.address),
+      latitude: coordinates.latitude,
+      longitude: coordinates.longitude,
       logoUrl: this.cleanOptional(dto.logoUrl),
       type: dto.type as CustomerType | undefined,
       status: dto.status as CustomerStatus | undefined,
@@ -355,6 +361,7 @@ export class CustomersService {
   }
 
   private toUpdateData(dto: UpdateCustomerDto): Prisma.CustomerUpdateInput {
+    const coordinates = this.normalizeCoordinates(dto.latitude, dto.longitude);
     return {
       name: this.cleanOptional(dto.name),
       legalName: this.cleanNullable(dto.legalName),
@@ -362,6 +369,8 @@ export class CustomersService {
       email: this.cleanNullable(dto.email),
       phone: this.cleanNullable(dto.phone),
       address: this.cleanNullable(dto.address),
+      latitude: coordinates.latitude,
+      longitude: coordinates.longitude,
       logoUrl: this.cleanNullable(dto.logoUrl),
       type: dto.type as CustomerType | undefined,
       status: dto.status as CustomerStatus | undefined,
@@ -372,6 +381,63 @@ export class CustomersService {
   private cleanOptional(value?: string) {
     const clean = value?.trim();
     return clean ? clean : undefined;
+  }
+
+  private normalizeCoordinates(latitude?: number | null, longitude?: number | null) {
+    const normalizedLatitude = this.normalizePackedUruguayCoordinate(latitude, "latitude");
+    const normalizedLongitude = this.normalizePackedUruguayCoordinate(longitude, "longitude");
+
+    if (normalizedLatitude === undefined && normalizedLongitude === undefined) {
+      return { latitude: undefined, longitude: undefined };
+    }
+
+    if (
+      normalizedLatitude === undefined ||
+      normalizedLongitude === undefined ||
+      !this.isValidLatitude(normalizedLatitude) ||
+      !this.isValidLongitude(normalizedLongitude) ||
+      !this.isUruguayCoordinate(normalizedLatitude, normalizedLongitude)
+    ) {
+      return { latitude: null, longitude: null };
+    }
+
+    return { latitude: normalizedLatitude, longitude: normalizedLongitude };
+  }
+
+  private normalizePackedUruguayCoordinate(value: number | null | undefined, kind: "latitude" | "longitude") {
+    if (value === undefined || value === null || value === 0 || !Number.isFinite(value)) {
+      return undefined;
+    }
+
+    if (kind === "latitude" && Math.abs(value) <= 90) {
+      return value;
+    }
+
+    if (kind === "longitude" && Math.abs(value) <= 180) {
+      return value;
+    }
+
+    const sign = value < 0 ? -1 : 1;
+    const digits = String(Math.trunc(Math.abs(value)));
+    const expectedPrefix = kind === "latitude" ? "34" : "56";
+
+    if (digits.startsWith(expectedPrefix) && digits.length > 2) {
+      return sign * (Number(digits.slice(0, 2)) + Number(`0.${digits.slice(2)}`));
+    }
+
+    return value;
+  }
+
+  private isValidLatitude(value: number) {
+    return Number.isFinite(value) && value >= -90 && value <= 90;
+  }
+
+  private isValidLongitude(value: number) {
+    return Number.isFinite(value) && value >= -180 && value <= 180;
+  }
+
+  private isUruguayCoordinate(latitude: number, longitude: number) {
+    return latitude >= -35.2 && latitude <= -30 && longitude >= -58.6 && longitude <= -53;
   }
 
   private cleanNullable(value?: string) {

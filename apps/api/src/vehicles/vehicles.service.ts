@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { FuelService } from "../fuel/fuel.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateVehicleDto } from "./dto/create-vehicle.dto";
+import { UpdateTraccarSettingsDto } from "./dto/update-traccar-settings.dto";
 import { UpdateVehicleDto } from "./dto/update-vehicle.dto";
 
 type VehicleFilters = {
@@ -9,9 +11,37 @@ type VehicleFilters = {
   active?: boolean;
 };
 
+type TraccarPosition = {
+  id?: number;
+  deviceId?: number;
+  protocol?: string;
+  deviceTime?: string;
+  fixTime?: string;
+  serverTime?: string;
+  outdated?: boolean;
+  valid?: boolean;
+  latitude: number;
+  longitude: number;
+  altitude?: number;
+  speed?: number;
+  course?: number;
+  address?: string;
+  attributes?: Record<string, unknown>;
+};
+
+type TraccarSettingsShape = {
+  baseUrl: string | null;
+  token: string | null;
+  username: string | null;
+  password: string | null;
+};
+
 @Injectable()
 export class VehiclesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fuelService: FuelService,
+  ) {}
 
   async list(filters: VehicleFilters) {
     const where: Prisma.VehicleWhereInput = {};
@@ -41,6 +71,7 @@ export class VehiclesService {
         name: dto.name.trim(),
         plate: this.cleanOptional(dto.plate),
         traccarDeviceId: this.cleanOptional(dto.traccarDeviceId),
+        fuelKmPerLiter: dto.fuelKmPerLiter,
         active: dto.active ?? true,
       },
     });
@@ -55,9 +86,587 @@ export class VehiclesService {
         name: this.cleanOptional(dto.name),
         plate: this.cleanNullable(dto.plate),
         traccarDeviceId: this.cleanNullable(dto.traccarDeviceId),
+        fuelKmPerLiter: dto.fuelKmPerLiter,
         active: dto.active,
       },
     });
+  }
+
+  async remove(id: string) {
+    await this.ensureExists(id);
+
+    return this.prisma.vehicle.delete({
+      where: { id },
+    });
+  }
+
+  async getTraccarSettings() {
+    const settings = await this.prisma.traccarSettings.upsert({
+      where: { id: "default" },
+      update: {},
+      create: { id: "default" },
+    });
+
+    return {
+      ...settings,
+      token: settings.token ? "********" : "",
+      password: settings.password ? "********" : "",
+      configured: Boolean(settings.baseUrl && (settings.token || (settings.username && settings.password))),
+    };
+  }
+
+  async updateTraccarSettings(dto: UpdateTraccarSettingsDto) {
+    const current = await this.prisma.traccarSettings.upsert({
+      where: { id: "default" },
+      update: {},
+      create: { id: "default" },
+    });
+
+    const companyCoordinates = this.normalizeCompanyCoordinates(dto.companyLatitude, dto.companyLongitude);
+    const data = {
+      baseUrl: this.cleanNullable(dto.baseUrl),
+      token: dto.token === "********" ? current.token : this.cleanNullable(dto.token),
+      username: this.cleanNullable(dto.username),
+      password: dto.password === "********" ? current.password : this.cleanNullable(dto.password),
+      matchRadiusMeters: dto.matchRadiusMeters,
+      minStopMinutes: dto.minStopMinutes,
+      companyName: this.cleanOptional(dto.companyName) ?? "Security Solutions",
+      companyAddress: this.cleanNullable(dto.companyAddress),
+      companyLatitude: companyCoordinates.latitude,
+      companyLongitude: companyCoordinates.longitude,
+    };
+
+    const settings = await this.prisma.traccarSettings.update({
+      where: { id: "default" },
+      data,
+    });
+
+    return {
+      ...settings,
+      token: settings.token ? "********" : "",
+      password: settings.password ? "********" : "",
+      configured: Boolean(settings.baseUrl && (settings.token || (settings.username && settings.password))),
+    };
+  }
+
+  async traccarDailySummary(id: string, date?: string) {
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id } });
+    if (!vehicle) {
+      throw new NotFoundException("Vehicle not found");
+    }
+
+    const settings = await this.prisma.traccarSettings.findUnique({ where: { id: "default" } });
+    if (!settings?.baseUrl || !vehicle.traccarDeviceId) {
+      return this.emptyDailySummary(vehicle, date, "Configura Traccar y vincula el ID del dispositivo.");
+    }
+
+    const day = this.parseReportDate(date);
+    const from = new Date(day);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(day);
+    to.setHours(23, 59, 59, 999);
+
+    let positions: TraccarPosition[] = [];
+    try {
+      positions = await this.fetchTraccarPositions(settings, vehicle.traccarDeviceId, from, to);
+    } catch (error) {
+      return this.emptyDailySummary(vehicle, date, error instanceof Error ? error.message : "No se pudo consultar Traccar.");
+    }
+
+    const sorted = positions
+      .filter((position) => Number.isFinite(position.latitude) && Number.isFinite(position.longitude))
+      .sort((left, right) => this.positionTime(left).getTime() - this.positionTime(right).getTime());
+    const distanceKm = this.roundNumber(this.calculateDistanceKm(sorted), 2);
+    const stops = this.detectStops(sorted, settings.minStopMinutes);
+    const visits = await this.detectCustomerVisits(stops, settings.matchRadiusMeters);
+    const movingMinutes = this.calculateMovingMinutes(sorted, stops);
+    const speedStats = this.calculateSpeedStats(sorted);
+    const fuelKmPerLiter = Number(vehicle.fuelKmPerLiter) || 10;
+    const estimatedLiters = fuelKmPerLiter > 0 ? this.roundNumber(distanceKm / fuelKmPerLiter, 2) : 0;
+    const fuel = await this.fuelService.getUruguaySuperPrice();
+    const estimatedFuelCost = this.roundNumber(estimatedLiters * fuel.pricePerLiter, 2);
+
+    return {
+      vehicle,
+      date: from.toISOString().slice(0, 10),
+      configured: true,
+      positions: sorted.length,
+      distanceKm,
+      movingMinutes,
+      stoppedMinutes: stops.reduce((sum, stop) => sum + stop.durationMinutes, 0),
+      minSpeedKmh: speedStats.minSpeedKmh,
+      averageSpeedKmh: speedStats.averageSpeedKmh,
+      maxSpeedKmh: speedStats.maxSpeedKmh,
+      estimatedLiters,
+      fuelPricePerLiter: fuel.pricePerLiter,
+      estimatedFuelCost,
+      stops,
+      visits,
+      unmatchedStops: stops.filter((stop) => !visits.some((visit) => visit.stopIndex === stop.index)),
+      message: sorted.length ? "" : "Traccar no devolvio posiciones para ese dia.",
+    };
+  }
+
+  async syncCustomerGeofences() {
+    const settings = await this.prisma.traccarSettings.findUnique({ where: { id: "default" } });
+    if (!settings?.baseUrl || (!settings.token && (!settings.username || !settings.password))) {
+      return {
+        configured: false,
+        created: 0,
+        updated: 0,
+        linked: 0,
+        skipped: 0,
+        items: [],
+        message: "Configura Traccar antes de sincronizar geozonas.",
+      };
+    }
+
+    const radius = settings.matchRadiusMeters || 120;
+    const vehicles = await this.prisma.vehicle.findMany({
+      where: { active: true, traccarDeviceId: { not: null } },
+      select: { traccarDeviceId: true },
+    });
+    const customers = await this.prisma.customer.findMany({
+      orderBy: { name: "asc" },
+      include: { sites: { orderBy: { name: "asc" } } },
+    });
+
+    const items: Array<{
+      type: "Cliente" | "Sitio";
+      id: string;
+      name: string;
+      status: "created" | "updated" | "skipped" | "error";
+      reason?: string;
+      geofenceId?: number;
+    }> = [];
+    let created = 0;
+    let updated = 0;
+    let linked = 0;
+    let skipped = 0;
+
+    for (const customer of customers) {
+      const customerCoords = this.resolveCoordinates(customer.latitude, customer.longitude, customer.address);
+      if (customerCoords) {
+        const result = await this.upsertTraccarGeofence(settings, {
+          currentId: customer.traccarGeofenceId,
+          name: `CRM Cliente - ${customer.name}`,
+          description: customer.address ?? "",
+          latitude: customerCoords.latitude,
+          longitude: customerCoords.longitude,
+          radius,
+        });
+
+        if (result.status === "created" || result.status === "updated") {
+          await this.prisma.customer.update({
+            where: { id: customer.id },
+            data: {
+              latitude: customerCoords.latitude,
+              longitude: customerCoords.longitude,
+              traccarGeofenceId: result.geofenceId,
+            },
+          });
+          const linkedCount = await this.linkGeofenceToVehicles(settings, result.geofenceId, vehicles.map((vehicle) => vehicle.traccarDeviceId).filter(Boolean) as string[]);
+          linked += linkedCount;
+          result.status === "created" ? (created += 1) : (updated += 1);
+        } else {
+          skipped += 1;
+        }
+
+        items.push({ type: "Cliente", id: customer.id, name: customer.name, ...result });
+      } else if (!customer.sites.length) {
+        skipped += 1;
+        items.push({ type: "Cliente", id: customer.id, name: customer.name, status: "skipped", reason: "Sin coordenadas" });
+      }
+
+      for (const site of customer.sites) {
+        const coords = this.resolveCoordinates(site.latitude, site.longitude, site.address);
+        if (!coords) {
+          skipped += 1;
+          items.push({ type: "Sitio", id: site.id, name: `${customer.name} - ${site.name}`, status: "skipped", reason: "Sin coordenadas" });
+          continue;
+        }
+
+        const result = await this.upsertTraccarGeofence(settings, {
+          currentId: site.traccarGeofenceId,
+          name: `CRM Sitio - ${customer.name} - ${site.name}`,
+          description: site.address,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          radius,
+        });
+
+        if (result.status === "created" || result.status === "updated") {
+          await this.prisma.site.update({
+            where: { id: site.id },
+            data: {
+              latitude: coords.latitude,
+              longitude: coords.longitude,
+              traccarGeofenceId: result.geofenceId,
+            },
+          });
+          const linkedCount = await this.linkGeofenceToVehicles(settings, result.geofenceId, vehicles.map((vehicle) => vehicle.traccarDeviceId).filter(Boolean) as string[]);
+          linked += linkedCount;
+          result.status === "created" ? (created += 1) : (updated += 1);
+        } else {
+          skipped += 1;
+        }
+
+        items.push({ type: "Sitio", id: site.id, name: `${customer.name} - ${site.name}`, ...result });
+      }
+    }
+
+    return {
+      configured: true,
+      created,
+      updated,
+      linked,
+      skipped,
+      items,
+      message: `Geozonas sincronizadas: ${created} nuevas, ${updated} actualizadas, ${skipped} sin coordenadas.`,
+    };
+  }
+
+  private async fetchTraccarPositions(settings: TraccarSettingsShape, deviceId: string, from: Date, to: Date) {
+    const baseUrl = settings.baseUrl?.replace(/\/+$/, "");
+    if (!baseUrl) {
+      throw new Error("Configura la URL de Traccar.");
+    }
+
+    const url = new URL(`${baseUrl}/api/positions`);
+    url.searchParams.set("deviceId", deviceId);
+    url.searchParams.set("from", from.toISOString());
+    url.searchParams.set("to", to.toISOString());
+
+    const headers = this.traccarHeaders(settings);
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error(`Traccar respondio ${response.status}. Revisa URL, credenciales o ID del dispositivo.`);
+    }
+
+    return (await response.json()) as TraccarPosition[];
+  }
+
+  private async upsertTraccarGeofence(
+    settings: TraccarSettingsShape,
+    geofence: { currentId?: number | null; name: string; description: string; latitude: number; longitude: number; radius: number },
+  ) {
+    const body = {
+      name: geofence.name.slice(0, 120),
+      description: geofence.description,
+      area: `CIRCLE (${geofence.latitude} ${geofence.longitude}, ${geofence.radius})`,
+      attributes: {
+        source: "security-control-center",
+      },
+    };
+
+    if (geofence.currentId) {
+      const update = await this.traccarRequest(settings, `/api/geofences/${geofence.currentId}`, {
+        method: "PUT",
+        body: JSON.stringify({ id: geofence.currentId, ...body }),
+      });
+      if (update.ok) {
+        return { status: "updated" as const, geofenceId: geofence.currentId };
+      }
+    }
+
+    const create = await this.traccarRequest(settings, "/api/geofences", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    if (!create.ok) {
+      return { status: "error" as const, reason: `Traccar respondio ${create.status}` };
+    }
+
+    const data = (await create.json()) as { id?: number };
+    return data.id ? { status: "created" as const, geofenceId: data.id } : { status: "error" as const, reason: "Traccar no devolvio ID" };
+  }
+
+  private async linkGeofenceToVehicles(settings: TraccarSettingsShape, geofenceId: number, deviceIds: string[]) {
+    let linked = 0;
+    for (const deviceId of deviceIds) {
+      const response = await this.traccarRequest(settings, "/api/permissions", {
+        method: "POST",
+        body: JSON.stringify({ deviceId: Number(deviceId), geofenceId }),
+      });
+      if (response.ok || response.status === 400) {
+        linked += 1;
+      }
+    }
+
+    return linked;
+  }
+
+  private traccarRequest(settings: TraccarSettingsShape, path: string, init: RequestInit = {}) {
+    const baseUrl = settings.baseUrl?.replace(/\/+$/, "");
+    if (!baseUrl) {
+      throw new Error("Configura la URL de Traccar.");
+    }
+
+    return fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: {
+        ...this.traccarHeaders(settings),
+        "Content-Type": "application/json",
+        ...(init.headers ?? {}),
+      },
+    });
+  }
+
+  private traccarHeaders(settings: TraccarSettingsShape) {
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (settings.token) {
+      headers.Authorization = `Bearer ${settings.token}`;
+    } else if (settings.username && settings.password) {
+      headers.Authorization = `Basic ${Buffer.from(`${settings.username}:${settings.password}`).toString("base64")}`;
+    }
+
+    return headers;
+  }
+
+  private async detectCustomerVisits(stops: ReturnType<VehiclesService["detectStops"]>, matchRadiusMeters: number) {
+    const customers = await this.prisma.customer.findMany({
+      include: { sites: true },
+      orderBy: { name: "asc" },
+    });
+
+    const visits: Array<{
+      stopIndex: number;
+      customerId: string;
+      customerName: string;
+      siteId?: string;
+      siteName?: string;
+      address?: string;
+      arrival: string;
+      departure: string;
+      durationMinutes: number;
+      match: "GPS" | "ADDRESS" | "NAME";
+      distanceMeters?: number;
+    }> = [];
+
+    stops.forEach((stop) => {
+      let best: (typeof visits)[number] | null = null;
+
+      customers.forEach((customer) => {
+        const addressScore = this.matchesText(stop.address, customer.address);
+        if (addressScore || this.matchesText(stop.address, customer.name)) {
+          best = {
+            stopIndex: stop.index,
+            customerId: customer.id,
+            customerName: customer.name,
+            address: customer.address ?? undefined,
+            arrival: stop.arrival,
+            departure: stop.departure,
+            durationMinutes: stop.durationMinutes,
+            match: addressScore ? "ADDRESS" : "NAME",
+          };
+        }
+
+        customer.sites.forEach((site) => {
+          const siteLat = Number(site.latitude);
+          const siteLon = Number(site.longitude);
+          const hasCoords = Number.isFinite(siteLat) && Number.isFinite(siteLon);
+          const distanceMeters = hasCoords ? this.haversineKm(stop.latitude, stop.longitude, siteLat, siteLon) * 1000 : undefined;
+          const gpsMatch = distanceMeters !== undefined && distanceMeters <= matchRadiusMeters;
+          const addressMatch = this.matchesText(stop.address, site.address) || this.matchesText(stop.address, site.name);
+          if (!gpsMatch && !addressMatch) {
+            return;
+          }
+
+          const candidate = {
+            stopIndex: stop.index,
+            customerId: customer.id,
+            customerName: customer.name,
+            siteId: site.id,
+            siteName: site.name,
+            address: site.address,
+            arrival: stop.arrival,
+            departure: stop.departure,
+            durationMinutes: stop.durationMinutes,
+            match: gpsMatch ? "GPS" as const : "ADDRESS" as const,
+            distanceMeters: distanceMeters === undefined ? undefined : this.roundNumber(distanceMeters, 0),
+          };
+
+          if (!best || (candidate.distanceMeters ?? Number.MAX_SAFE_INTEGER) < (best.distanceMeters ?? Number.MAX_SAFE_INTEGER)) {
+            best = candidate;
+          }
+        });
+      });
+
+      if (best) {
+        visits.push(best);
+      }
+    });
+
+    return visits;
+  }
+
+  private detectStops(positions: TraccarPosition[], minStopMinutes: number) {
+    const stops: Array<{
+      index: number;
+      arrival: string;
+      departure: string;
+      durationMinutes: number;
+      latitude: number;
+      longitude: number;
+      address?: string;
+    }> = [];
+    let start = 0;
+
+    for (let index = 1; index <= positions.length; index += 1) {
+      const previous = positions[index - 1];
+      const current = positions[index];
+      const moving = current ? this.haversineKm(previous.latitude, previous.longitude, current.latitude, current.longitude) > 0.12 : true;
+      if (!moving) {
+        continue;
+      }
+
+      const startPosition = positions[start];
+      const endPosition = previous;
+      const durationMinutes = Math.round((this.positionTime(endPosition).getTime() - this.positionTime(startPosition).getTime()) / 60000);
+      if (durationMinutes >= minStopMinutes) {
+        stops.push({
+          index: stops.length,
+          arrival: this.positionTime(startPosition).toISOString(),
+          departure: this.positionTime(endPosition).toISOString(),
+          durationMinutes,
+          latitude: startPosition.latitude,
+          longitude: startPosition.longitude,
+          address: endPosition.address || startPosition.address,
+        });
+      }
+
+      start = index;
+    }
+
+    return stops;
+  }
+
+  private calculateDistanceKm(positions: TraccarPosition[]) {
+    return positions.reduce((sum, position, index) => {
+      if (index === 0) {
+        return sum;
+      }
+
+      const previous = positions[index - 1];
+      return sum + this.haversineKm(previous.latitude, previous.longitude, position.latitude, position.longitude);
+    }, 0);
+  }
+
+  private calculateMovingMinutes(positions: TraccarPosition[], stops: Array<{ durationMinutes: number }>) {
+    if (positions.length < 2) {
+      return 0;
+    }
+
+    const totalMinutes = Math.round((this.positionTime(positions[positions.length - 1]).getTime() - this.positionTime(positions[0]).getTime()) / 60000);
+    return Math.max(0, totalMinutes - stops.reduce((sum, stop) => sum + stop.durationMinutes, 0));
+  }
+
+  private calculateSpeedStats(positions: TraccarPosition[]) {
+    const speeds = positions.map((position) => (Number(position.speed) || 0) * 1.852);
+    const movingSpeeds = speeds.filter((speed) => speed > 1);
+
+    return {
+      minSpeedKmh: this.roundNumber(movingSpeeds.length ? Math.min(...movingSpeeds) : 0, 1),
+      averageSpeedKmh: this.roundNumber(speeds.length ? speeds.reduce((sum, speed) => sum + speed, 0) / speeds.length : 0, 1),
+      maxSpeedKmh: this.roundNumber(speeds.length ? Math.max(...speeds) : 0, 1),
+    };
+  }
+
+  private haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+    const radius = 6371;
+    const dLat = this.toRadians(lat2 - lat1);
+    const dLon = this.toRadians(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(this.toRadians(lat1)) * Math.cos(this.toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  private toRadians(value: number) {
+    return (value * Math.PI) / 180;
+  }
+
+  private positionTime(position: TraccarPosition) {
+    return new Date(position.fixTime || position.deviceTime || position.serverTime || Date.now());
+  }
+
+  private matchesText(left?: string | null, right?: string | null) {
+    const a = this.normalizeText(left);
+    const b = this.normalizeText(right);
+    return Boolean(a && b && (a.includes(b) || b.includes(a)));
+  }
+
+  private resolveCoordinates(latitude?: Prisma.Decimal | number | null, longitude?: Prisma.Decimal | number | null, address?: string | null) {
+    const lat = Number(latitude);
+    const lon = Number(longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      return { latitude: lat, longitude: lon };
+    }
+
+    return this.parseCoordinatesFromText(address);
+  }
+
+  private parseCoordinatesFromText(value?: string | null) {
+    const match = value?.match(/(-?\d{1,2}(?:[.,]\d+)?)[,\s]+(-?\d{1,3}(?:[.,]\d+)?)/);
+    if (!match) {
+      return null;
+    }
+
+    const latitude = Number(match[1].replace(",", "."));
+    const longitude = Number(match[2].replace(",", "."));
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return null;
+    }
+
+    return { latitude, longitude };
+  }
+
+  private normalizeText(value?: string | null) {
+    return (value ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\w\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  private parseReportDate(date?: string) {
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return new Date(`${date}T12:00:00`);
+    }
+
+    return new Date();
+  }
+
+  private emptyDailySummary(vehicle: unknown, date?: string, message = "") {
+    const day = this.parseReportDate(date);
+    return {
+      vehicle,
+      date: day.toISOString().slice(0, 10),
+      configured: false,
+      positions: 0,
+      distanceKm: 0,
+      movingMinutes: 0,
+      stoppedMinutes: 0,
+      maxSpeedKmh: 0,
+      minSpeedKmh: 0,
+      averageSpeedKmh: 0,
+      estimatedLiters: 0,
+      fuelPricePerLiter: 0,
+      estimatedFuelCost: 0,
+      stops: [],
+      visits: [],
+      unmatchedStops: [],
+      message,
+    };
+  }
+
+  private roundNumber(value: number, decimals: number) {
+    const factor = 10 ** decimals;
+    return Math.round(value * factor) / factor;
   }
 
   private async ensureExists(id: string) {
@@ -79,5 +688,73 @@ export class VehiclesService {
 
     const clean = value.trim();
     return clean ? clean : null;
+  }
+
+  private normalizeCompanyCoordinates(latitude?: number, longitude?: number) {
+    const normalizedLatitude = this.normalizeCoordinate(latitude, "latitude");
+    const normalizedLongitude = this.normalizeCoordinate(longitude, "longitude");
+
+    if ((normalizedLatitude === undefined) !== (normalizedLongitude === undefined)) {
+      throw new BadRequestException("Carga latitud y longitud de la base operativa.");
+    }
+
+    if (
+      normalizedLatitude !== undefined &&
+      normalizedLongitude !== undefined &&
+      !this.isUruguayCoordinate(normalizedLatitude, normalizedLongitude)
+    ) {
+      throw new BadRequestException("Las coordenadas de la base no parecen estar en Uruguay. Usa latitud -34.xxxxxx y longitud -56.xxxxxx.");
+    }
+
+    return {
+      latitude: normalizedLatitude,
+      longitude: normalizedLongitude,
+    };
+  }
+
+  private normalizeCoordinate(value: number | undefined, kind: "latitude" | "longitude") {
+    if (value === undefined || value === null || value === 0) {
+      return undefined;
+    }
+
+    const normalized = this.normalizePackedUruguayCoordinate(value, kind);
+    const isLatitude = kind === "latitude";
+    const valid = isLatitude
+      ? normalized >= -90 && normalized <= 90
+      : normalized >= -180 && normalized <= 180;
+
+    if (!Number.isFinite(normalized) || !valid) {
+      throw new BadRequestException(
+        isLatitude
+          ? "Latitud invalida. Para Uruguay usa un valor similar a -34.870204."
+          : "Longitud invalida. Para Uruguay usa un valor similar a -56.113255.",
+      );
+    }
+
+    return normalized;
+  }
+
+  private normalizePackedUruguayCoordinate(value: number, kind: "latitude" | "longitude") {
+    if (kind === "latitude" && Math.abs(value) <= 90) {
+      return value;
+    }
+
+    if (kind === "longitude" && Math.abs(value) <= 180) {
+      return value;
+    }
+
+    const sign = value < 0 ? -1 : 1;
+    const digits = String(Math.trunc(Math.abs(value)));
+    const expectedPrefix = kind === "latitude" ? "34" : "56";
+
+    if (digits.startsWith(expectedPrefix) && digits.length > 2) {
+      return sign * (Number(digits.slice(0, 2)) + Number(`0.${digits.slice(2)}`));
+    }
+
+    return value;
+  }
+
+  private isUruguayCoordinate(latitude: number, longitude: number) {
+    return latitude >= -35.2 && latitude <= -30 && longitude >= -58.6 && longitude <= -53;
   }
 }

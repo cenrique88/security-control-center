@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CreateVehicleDto } from "./dto/create-vehicle.dto";
+import { UpdateTraccarSettingsDto } from "./dto/update-traccar-settings.dto";
 import { UpdateVehicleDto } from "./dto/update-vehicle.dto";
 import { VehiclesService } from "./vehicles.service";
 
@@ -17,6 +18,26 @@ export class VehiclesController {
     });
   }
 
+  @Get("traccar/settings")
+  getTraccarSettings() {
+    return this.vehiclesService.getTraccarSettings();
+  }
+
+  @Patch("traccar/settings")
+  updateTraccarSettings(@Body() dto: UpdateTraccarSettingsDto) {
+    return this.vehiclesService.updateTraccarSettings(dto);
+  }
+
+  @Post("traccar/geofences/sync")
+  syncTraccarGeofences() {
+    return this.vehiclesService.syncCustomerGeofences();
+  }
+
+  @Get(":id/traccar/daily")
+  traccarDaily(@Param("id") id: string, @Query("date") date?: string) {
+    return this.vehiclesService.traccarDailySummary(id, date);
+  }
+
   @Post()
   create(@Body() dto: CreateVehicleDto) {
     return this.vehiclesService.create(dto);
@@ -25,5 +46,10 @@ export class VehiclesController {
   @Patch(":id")
   update(@Param("id") id: string, @Body() dto: UpdateVehicleDto) {
     return this.vehiclesService.update(id, dto);
+  }
+
+  @Delete(":id")
+  remove(@Param("id") id: string) {
+    return this.vehiclesService.remove(id);
   }
 }
