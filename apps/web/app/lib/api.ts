@@ -603,6 +603,64 @@ export type VehiclePayload = {
   active?: boolean;
 };
 
+export type DispatchPlaceType =
+  | "CLIENT"
+  | "FUTURE_CLIENT"
+  | "IMPORTER"
+  | "WAREHOUSE"
+  | "LUNCH"
+  | "TRANSFER"
+  | "OTHER";
+
+export type DispatchStopRecord = {
+  id: string;
+  date: string;
+  vehicleId?: string | null;
+  stopKey: string;
+  placeType: DispatchPlaceType;
+  title: string;
+  address?: string | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  customerId?: string | null;
+  siteId?: string | null;
+  workOrderId?: string | null;
+  supplierName?: string | null;
+  futureClientName?: string | null;
+  kind?: string | null;
+  zone?: string | null;
+  scheduledAt?: string | null;
+  durationMinutes: number;
+  parkingCost: string | number;
+  tollCost: string | number;
+  notes?: string | null;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DispatchStopPayload = {
+  stopKey: string;
+  placeType?: DispatchPlaceType;
+  title: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  customerId?: string;
+  siteId?: string;
+  workOrderId?: string;
+  supplierName?: string;
+  futureClientName?: string;
+  kind?: string;
+  zone?: string;
+  scheduledAt?: string;
+  durationMinutes?: number;
+  parkingCost?: number;
+  tollCost?: number;
+  notes?: string;
+  source?: string;
+};
+
 export type TraccarSettings = {
   id: string;
   baseUrl?: string | null;

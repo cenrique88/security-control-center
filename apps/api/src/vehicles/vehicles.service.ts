@@ -525,7 +525,7 @@ export class VehiclesService {
       const startPosition = positions[start];
       const endPosition = previous;
       const durationMinutes = Math.round((this.positionTime(endPosition).getTime() - this.positionTime(startPosition).getTime()) / 60000);
-      if (durationMinutes >= minStopMinutes) {
+      if (durationMinutes > minStopMinutes) {
         stops.push({
           index: stops.length,
           arrival: this.positionTime(startPosition).toISOString(),

@@ -75,6 +75,16 @@ enum InventoryMovementType {
   ADJUST
 }
 
+enum DispatchPlaceType {
+  CLIENT
+  FUTURE_CLIENT
+  IMPORTER
+  WAREHOUSE
+  LUNCH
+  TRANSFER
+  OTHER
+}
+
 enum MeetingType {
   IN_PERSON
   VIDEO_CALL
@@ -475,6 +485,43 @@ model Vehicle {
   active          Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  dispatchStops   DispatchStop[]
+}
+
+model DispatchStop {
+  id              String            @id @default(cuid())
+  date            DateTime
+  vehicleId       String?
+  vehicleKey      String            @default("unassigned")
+  stopKey         String
+  placeType       DispatchPlaceType @default(CLIENT)
+  title           String
+  address         String?
+  latitude        Decimal?          @db.Decimal(10, 7)
+  longitude       Decimal?          @db.Decimal(10, 7)
+  customerId      String?
+  siteId          String?
+  workOrderId     String?
+  supplierName    String?
+  futureClientName String?
+  kind            String?
+  zone            String?
+  scheduledAt     DateTime?
+  durationMinutes Int              @default(0)
+  parkingCost     Decimal          @default(0) @db.Decimal(12, 2)
+  tollCost        Decimal          @default(0) @db.Decimal(12, 2)
+  notes           String?
+  source          String           @default("CRM")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  vehicle         Vehicle?         @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  @@unique([date, vehicleKey, stopKey])
+  @@index([date])
+  @@index([vehicleId])
+  @@index([customerId])
+  @@index([workOrderId])
+  @@index([supplierName])
 }
 
 model TraccarSettings {

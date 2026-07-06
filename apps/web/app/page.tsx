@@ -46,6 +46,9 @@ import {
   CustomerStatus,
   CustomerType,
   DashboardSummary,
+  DispatchPlaceType,
+  DispatchStopPayload,
+  DispatchStopRecord,
   DevicePayload,
   DeviceType,
   GmailSync,
@@ -5306,10 +5309,19 @@ function DispatcherView({
   const [stopDurations, setStopDurations] = useState<Record<string, number>>({});
   const [stopZones, setStopZones] = useState<Record<string, string>>({});
   const [stopTimes, setStopTimes] = useState<Record<string, string>>({});
+  const [stopCosts, setStopCosts] = useState<Record<string, { parking: number; tolls: number }>>({});
+  const [stopPlaceTypes, setStopPlaceTypes] = useState<Record<string, DispatchPlaceType>>({});
+  const [stopSuppliers, setStopSuppliers] = useState<Record<string, string>>({});
+  const [stopFutureClients, setStopFutureClients] = useState<Record<string, string>>({});
+  const [stopNotes, setStopNotes] = useState<Record<string, string>>({});
+  const [savedDispatchStops, setSavedDispatchStops] = useState<DispatchStopRecord[]>([]);
+  const [dispatchSuppliers, setDispatchSuppliers] = useState<string[]>([]);
+  const [savingDispatchRoute, setSavingDispatchRoute] = useState(false);
   const [savingStopId, setSavingStopId] = useState<string | null>(null);
   const [dispatchMessage, setDispatchMessage] = useState("");
   const [dailySummary, setDailySummary] = useState<VehicleDailySummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryRefreshKey, setSummaryRefreshKey] = useState(0);
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
   const [routeCopied, setRouteCopied] = useState(false);
   const [routeReviewed, setRouteReviewed] = useState(false);
@@ -5328,8 +5340,15 @@ function DispatcherView({
   );
   const activeVehicles = vehicles.filter((vehicle) => vehicle.active);
   const selectedVehicle = activeVehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? activeVehicles[0] ?? null;
-  const mapsUrl = useMemo(() => buildGoogleMapsRouteUrl(plan.orderedStops, plan.baseLocation), [plan.orderedStops, plan.baseLocation]);
-  const dispatchSummary = useMemo(() => buildDispatcherDailySummary(plan, workOrders, selectedVehicle, dailySummary), [plan, workOrders, selectedVehicle, dailySummary]);
+  const gpsTimelineStops = useMemo(() => buildGpsTimelineStops(dailySummary), [dailySummary]);
+  const mapsUrl = useMemo(
+    () => buildGoogleMapsRouteUrl(plan.orderedStops, plan.baseLocation) || buildGpsGoogleMapsRouteUrl(gpsTimelineStops, plan.baseLocation),
+    [gpsTimelineStops, plan.orderedStops, plan.baseLocation],
+  );
+  const dispatchSummary = useMemo(
+    () => buildDispatcherDailySummary(plan, workOrders, selectedVehicle, dailySummary, stopCosts),
+    [plan, workOrders, selectedVehicle, dailySummary, stopCosts],
+  );
   const routeReady = routeReviewed || Boolean(mapsUrl && plan.orderedStops.length && !plan.missingLocation.length);
   const materialsReady =
     materialsConfirmed ||
@@ -5341,6 +5360,12 @@ function DispatcherView({
     setStopDurations({});
     setStopZones({});
     setStopTimes({});
+    setStopCosts({});
+    setStopPlaceTypes({});
+    setStopSuppliers({});
+    setStopFutureClients({});
+    setStopNotes({});
+    setSavedDispatchStops([]);
     setDispatchMessage("");
   }, [agendaDate, workOrders]);
 
@@ -5378,7 +5403,129 @@ function DispatcherView({
       active = false;
       window.clearInterval(timer);
     };
-  }, [agendaDate, selectedVehicle?.id, selectedVehicle?.traccarDeviceId, token]);
+  }, [agendaDate, selectedVehicle?.id, selectedVehicle?.traccarDeviceId, summaryRefreshKey, token]);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    let active = true;
+    const params = new URLSearchParams({ date: agendaDate });
+    if (selectedVehicle?.id) {
+      params.set("vehicleId", selectedVehicle.id);
+    }
+
+    apiRequest<DispatchStopRecord[]>(`/api/dispatch/stops?${params.toString()}`, { token })
+      .then((records) => {
+        if (!active) {
+          return;
+        }
+
+        setSavedDispatchStops(records);
+        setStopPlaceTypes((current) => {
+          const next = { ...current };
+          records.forEach((record) => {
+            next[record.stopKey] = record.placeType;
+          });
+          return next;
+        });
+        setStopSuppliers((current) => {
+          const next = { ...current };
+          records.forEach((record) => {
+            if (record.supplierName) {
+              next[record.stopKey] = record.supplierName;
+            }
+          });
+          return next;
+        });
+        setStopFutureClients((current) => {
+          const next = { ...current };
+          records.forEach((record) => {
+            if (record.futureClientName) {
+              next[record.stopKey] = record.futureClientName;
+            }
+          });
+          return next;
+        });
+        setStopNotes((current) => {
+          const next = { ...current };
+          records.forEach((record) => {
+            if (record.notes) {
+              next[record.stopKey] = record.notes;
+            }
+          });
+          return next;
+        });
+        setStopDurations((current) => {
+          const next = { ...current };
+          records.forEach((record) => {
+            next[record.stopKey] = Number(record.durationMinutes) || 0;
+          });
+          return next;
+        });
+        setStopZones((current) => {
+          const next = { ...current };
+          records.forEach((record) => {
+            if (record.zone) {
+              next[record.stopKey] = record.zone;
+            }
+          });
+          return next;
+        });
+        setStopTimes((current) => {
+          const next = { ...current };
+          records.forEach((record) => {
+            if (record.scheduledAt) {
+              next[record.stopKey] = formatInputTime(record.scheduledAt);
+            }
+          });
+          return next;
+        });
+        setStopCosts((current) => {
+          const next = { ...current };
+          records.forEach((record) => {
+            next[record.stopKey] = {
+              parking: toMoneyNumber(record.parkingCost),
+              tolls: toMoneyNumber(record.tollCost),
+            };
+          });
+          return next;
+        });
+      })
+      .catch((error) => {
+        if (active) {
+          setDispatchMessage(`No se pudieron cargar las paradas guardadas: ${getErrorMessage(error)}`);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [agendaDate, selectedVehicle?.id, token]);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    let active = true;
+    apiRequest<string[]>("/api/dispatch/suppliers", { token })
+      .then((suppliers) => {
+        if (active) {
+          setDispatchSuppliers(suppliers);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setDispatchSuppliers([]);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!token) {
@@ -5490,6 +5637,165 @@ function DispatcherView({
     }
   }
 
+  function renderDispatchStopExtras(stopKey: string, defaultPlaceType: DispatchPlaceType = "CLIENT") {
+    const placeType = stopPlaceTypes[stopKey] ?? defaultPlaceType;
+    return (
+      <>
+        <label>
+          Lugar
+          <select
+            value={placeType}
+            onChange={(event) =>
+              setStopPlaceTypes((current) => ({
+                ...current,
+                [stopKey]: event.target.value as DispatchPlaceType,
+              }))
+            }
+          >
+            <option value="CLIENT">Cliente</option>
+            <option value="FUTURE_CLIENT">Futuro cliente</option>
+            <option value="IMPORTER">Importador</option>
+            <option value="WAREHOUSE">Deposito</option>
+            <option value="LUNCH">Almuerzo</option>
+            <option value="TRANSFER">Traslado</option>
+            <option value="OTHER">Otro</option>
+          </select>
+        </label>
+        {placeType === "IMPORTER" ? (
+          <label>
+            Importador
+            <input
+              list="dispatch-suppliers"
+              value={stopSuppliers[stopKey] ?? ""}
+              onChange={(event) =>
+                setStopSuppliers((current) => ({
+                  ...current,
+                  [stopKey]: event.target.value,
+                }))
+              }
+              placeholder="Seleccionar o escribir importador"
+            />
+          </label>
+        ) : null}
+        {placeType === "FUTURE_CLIENT" ? (
+          <label>
+            Futuro cliente
+            <input
+              value={stopFutureClients[stopKey] ?? ""}
+              onChange={(event) =>
+                setStopFutureClients((current) => ({
+                  ...current,
+                  [stopKey]: event.target.value,
+                }))
+              }
+              placeholder="Nombre del futuro cliente"
+            />
+          </label>
+        ) : null}
+        <label className="wideControl">
+          Notas de parada
+          <input
+            value={stopNotes[stopKey] ?? ""}
+            onChange={(event) =>
+              setStopNotes((current) => ({
+                ...current,
+                [stopKey]: event.target.value,
+              }))
+            }
+            placeholder="Compra, referencia, contacto, detalle del gasto"
+          />
+        </label>
+      </>
+    );
+  }
+
+  function buildSavedRouteStops(): DispatchStopPayload[] {
+    if (plan.orderedStops.length) {
+      return plan.orderedStops.map((stop) => {
+        const key = stop.workOrder.id;
+        const time = stopTimes[key] || formatInputTime(stop.workOrder.scheduledAt);
+        const costs = stopCosts[key] ?? { parking: 0, tolls: 0 };
+        return {
+          stopKey: key,
+          placeType: stopPlaceTypes[key] ?? "CLIENT",
+          title: stop.workOrder.title,
+          address: getWorkOrderRouteSite(stop.workOrder)?.address || stop.workOrder.customer.address || undefined,
+          latitude: stop.latitude,
+          longitude: stop.longitude,
+          customerId: stop.workOrder.customerId,
+          siteId: stop.workOrder.siteId ?? undefined,
+          workOrderId: stop.workOrder.id,
+          supplierName: stopSuppliers[key],
+          futureClientName: stopFutureClients[key],
+          kind: stopKinds[key] ?? "CLIENT",
+          zone: stopZones[key] ?? stop.zone,
+          scheduledAt: time ? mergeDateAndTime(selectedDate, time).toISOString() : stop.workOrder.scheduledAt ?? undefined,
+          durationMinutes: stopDurations[key] ?? stop.estimatedMinutes,
+          parkingCost: costs.parking,
+          tollCost: costs.tolls,
+          notes: stopNotes[key],
+          source: "WORK_ORDER",
+        };
+      });
+    }
+
+    return gpsTimelineStops.map((stop) => {
+      const key = stop.id;
+      const costs = stopCosts[key] ?? { parking: 0, tolls: 0 };
+      const time = stopTimes[key] || formatInputTime(stop.arrival);
+      return {
+        stopKey: key,
+        placeType: stopPlaceTypes[key] ?? (stop.customerName ? "CLIENT" : "OTHER"),
+        title: stop.title,
+        address: stop.address || undefined,
+        latitude: stop.latitude,
+        longitude: stop.longitude,
+        supplierName: stopSuppliers[key],
+        futureClientName: stopFutureClients[key],
+        kind: stopKinds[key] ?? (stop.customerName ? "CLIENT" : "NOT_CLIENT"),
+        zone: stopZones[key],
+        scheduledAt: time ? mergeDateAndTime(selectedDate, time).toISOString() : stop.arrival,
+        durationMinutes: stopDurations[key] ?? stop.durationMinutes,
+        parkingCost: costs.parking,
+        tollCost: costs.tolls,
+        notes: stopNotes[key],
+        source: "TRACCAR",
+      };
+    });
+  }
+
+  async function saveDispatchRoute() {
+    if (!token) {
+      return;
+    }
+
+    const stops = buildSavedRouteStops();
+    if (!stops.length) {
+      setDispatchMessage("No hay paradas para guardar en esta fecha.");
+      return;
+    }
+
+    setSavingDispatchRoute(true);
+    setDispatchMessage("");
+    try {
+      const saved = await apiRequest<DispatchStopRecord[]>("/api/dispatch/stops", {
+        token,
+        method: "PATCH",
+        body: JSON.stringify({
+          date: agendaDate,
+          vehicleId: selectedVehicle?.id,
+          stops,
+        }),
+      });
+      setSavedDispatchStops(saved);
+      setDispatchMessage("Ruta guardada con gastos, lugares e importadores.");
+    } catch (error) {
+      setDispatchMessage(`No se pudo guardar la ruta: ${getErrorMessage(error)}`);
+    } finally {
+      setSavingDispatchRoute(false);
+    }
+  }
+
   return (
     <section className="dispatcherModule">
       <div className="summaryGrid customerStats" aria-label="Resumen del despachador">
@@ -5499,15 +5805,15 @@ function DispatcherView({
         </article>
         <article>
           <span>Con ubicacion</span>
-          <strong>{plan.routableStops.length}</strong>
+          <strong>{plan.routableStops.length || gpsTimelineStops.length}</strong>
         </article>
         <article>
           <span>Sin ubicacion</span>
           <strong>{plan.missingLocation.length}</strong>
         </article>
         <article>
-          <span>Km estimados</span>
-          <strong>{formatNumber(plan.estimatedKm)} km</strong>
+          <span>{plan.orderedStops.length ? "Km estimados" : "Km reales"}</span>
+          <strong>{formatNumber(plan.orderedStops.length ? plan.estimatedKm : dispatchSummary.distanceKm)} km</strong>
         </article>
       </div>
 
@@ -5546,12 +5852,31 @@ function DispatcherView({
             <MapPin size={18} />
             Abrir Maps
           </button>
-          <button type="button" onClick={onRefresh}>
+          <button
+            type="button"
+            onClick={() => {
+              onRefresh();
+              setSummaryRefreshKey((current) => current + 1);
+            }}
+          >
             <RefreshCw size={18} className={loading ? "spin" : ""} />
             Organizar dia
           </button>
+          <button
+            type="button"
+            onClick={saveDispatchRoute}
+            disabled={savingDispatchRoute || (!plan.orderedStops.length && !gpsTimelineStops.length)}
+          >
+            <Save size={18} />
+            {savingDispatchRoute ? "Guardando" : "Guardar ruta"}
+          </button>
         </div>
       </section>
+      <datalist id="dispatch-suppliers">
+        {dispatchSuppliers.map((supplier) => (
+          <option key={supplier} value={supplier} />
+        ))}
+      </datalist>
 
       <div className="dispatcherLayout">
         <section className="dispatcherRoutePanel">
@@ -5579,6 +5904,7 @@ function DispatcherView({
 
             {plan.orderedStops.map((stop, index) => {
               const kind = stopKinds[stop.workOrder.id] ?? "CLIENT";
+              const costs = stopCosts[stop.workOrder.id] ?? { parking: 0, tolls: 0 };
               return (
                 <article key={stop.workOrder.id} className="dispatchStop">
                   <span className="dispatchStopIndex">{index + 1}</span>
@@ -5643,6 +5969,7 @@ function DispatcherView({
                           <option value="TRANSFER">Traslado</option>
                         </select>
                       </label>
+                      {renderDispatchStopExtras(stop.workOrder.id, "CLIENT")}
                       <label>
                         Tiempo operativo
                         <input
@@ -5671,21 +5998,204 @@ function DispatcherView({
                           placeholder="Ej: Centro, Carrasco, Pocitos"
                         />
                       </label>
+                      <label>
+                        Estacionamiento / tarifado
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={costs.parking || ""}
+                          onChange={(event) =>
+                            setStopCosts((current) => ({
+                              ...current,
+                              [stop.workOrder.id]: {
+                                parking: Math.max(0, Number(event.target.value) || 0),
+                                tolls: current[stop.workOrder.id]?.tolls ?? 0,
+                              },
+                            }))
+                          }
+                          placeholder="UYU 0"
+                        />
+                      </label>
+                      <label>
+                        Peajes
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={costs.tolls || ""}
+                          onChange={(event) =>
+                            setStopCosts((current) => ({
+                              ...current,
+                              [stop.workOrder.id]: {
+                                parking: current[stop.workOrder.id]?.parking ?? 0,
+                                tolls: Math.max(0, Number(event.target.value) || 0),
+                              },
+                            }))
+                          }
+                          placeholder="UYU 0"
+                        />
+                      </label>
                     </div>
+                    {costs.parking || costs.tolls ? (
+                      <small>
+                        Gastos de parada: {formatCurrency(costs.parking + costs.tolls)}
+                        {costs.parking ? ` · Estacionamiento ${formatCurrency(costs.parking)}` : ""}
+                        {costs.tolls ? ` · Peajes ${formatCurrency(costs.tolls)}` : ""}
+                      </small>
+                    ) : null}
                     {savingStopId === stop.workOrder.id ? <small>Guardando hora...</small> : null}
                   </div>
                 </article>
               );
             })}
 
+            {!plan.orderedStops.length && gpsTimelineStops.map((stop, index) => {
+                const costs = stopCosts[stop.id] ?? { parking: 0, tolls: 0 };
+                return (
+                  <article key={stop.id} className="dispatchStop">
+                    <span className="dispatchStopIndex">{index + 1}</span>
+                    <div className="dispatchStopBody">
+                      <header>
+                        <div>
+                          <strong>{stop.title}</strong>
+                          <p>{stop.address || `${formatNumber(stop.latitude)}, ${formatNumber(stop.longitude)}`}</p>
+                        </div>
+                        <span className="statusPill completed">GPS real</span>
+                      </header>
+                      <dl className="dispatchStopDetails">
+                        <div>
+                          <dt>Llegada</dt>
+                          <dd className="dispatchTimeValue">{stopTimes[stop.id] || formatInputTime(stop.arrival)}</dd>
+                        </div>
+                        <div>
+                          <dt>Salida</dt>
+                          <dd>{formatInputTime(stop.departure)}</dd>
+                        </div>
+                        <div>
+                          <dt>Detenido</dt>
+                          <dd>{formatDuration(stopDurations[stop.id] ?? stop.durationMinutes)}</dd>
+                        </div>
+                        <div>
+                          <dt>Tipo</dt>
+                          <dd>{stop.customerName ? "Cliente" : "Parada GPS"}</dd>
+                        </div>
+                      </dl>
+                      <div className="dispatchStopControls">
+                        <label>
+                          Hora visible
+                          <input
+                            type="time"
+                            value={stopTimes[stop.id] ?? formatInputTime(stop.arrival)}
+                            onChange={(event) =>
+                              setStopTimes((current) => ({
+                                ...current,
+                                [stop.id]: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          Tipo de parada
+                          <select
+                            value={stopKinds[stop.id] ?? (stop.customerName ? "CLIENT" : "NOT_CLIENT")}
+                            onChange={(event) =>
+                              setStopKinds((current) => ({
+                                ...current,
+                                [stop.id]: event.target.value as DispatchStopKind,
+                              }))
+                            }
+                          >
+                            <option value="CLIENT">Cliente</option>
+                            <option value="NOT_CLIENT">No cliente</option>
+                            <option value="WAREHOUSE">Deposito</option>
+                            <option value="LUNCH">Almuerzo</option>
+                            <option value="TRANSFER">Traslado</option>
+                          </select>
+                        </label>
+                        {renderDispatchStopExtras(stop.id, stop.customerName ? "CLIENT" : "OTHER")}
+                        <label>
+                          Tiempo operativo
+                          <input
+                            type="number"
+                            min="0"
+                            step="5"
+                            value={stopDurations[stop.id] ?? stop.durationMinutes}
+                            onChange={(event) =>
+                              setStopDurations((current) => ({
+                                ...current,
+                                [stop.id]: Math.max(0, Number(event.target.value) || 0),
+                              }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          Zona operativa
+                          <input
+                            value={stopZones[stop.id] ?? ""}
+                            onChange={(event) =>
+                              setStopZones((current) => ({
+                                ...current,
+                                [stop.id]: event.target.value,
+                              }))
+                            }
+                            placeholder="Ej: Centro, importadores, visita tecnica"
+                          />
+                        </label>
+                        <label>
+                          Estacionamiento / tarifado
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={costs.parking || ""}
+                            onChange={(event) =>
+                              setStopCosts((current) => ({
+                                ...current,
+                                [stop.id]: {
+                                  parking: Math.max(0, Number(event.target.value) || 0),
+                                  tolls: current[stop.id]?.tolls ?? 0,
+                                },
+                              }))
+                            }
+                            placeholder="UYU 0"
+                          />
+                        </label>
+                        <label>
+                          Peajes
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={costs.tolls || ""}
+                            onChange={(event) =>
+                              setStopCosts((current) => ({
+                                ...current,
+                                [stop.id]: {
+                                  parking: current[stop.id]?.parking ?? 0,
+                                  tolls: Math.max(0, Number(event.target.value) || 0),
+                                },
+                              }))
+                            }
+                            placeholder="UYU 0"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </article>
+                );
+            })}
+
             <article className="dispatchStop dispatchBaseStop">
-              <span className="dispatchStopIndex">{plan.orderedStops.length + 1}</span>
+              <span className="dispatchStopIndex">{(plan.orderedStops.length || gpsTimelineStops.length) + 1}</span>
               <div>
                 <strong>Regreso / cierre</strong>
                 <p>{plan.baseLocation ? plan.baseLocation.name : "Fin de recorrido operativo"}</p>
                 <small>
                   {plan.returnKm ? `${formatNumber(plan.returnKm)} km de regreso. ` : ""}
-                  {formatDuration(plan.estimatedMinutes)} de trabajo estimado en total
+                  {plan.orderedStops.length
+                    ? `${formatDuration(plan.estimatedMinutes)} de trabajo estimado en total`
+                    : `${formatDuration(dispatchSummary.stoppedMinutes)} detenido segun GPS`}
                 </small>
               </div>
             </article>
@@ -5751,12 +6261,36 @@ function DispatcherView({
                 <strong>{formatNumber(dispatchSummary.estimatedLiters)} L</strong>
               </article>
               <article>
+                <span>Movimiento</span>
+                <strong>{formatDuration(dispatchSummary.movingMinutes)}</strong>
+              </article>
+              <article>
+                <span>Detenido</span>
+                <strong>{formatDuration(dispatchSummary.stoppedMinutes)}</strong>
+              </article>
+              <article>
                 <span>Gasto estimado</span>
                 <strong>{formatCurrency(dispatchSummary.estimatedFuelCost)}</strong>
               </article>
               <article>
                 <span>Clientes visitados</span>
                 <strong>{dispatchSummary.visitedClients}</strong>
+              </article>
+              <article>
+                <span>Gastos de ruta</span>
+                <strong>{formatCurrency(dispatchSummary.routeExpenses)}</strong>
+              </article>
+              <article>
+                <span>Gasto operativo total</span>
+                <strong>{formatCurrency(dispatchSummary.totalOperatingCost)}</strong>
+              </article>
+              <article>
+                <span>Paradas GPS</span>
+                <strong>{dispatchSummary.stopsCount}</strong>
+              </article>
+              <article>
+                <span>Posiciones GPS</span>
+                <strong>{dispatchSummary.positions}</strong>
               </article>
             </div>
             <p>
@@ -11472,10 +12006,16 @@ function buildDispatcherDailySummary(
   workOrders: WorkOrder[],
   vehicle: Vehicle | null,
   dailySummary: VehicleDailySummary | null,
+  stopCosts: Record<string, { parking: number; tolls: number }> = {},
 ) {
   const fuelKmPerLiter = Number(vehicle?.fuelKmPerLiter) || 10;
   const fallbackLiters = fuelKmPerLiter > 0 ? roundNumber(plan.estimatedKm / fuelKmPerLiter, 2) : 0;
   const fallbackFuelCost = roundNumber(fallbackLiters * (dailySummary?.fuelPricePerLiter || 88.67), 2);
+  const routeExpenses = roundNumber(
+    Object.values(stopCosts).reduce((sum, costs) => sum + toMoneyNumber(costs.parking) + toMoneyNumber(costs.tolls), 0),
+    2,
+  );
+  const fuelCost = dailySummary?.positions ? dailySummary.estimatedFuelCost : fallbackFuelCost;
   const visitNames = dailySummary?.visits?.length
     ? Array.from(new Set(dailySummary.visits.map((visit) => `${visit.customerName}${visit.siteName ? ` - ${visit.siteName}` : ""}`)))
     : Array.from(new Set(plan.orderedStops.map((stop) => stop.workOrder.customer.name)));
@@ -11483,11 +12023,67 @@ function buildDispatcherDailySummary(
   return {
     distanceKm: dailySummary?.positions ? dailySummary.distanceKm : plan.estimatedKm,
     operationalMinutes: dailySummary?.positions ? dailySummary.movingMinutes + dailySummary.stoppedMinutes : plan.estimatedMinutes,
+    movingMinutes: dailySummary?.positions ? dailySummary.movingMinutes : 0,
+    stoppedMinutes: dailySummary?.positions ? dailySummary.stoppedMinutes : plan.estimatedMinutes,
     estimatedLiters: dailySummary?.positions ? dailySummary.estimatedLiters : fallbackLiters,
-    estimatedFuelCost: dailySummary?.positions ? dailySummary.estimatedFuelCost : fallbackFuelCost,
+    estimatedFuelCost: fuelCost,
+    routeExpenses,
+    totalOperatingCost: roundNumber(fuelCost + routeExpenses, 2),
     visitedClients: dailySummary?.visits?.length ? new Set(dailySummary.visits.map((visit) => visit.customerId)).size : workOrders.length,
+    stopsCount: dailySummary?.positions ? dailySummary.stops.length : plan.orderedStops.length,
+    positions: dailySummary?.positions ?? 0,
     visitNames,
   };
+}
+
+function buildGpsTimelineStops(summary: VehicleDailySummary | null) {
+  if (!summary?.positions) {
+    return [];
+  }
+
+  const visitsByStop = new Map(summary.visits.map((visit) => [visit.stopIndex, visit]));
+  return summary.stops
+    .filter((stop) => stop.durationMinutes > 5)
+    .map((stop) => {
+      const visit = visitsByStop.get(stop.index);
+      return {
+        id: `gps-${stop.index}`,
+        title: visit ? `${visit.customerName}${visit.siteName ? ` - ${visit.siteName}` : ""}` : `Parada GPS ${stop.index + 1}`,
+        customerName: visit?.customerName,
+        address: visit?.address || stop.address,
+        arrival: stop.arrival,
+        departure: stop.departure,
+        durationMinutes: stop.durationMinutes,
+        latitude: stop.latitude,
+        longitude: stop.longitude,
+      };
+    });
+}
+
+function buildGpsGoogleMapsRouteUrl(
+  stops: ReturnType<typeof buildGpsTimelineStops>,
+  baseLocation?: DispatchBaseLocation | null,
+) {
+  if (!stops.length) {
+    return "";
+  }
+
+  const coords = stops.map((stop) => `${stop.latitude},${stop.longitude}`);
+  const baseCoords = baseLocation ? `${baseLocation.latitude},${baseLocation.longitude}` : "";
+  const origin = baseCoords || coords[0];
+  const destination = baseCoords || coords[coords.length - 1];
+  const params = new URLSearchParams({
+    api: "1",
+    origin,
+    destination,
+    travelmode: "driving",
+  });
+  const waypoints = (baseLocation ? coords : coords.slice(1, -1)).join("|");
+  if (waypoints) {
+    params.set("waypoints", waypoints);
+  }
+
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 
 function mergeDateAndTime(date: Date, time: string) {

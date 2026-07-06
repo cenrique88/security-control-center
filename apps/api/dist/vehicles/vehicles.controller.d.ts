@@ -1,0 +1,170 @@
+import { CreateVehicleDto } from "./dto/create-vehicle.dto";
+import { UpdateTraccarSettingsDto } from "./dto/update-traccar-settings.dto";
+import { UpdateVehicleDto } from "./dto/update-vehicle.dto";
+import { VehiclesService } from "./vehicles.service";
+export declare class VehiclesController {
+    private readonly vehiclesService;
+    constructor(vehiclesService: VehiclesService);
+    list(search?: string, active?: string): Promise<{
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        name: string;
+        active: boolean;
+        traccarDeviceId: string | null;
+        plate: string | null;
+        fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
+    }[]>;
+    getTraccarSettings(): Promise<{
+        token: string;
+        password: string;
+        configured: boolean;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        baseUrl: string | null;
+        username: string | null;
+        matchRadiusMeters: number;
+        minStopMinutes: number;
+        companyName: string;
+        companyAddress: string | null;
+        companyLatitude: import("@prisma/client/runtime/library").Decimal | null;
+        companyLongitude: import("@prisma/client/runtime/library").Decimal | null;
+    }>;
+    updateTraccarSettings(dto: UpdateTraccarSettingsDto): Promise<{
+        token: string;
+        password: string;
+        configured: boolean;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        baseUrl: string | null;
+        username: string | null;
+        matchRadiusMeters: number;
+        minStopMinutes: number;
+        companyName: string;
+        companyAddress: string | null;
+        companyLatitude: import("@prisma/client/runtime/library").Decimal | null;
+        companyLongitude: import("@prisma/client/runtime/library").Decimal | null;
+    }>;
+    syncTraccarGeofences(): Promise<{
+        configured: boolean;
+        created: number;
+        updated: number;
+        linked: number;
+        skipped: number;
+        items: {
+            type: "Cliente" | "Sitio";
+            id: string;
+            name: string;
+            status: "created" | "updated" | "skipped" | "error";
+            reason?: string;
+            geofenceId?: number;
+        }[];
+        message: string;
+    }>;
+    traccarDaily(id: string, date?: string): Promise<{
+        vehicle: unknown;
+        date: string;
+        configured: boolean;
+        positions: number;
+        distanceKm: number;
+        movingMinutes: number;
+        stoppedMinutes: number;
+        maxSpeedKmh: number;
+        minSpeedKmh: number;
+        averageSpeedKmh: number;
+        estimatedLiters: number;
+        fuelPricePerLiter: number;
+        estimatedFuelCost: number;
+        stops: never[];
+        visits: never[];
+        unmatchedStops: never[];
+        message: string;
+    } | {
+        vehicle: {
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            name: string;
+            active: boolean;
+            traccarDeviceId: string | null;
+            plate: string | null;
+            fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
+        };
+        date: string;
+        configured: boolean;
+        positions: number;
+        distanceKm: number;
+        movingMinutes: number;
+        stoppedMinutes: number;
+        minSpeedKmh: number;
+        averageSpeedKmh: number;
+        maxSpeedKmh: number;
+        estimatedLiters: number;
+        fuelPricePerLiter: number;
+        estimatedFuelCost: number;
+        stops: {
+            index: number;
+            arrival: string;
+            departure: string;
+            durationMinutes: number;
+            latitude: number;
+            longitude: number;
+            address?: string;
+        }[];
+        visits: {
+            stopIndex: number;
+            customerId: string;
+            customerName: string;
+            siteId?: string;
+            siteName?: string;
+            address?: string;
+            arrival: string;
+            departure: string;
+            durationMinutes: number;
+            match: "GPS" | "ADDRESS" | "NAME";
+            distanceMeters?: number;
+        }[];
+        unmatchedStops: {
+            index: number;
+            arrival: string;
+            departure: string;
+            durationMinutes: number;
+            latitude: number;
+            longitude: number;
+            address?: string;
+        }[];
+        message: string;
+    }>;
+    create(dto: CreateVehicleDto): Promise<{
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        name: string;
+        active: boolean;
+        traccarDeviceId: string | null;
+        plate: string | null;
+        fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
+    }>;
+    update(id: string, dto: UpdateVehicleDto): Promise<{
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        name: string;
+        active: boolean;
+        traccarDeviceId: string | null;
+        plate: string | null;
+        fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
+    }>;
+    remove(id: string): Promise<{
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        name: string;
+        active: boolean;
+        traccarDeviceId: string | null;
+        plate: string | null;
+        fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
+    }>;
+}

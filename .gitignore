@@ -1,10 +1,10 @@
 node_modules/
-.next/
-dist/
-coverage/
-.env
-.env.local
-.turbo/
+#.next/
+#dist/
+#coverage/
+#.env
+#.env.local
+#.turbo/
 *.log
 DockerDesktopInstaller.exe
 backups/*.dump
