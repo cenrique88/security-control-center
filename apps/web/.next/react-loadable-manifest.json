@@ -1,38 +1,47 @@
 {
   "..\\..\\node_modules\\jspdf\\dist\\jspdf.es.min.js -> canvg": {
-    "id": "..\\..\\node_modules\\jspdf\\dist\\jspdf.es.min.js -> canvg",
+    "id": 9619,
     "files": [
-      "static/chunks/_app-pages-browser_node_modules_canvg_lib_index_es_js.js"
+      "static/chunks/425a1fef.6c441db4173ed424.js",
+      "static/chunks/660.583beeb3a7acbc51.js"
     ]
   },
   "..\\..\\node_modules\\jspdf\\dist\\jspdf.es.min.js -> dompurify": {
-    "id": "..\\..\\node_modules\\jspdf\\dist\\jspdf.es.min.js -> dompurify",
+    "id": 7836,
     "files": [
-      "static/chunks/_app-pages-browser_node_modules_dompurify_dist_purify_es_mjs.js"
+      "static/chunks/836.f022af995eb48bb7.js"
     ]
   },
   "..\\..\\node_modules\\jspdf\\dist\\jspdf.es.min.js -> html2canvas": {
-    "id": "..\\..\\node_modules\\jspdf\\dist\\jspdf.es.min.js -> html2canvas",
+    "id": 1525,
     "files": [
-      "static/chunks/_app-pages-browser_node_modules_html2canvas_dist_html2canvas_js.js"
+      "static/chunks/da458701.4b10d522edcbb72b.js"
     ]
   },
-  "..\\..\\node_modules\\next\\dist\\client\\dev\\hot-reloader\\app\\use-websocket.js -> @vercel/turbopack-ecmascript-runtime/browser/dev/hmr-client/hmr-client.ts": {
-    "id": "..\\..\\node_modules\\next\\dist\\client\\dev\\hot-reloader\\app\\use-websocket.js -> @vercel/turbopack-ecmascript-runtime/browser/dev/hmr-client/hmr-client.ts",
+  "..\\..\\node_modules\\next\\dist\\client\\index.js -> ../pages/_app": {
+    "id": 7655,
     "files": [
-      "static/chunks/_app-pages-browser_node_modules_next_dist_client_dev_noop-turbopack-hmr_js.js"
+      "static/chunks/655.3fc65d6d0da75415.js"
+    ]
+  },
+  "..\\..\\node_modules\\next\\dist\\client\\index.js -> ../pages/_error": {
+    "id": 3826,
+    "files": [
+      "static/chunks/826.20e7545f83ce1c50.js"
     ]
   },
   "app\\page.tsx -> html2canvas": {
-    "id": "app\\page.tsx -> html2canvas",
+    "id": 1525,
     "files": [
-      "static/chunks/_app-pages-browser_node_modules_html2canvas_dist_html2canvas_js.js"
+      "static/chunks/da458701.4b10d522edcbb72b.js"
     ]
   },
   "app\\page.tsx -> jspdf": {
-    "id": "app\\page.tsx -> jspdf",
+    "id": 2059,
     "files": [
-      "static/chunks/_app-pages-browser_node_modules_jspdf_dist_jspdf_es_min_js.js"
+      "static/chunks/7c09d4dc.5dd1d228f6ec3363.js",
+      "static/chunks/89ddd23d.9eac351a9ab0afc8.js",
+      "static/chunks/151.37581cea20d4e75d.js"
     ]
   }
 }

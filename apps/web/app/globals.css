@@ -2352,6 +2352,105 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.paymentListTable {
+  display: grid;
+  padding: 14px;
+}
+
+.paymentListHeader,
+.paymentListRow {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.25fr) minmax(160px, 0.8fr) minmax(160px, 0.8fr) minmax(100px, 0.5fr) minmax(130px, 0.6fr) minmax(140px, 0.65fr);
+  align-items: center;
+  gap: 16px;
+}
+
+.paymentListHeader {
+  padding: 0 12px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.paymentListRow {
+  width: 100%;
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-top-color: var(--line);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.paymentListRow:hover,
+.paymentListRow:focus-visible {
+  border-color: rgba(67, 211, 198, 0.35);
+  background: rgba(67, 211, 198, 0.08);
+  outline: none;
+}
+
+.paymentListRow > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.paymentListRow strong,
+.paymentListRow small {
+  display: block;
+}
+
+.paymentListRow small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.positiveAmount,
+.negativeAmount {
+  font-weight: 900;
+}
+
+.positiveAmount {
+  color: var(--accent);
+}
+
+.negativeAmount {
+  color: #f6c56f;
+}
+
+.paymentDetailModal {
+  max-width: min(1120px, calc(100vw - 48px));
+}
+
+.paymentModalAmount {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.paymentModalAmount strong {
+  font-size: clamp(28px, 4vw, 44px);
+}
+
+.paymentDetailLinks {
+  display: grid;
+  gap: 10px;
+}
+
+.paymentDetailLinks span {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--text);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
 .deviceCard p,
 .workOrderCard p {
   margin: 0;

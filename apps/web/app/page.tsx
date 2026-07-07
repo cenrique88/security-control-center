@@ -9664,6 +9664,7 @@ function PaymentsView({
   onTypeChange: (value: "ALL" | "INCOME" | "EXPENSE") => void;
 }) {
   const transactionType = paymentForm.transactionType ?? "INCOME";
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
 
   return (
     <section className="paymentsModule">
@@ -9856,65 +9857,154 @@ function PaymentsView({
             </button>
           </div>
 
-          <div className="paymentGrid">
+          <div className="paymentListTable" role="table" aria-label="Movimientos financieros">
+            <div className="paymentListHeader" role="row">
+              <span>Movimiento</span>
+              <span>Entidad</span>
+              <span>Categoria</span>
+              <span>Vence</span>
+              <span>Estado</span>
+              <span>Importe</span>
+            </div>
             {payments.map((payment) => (
-              <article key={payment.id} className="paymentCard">
-                <div className="paymentCardHeader">
-                  <span className={`statusPill ${paymentStatusClass(payment)}`}>
-                    {paymentStatusLabel(payment)}
-                  </span>
-                  <strong>
-                    {payment.transactionType === "EXPENSE" ? "-" : "+"}
-                    {formatPrice(payment.amount, payment.currency || "UYU")}
-                  </strong>
-                </div>
-                <p>{financeTypeLabels[payment.transactionType ?? "INCOME"]} - {financeCategoryLabels[payment.category] ?? payment.category}</p>
-                <h3>{payment.concept}</h3>
-                <dl>
-                  <div>
-                    <dt>Entidad</dt>
-                    <dd>{payment.customer.name}</dd>
-                  </div>
-                  <div>
-                    <dt>Metodo</dt>
-                    <dd>{payment.method || "Sin definir"}</dd>
-                  </div>
-                  <div>
-                    <dt>Vence</dt>
-                    <dd>{formatShortDate(payment.dueDate)}</dd>
-                  </div>
-                  <div>
-                    <dt>Aplicado</dt>
-                    <dd>{payment.paidAt ? formatShortDate(payment.paidAt) : "Pendiente"}</dd>
-                  </div>
-                </dl>
-                {[payment.quote?.number, payment.workOrder?.title, payment.vehicle?.name, payment.reference, payment.notes]
-                  .filter(Boolean)
-                  .length ? (
-                  <p className="materialSummary">
-                    {[payment.quote?.number, payment.workOrder?.title, payment.vehicle?.name, payment.reference, payment.notes]
-                      .filter(Boolean)
-                      .join(" - ")}
-                  </p>
-                ) : null}
-                <div className="paymentActions">
-                  <button
-                    type="button"
-                    className="secondaryButton"
-                    onClick={() => onMarkPaid(payment.id)}
-                    disabled={Boolean(payment.paidAt)}
-                  >
-                    <Save size={16} />
-                    Marcar aplicado
-                  </button>
-                </div>
-              </article>
+              <button
+                key={payment.id}
+                type="button"
+                className="paymentListRow"
+                onClick={() => setSelectedPayment(payment)}
+                role="row"
+              >
+                <span>
+                  <strong>{payment.concept}</strong>
+                  <small>{financeTypeLabels[payment.transactionType ?? "INCOME"]}</small>
+                </span>
+                <span>{payment.customer.name}</span>
+                <span>{financeCategoryLabels[payment.category] ?? payment.category}</span>
+                <span>{formatShortDate(payment.dueDate)}</span>
+                <span>
+                  <b className={`statusPill ${paymentStatusClass(payment)}`}>{paymentStatusLabel(payment)}</b>
+                </span>
+                <span className={payment.transactionType === "EXPENSE" ? "negativeAmount" : "positiveAmount"}>
+                  {payment.transactionType === "EXPENSE" ? "-" : "+"}
+                  {formatPrice(payment.amount, payment.currency || "UYU")}
+                </span>
+              </button>
             ))}
             {!payments.length ? <p className="emptyPanel">No hay movimientos para los filtros actuales.</p> : null}
           </div>
         </section>
       </div>
+
+      {selectedPayment ? (
+        <PaymentDetailModal
+          payment={selectedPayment}
+          loading={loading}
+          onClose={() => setSelectedPayment(null)}
+          onMarkPaid={(id) => {
+            onMarkPaid(id);
+            setSelectedPayment((current) => (current?.id === id ? { ...current, paidAt: new Date().toISOString() } : current));
+          }}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function PaymentDetailModal({
+  loading,
+  payment,
+  onClose,
+  onMarkPaid,
+}: {
+  loading: boolean;
+  payment: Payment;
+  onClose: () => void;
+  onMarkPaid: (id: string) => void;
+}) {
+  const relatedInfo = [
+    payment.quote ? `Presupuesto ${payment.quote.number} - ${payment.quote.title}` : "",
+    payment.workOrder ? `Trabajo ${payment.workOrder.title}` : "",
+    payment.vehicle ? `Vehiculo ${payment.vehicle.name}${payment.vehicle.plate ? ` - ${payment.vehicle.plate}` : ""}` : "",
+  ].filter(Boolean);
+
+  return (
+    <div className="deviceDetailOverlay customerProfileOverlay" onClick={onClose}>
+      <section className="customerProfileModal paymentDetailModal" aria-label="Detalle del movimiento" onClick={(event) => event.stopPropagation()}>
+        <header className="deviceDetailHeader">
+          <div>
+            <span>Finanzas operativas</span>
+            <h2>{payment.concept}</h2>
+            <p>
+              {financeTypeLabels[payment.transactionType ?? "INCOME"]} - {payment.customer.name} -{" "}
+              {payment.currency || "UYU"}
+            </p>
+          </div>
+          <div className="modalActions">
+            <button type="button" onClick={() => onMarkPaid(payment.id)} disabled={loading || Boolean(payment.paidAt)}>
+              <Save size={18} />
+              Marcar aplicado
+            </button>
+            <button type="button" className="iconOnlyButton" onClick={onClose} aria-label="Cerrar detalle">
+              <X size={20} />
+            </button>
+          </div>
+        </header>
+
+        <section className="customerProfileSection">
+          <div className="paymentModalAmount">
+            <span className={`statusPill ${paymentStatusClass(payment)}`}>{paymentStatusLabel(payment)}</span>
+            <strong className={payment.transactionType === "EXPENSE" ? "negativeAmount" : "positiveAmount"}>
+              {payment.transactionType === "EXPENSE" ? "-" : "+"}
+              {formatPrice(payment.amount, payment.currency || "UYU")}
+            </strong>
+          </div>
+          <dl className="meetingModalFacts">
+            <div>
+              <dt>Entidad</dt>
+              <dd>{payment.customer.name}</dd>
+            </div>
+            <div>
+              <dt>Categoria</dt>
+              <dd>{financeCategoryLabels[payment.category] ?? payment.category}</dd>
+            </div>
+            <div>
+              <dt>Metodo</dt>
+              <dd>{payment.method || "Sin definir"}</dd>
+            </div>
+            <div>
+              <dt>Referencia</dt>
+              <dd>{payment.reference || "Sin referencia"}</dd>
+            </div>
+            <div>
+              <dt>Vencimiento</dt>
+              <dd>{formatShortDate(payment.dueDate)}</dd>
+            </div>
+            <div>
+              <dt>Aplicado</dt>
+              <dd>{payment.paidAt ? formatShortDate(payment.paidAt) : "Pendiente"}</dd>
+            </div>
+          </dl>
+        </section>
+
+        {relatedInfo.length ? (
+          <section className="customerProfileSection">
+            <h3>Vinculos</h3>
+            <div className="paymentDetailLinks">
+              {relatedInfo.map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {payment.notes ? (
+          <section className="customerProfileSection">
+            <h3>Observaciones</h3>
+            <p>{payment.notes}</p>
+          </section>
+        ) : null}
+      </section>
+    </div>
   );
 }
 
