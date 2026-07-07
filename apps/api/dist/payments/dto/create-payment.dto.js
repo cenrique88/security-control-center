@@ -13,8 +13,17 @@ exports.CreatePaymentDto = void 0;
 const class_validator_1 = require("class-validator");
 class CreatePaymentDto {
     customerId;
+    quoteId;
+    workOrderId;
+    vehicleId;
+    transactionType;
+    category;
     concept;
     amount;
+    currency;
+    method;
+    reference;
+    notes;
     dueDate;
     paidAt;
 }
@@ -24,6 +33,31 @@ __decorate([
     __metadata("design:type", String)
 ], CreatePaymentDto.prototype, "customerId", void 0);
 __decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "quoteId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "workOrderId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "vehicleId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(["INCOME", "EXPENSE"]),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "transactionType", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "category", void 0);
+__decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreatePaymentDto.prototype, "concept", void 0);
@@ -32,6 +66,26 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], CreatePaymentDto.prototype, "amount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "currency", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "method", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "reference", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "notes", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsDateString)(),

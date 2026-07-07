@@ -24,8 +24,8 @@ let InventoryController = class InventoryController {
     constructor(inventoryService) {
         this.inventoryService = inventoryService;
     }
-    list(search, category, lowStock, supplier, mode) {
-        return this.inventoryService.list({ search, category, lowStock, supplier, mode });
+    list(search, category, lowStock, supplier, customerId, sourceType, mode) {
+        return this.inventoryService.list({ search, category, lowStock, supplier, customerId, sourceType, mode });
     }
     summary() {
         return this.inventoryService.summary();
@@ -53,9 +53,11 @@ __decorate([
     __param(1, (0, common_1.Query)("category")),
     __param(2, (0, common_1.Query)("lowStock")),
     __param(3, (0, common_1.Query)("supplier")),
-    __param(4, (0, common_1.Query)("mode")),
+    __param(4, (0, common_1.Query)("customerId")),
+    __param(5, (0, common_1.Query)("sourceType")),
+    __param(6, (0, common_1.Query)("mode")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String, String, String, String]),
     __metadata("design:returntype", void 0)
 ], InventoryController.prototype, "list", null);
 __decorate([

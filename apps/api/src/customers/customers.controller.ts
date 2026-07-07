@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { CustomerType } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CustomersService } from "./customers.service";
 import { CreateCustomerDocumentDto } from "./dto/create-customer-document.dto";
@@ -15,7 +16,7 @@ export class CustomersController {
   list(
     @Query("search") search?: string,
     @Query("status") status?: "ACTIVE" | "PROSPECT" | "INACTIVE",
-    @Query("type") type?: "NORMAL" | "THIRD_PARTY",
+    @Query("type") type?: CustomerType,
   ) {
     return this.customersService.list({ search, status, type });
   }

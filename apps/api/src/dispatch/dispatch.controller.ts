@@ -13,6 +13,11 @@ export class DispatchController {
     return this.dispatchService.list(date, vehicleId);
   }
 
+  @Get("places")
+  places() {
+    return this.dispatchService.places();
+  }
+
   @Patch("stops")
   saveStops(@Body() dto: SaveDispatchStopsDto) {
     return this.dispatchService.save(dto);

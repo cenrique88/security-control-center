@@ -32,6 +32,8 @@ class CreateInventoryItemDto {
     stock;
     minStock;
     managedStock;
+    sourceType;
+    customerId;
     location;
     supplier;
     supplierCategory;
@@ -78,6 +80,16 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], CreateInventoryItemDto.prototype, "managedStock", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryItemDto.prototype, "sourceType", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryItemDto.prototype, "customerId", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),

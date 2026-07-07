@@ -45,6 +45,14 @@ export class CreateInventoryItemDto {
 
   @IsOptional()
   @IsString()
+  sourceType?: string;
+
+  @IsOptional()
+  @IsString()
+  customerId?: string;
+
+  @IsOptional()
+  @IsString()
   location?: string;
 
   @IsOptional()

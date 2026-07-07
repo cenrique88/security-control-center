@@ -24,15 +24,15 @@ export declare class MeetingsService implements OnModuleInit, OnModuleDestroy {
     list(filters: MeetingFilters): Promise<({
         customer: {
             id: string;
-            name: string;
-            reference: string;
             email: string | null;
+            name: string;
             phone: string | null;
+            reference: string;
         };
         attachments: {
             id: string;
-            createdAt: Date;
             name: string;
+            createdAt: Date;
             meetingId: string;
             mimeType: string | null;
             size: number | null;
@@ -40,12 +40,12 @@ export declare class MeetingsService implements OnModuleInit, OnModuleDestroy {
         }[];
     } & {
         id: string;
-        customerId: string;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
         type: import(".prisma/client").$Enums.MeetingType;
         status: import(".prisma/client").$Enums.MeetingStatus;
+        notes: string | null;
+        customerId: string;
         dateTime: Date;
         contact: string | null;
         objective: string;
@@ -64,15 +64,15 @@ export declare class MeetingsService implements OnModuleInit, OnModuleDestroy {
     create(dto: CreateMeetingDto): Promise<{
         customer: {
             id: string;
-            name: string;
-            reference: string;
             email: string | null;
+            name: string;
             phone: string | null;
+            reference: string;
         };
         attachments: {
             id: string;
-            createdAt: Date;
             name: string;
+            createdAt: Date;
             meetingId: string;
             mimeType: string | null;
             size: number | null;
@@ -80,12 +80,12 @@ export declare class MeetingsService implements OnModuleInit, OnModuleDestroy {
         }[];
     } & {
         id: string;
-        customerId: string;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
         type: import(".prisma/client").$Enums.MeetingType;
         status: import(".prisma/client").$Enums.MeetingStatus;
+        notes: string | null;
+        customerId: string;
         dateTime: Date;
         contact: string | null;
         objective: string;
@@ -104,15 +104,15 @@ export declare class MeetingsService implements OnModuleInit, OnModuleDestroy {
     update(id: string, dto: UpdateMeetingDto): Promise<{
         customer: {
             id: string;
-            name: string;
-            reference: string;
             email: string | null;
+            name: string;
             phone: string | null;
+            reference: string;
         };
         attachments: {
             id: string;
-            createdAt: Date;
             name: string;
+            createdAt: Date;
             meetingId: string;
             mimeType: string | null;
             size: number | null;
@@ -120,12 +120,12 @@ export declare class MeetingsService implements OnModuleInit, OnModuleDestroy {
         }[];
     } & {
         id: string;
-        customerId: string;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
         type: import(".prisma/client").$Enums.MeetingType;
         status: import(".prisma/client").$Enums.MeetingStatus;
+        notes: string | null;
+        customerId: string;
         dateTime: Date;
         contact: string | null;
         objective: string;

@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CustomersController = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const customers_service_1 = require("./customers.service");
 const create_customer_document_dto_1 = require("./dto/create-customer-document.dto");

@@ -9,18 +9,18 @@ export declare class PriceBookController {
     constructor(priceBookService: PriceBookService);
     list(search?: string, category?: string, service?: ServiceType, type?: QuoteItemType, active?: string): import(".prisma/client").Prisma.PrismaPromise<{
         id: string;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        category: string;
-        unit: string;
-        costPrice: import("@prisma/client/runtime/library").Decimal;
-        currency: string;
         type: import(".prisma/client").$Enums.QuoteItemType;
         service: import(".prisma/client").$Enums.ServiceType | null;
+        currency: string;
+        category: string;
         taxRate: import("@prisma/client/runtime/library").Decimal;
         active: boolean;
         salePrice: import("@prisma/client/runtime/library").Decimal;
+        costPrice: import("@prisma/client/runtime/library").Decimal;
+        unit: string;
         brand: string | null;
         model: string | null;
         description: string | null;
@@ -28,18 +28,18 @@ export declare class PriceBookController {
     }[]>;
     create(dto: UpsertPriceBookItemDto): import(".prisma/client").Prisma.Prisma__PriceBookItemClient<{
         id: string;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        category: string;
-        unit: string;
-        costPrice: import("@prisma/client/runtime/library").Decimal;
-        currency: string;
         type: import(".prisma/client").$Enums.QuoteItemType;
         service: import(".prisma/client").$Enums.ServiceType | null;
+        currency: string;
+        category: string;
         taxRate: import("@prisma/client/runtime/library").Decimal;
         active: boolean;
         salePrice: import("@prisma/client/runtime/library").Decimal;
+        costPrice: import("@prisma/client/runtime/library").Decimal;
+        unit: string;
         brand: string | null;
         model: string | null;
         description: string | null;
@@ -47,21 +47,21 @@ export declare class PriceBookController {
     }, never, import("@prisma/client/runtime/library").DefaultArgs, import(".prisma/client").Prisma.PrismaClientOptions>;
     laborRates(customerId?: string): Promise<{
         id: string;
-        customerId: string;
-        notes: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
+        notes: string | null;
+        customerId: string;
         currency: string;
         pointValue: import("@prisma/client/runtime/library").Decimal;
         taxRate: import("@prisma/client/runtime/library").Decimal;
         active: boolean;
     }[] | {
         id: string;
-        notes: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
+        notes: string | null;
         currency: string;
         pointValue: import("@prisma/client/runtime/library").Decimal;
         taxRate: import("@prisma/client/runtime/library").Decimal;
@@ -83,10 +83,10 @@ export declare class PriceBookController {
     }>;
     updateLaborRate(id: string, dto: UpdateLaborPointRateDto): Promise<{
         id: string;
-        notes: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
+        notes: string | null;
         currency: string;
         pointValue: import("@prisma/client/runtime/library").Decimal;
         taxRate: import("@prisma/client/runtime/library").Decimal;
@@ -100,11 +100,11 @@ export declare class PriceBookController {
         };
     } & {
         id: string;
-        customerId: string;
-        notes: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
+        notes: string | null;
+        customerId: string;
         currency: string;
         pointValue: import("@prisma/client/runtime/library").Decimal;
         taxRate: import("@prisma/client/runtime/library").Decimal;
@@ -112,11 +112,11 @@ export declare class PriceBookController {
     })[]>;
     createCustomerLaborRate(dto: UpsertCustomerLaborPointRateDto): Promise<{
         id: string;
-        customerId: string;
-        notes: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
+        notes: string | null;
+        customerId: string;
         currency: string;
         pointValue: import("@prisma/client/runtime/library").Decimal;
         taxRate: import("@prisma/client/runtime/library").Decimal;
@@ -124,11 +124,11 @@ export declare class PriceBookController {
     }>;
     updateCustomerLaborRate(id: string, dto: UpsertCustomerLaborPointRateDto): Promise<{
         id: string;
-        customerId: string;
-        notes: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
+        notes: string | null;
+        customerId: string;
         currency: string;
         pointValue: import("@prisma/client/runtime/library").Decimal;
         taxRate: import("@prisma/client/runtime/library").Decimal;
@@ -148,57 +148,57 @@ export declare class PriceBookController {
         };
     } & {
         id: string;
-        customerId: string;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
-        costPrice: import("@prisma/client/runtime/library").Decimal;
+        notes: string | null;
+        customerId: string;
         currency: string;
         taxRate: import("@prisma/client/runtime/library").Decimal;
         active: boolean;
         salePrice: import("@prisma/client/runtime/library").Decimal;
+        costPrice: import("@prisma/client/runtime/library").Decimal;
         priceBookItemId: string;
     })[]>;
     upsertCustomerPriceOverride(dto: UpsertCustomerPriceOverrideDto): Promise<{
         id: string;
-        customerId: string;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
-        costPrice: import("@prisma/client/runtime/library").Decimal;
+        notes: string | null;
+        customerId: string;
         currency: string;
         taxRate: import("@prisma/client/runtime/library").Decimal;
         active: boolean;
         salePrice: import("@prisma/client/runtime/library").Decimal;
+        costPrice: import("@prisma/client/runtime/library").Decimal;
         priceBookItemId: string;
     }>;
     updateCustomerPriceOverride(id: string, dto: UpsertCustomerPriceOverrideDto): Promise<{
         id: string;
-        customerId: string;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
-        costPrice: import("@prisma/client/runtime/library").Decimal;
+        notes: string | null;
+        customerId: string;
         currency: string;
         taxRate: import("@prisma/client/runtime/library").Decimal;
         active: boolean;
         salePrice: import("@prisma/client/runtime/library").Decimal;
+        costPrice: import("@prisma/client/runtime/library").Decimal;
         priceBookItemId: string;
     }>;
     update(id: string, dto: UpsertPriceBookItemDto): Promise<{
         id: string;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        category: string;
-        unit: string;
-        costPrice: import("@prisma/client/runtime/library").Decimal;
-        currency: string;
         type: import(".prisma/client").$Enums.QuoteItemType;
         service: import(".prisma/client").$Enums.ServiceType | null;
+        currency: string;
+        category: string;
         taxRate: import("@prisma/client/runtime/library").Decimal;
         active: boolean;
         salePrice: import("@prisma/client/runtime/library").Decimal;
+        costPrice: import("@prisma/client/runtime/library").Decimal;
+        unit: string;
         brand: string | null;
         model: string | null;
         description: string | null;

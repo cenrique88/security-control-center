@@ -16,18 +16,18 @@ export declare class PriceBookService {
     constructor(prisma: PrismaService);
     list(filters: PriceBookFilters): Prisma.PrismaPromise<{
         id: string;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        category: string;
-        unit: string;
-        costPrice: Prisma.Decimal;
-        currency: string;
         type: import(".prisma/client").$Enums.QuoteItemType;
         service: import(".prisma/client").$Enums.ServiceType | null;
+        currency: string;
+        category: string;
         taxRate: Prisma.Decimal;
         active: boolean;
         salePrice: Prisma.Decimal;
+        costPrice: Prisma.Decimal;
+        unit: string;
         brand: string | null;
         model: string | null;
         description: string | null;
@@ -35,18 +35,18 @@ export declare class PriceBookService {
     }[]>;
     create(dto: UpsertPriceBookItemDto): Prisma.Prisma__PriceBookItemClient<{
         id: string;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        category: string;
-        unit: string;
-        costPrice: Prisma.Decimal;
-        currency: string;
         type: import(".prisma/client").$Enums.QuoteItemType;
         service: import(".prisma/client").$Enums.ServiceType | null;
+        currency: string;
+        category: string;
         taxRate: Prisma.Decimal;
         active: boolean;
         salePrice: Prisma.Decimal;
+        costPrice: Prisma.Decimal;
+        unit: string;
         brand: string | null;
         model: string | null;
         description: string | null;
@@ -54,18 +54,18 @@ export declare class PriceBookService {
     }, never, import("@prisma/client/runtime/library").DefaultArgs, Prisma.PrismaClientOptions>;
     update(id: string, dto: UpsertPriceBookItemDto): Promise<{
         id: string;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        category: string;
-        unit: string;
-        costPrice: Prisma.Decimal;
-        currency: string;
         type: import(".prisma/client").$Enums.QuoteItemType;
         service: import(".prisma/client").$Enums.ServiceType | null;
+        currency: string;
+        category: string;
         taxRate: Prisma.Decimal;
         active: boolean;
         salePrice: Prisma.Decimal;
+        costPrice: Prisma.Decimal;
+        unit: string;
         brand: string | null;
         model: string | null;
         description: string | null;
@@ -73,21 +73,21 @@ export declare class PriceBookService {
     }>;
     laborRates(customerId?: string): Promise<{
         id: string;
-        customerId: string;
-        notes: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
+        notes: string | null;
+        customerId: string;
         currency: string;
         pointValue: Prisma.Decimal;
         taxRate: Prisma.Decimal;
         active: boolean;
     }[] | {
         id: string;
-        notes: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
+        notes: string | null;
         currency: string;
         pointValue: Prisma.Decimal;
         taxRate: Prisma.Decimal;
@@ -96,10 +96,10 @@ export declare class PriceBookService {
     }[]>;
     updateLaborRate(id: string, dto: UpdateLaborPointRateDto): Promise<{
         id: string;
-        notes: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
+        notes: string | null;
         currency: string;
         pointValue: Prisma.Decimal;
         taxRate: Prisma.Decimal;
@@ -113,11 +113,11 @@ export declare class PriceBookService {
         };
     } & {
         id: string;
-        customerId: string;
-        notes: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
+        notes: string | null;
+        customerId: string;
         currency: string;
         pointValue: Prisma.Decimal;
         taxRate: Prisma.Decimal;
@@ -125,11 +125,11 @@ export declare class PriceBookService {
     })[]>;
     createCustomerLaborRate(dto: UpsertCustomerLaborPointRateDto): Promise<{
         id: string;
-        customerId: string;
-        notes: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
+        notes: string | null;
+        customerId: string;
         currency: string;
         pointValue: Prisma.Decimal;
         taxRate: Prisma.Decimal;
@@ -137,11 +137,11 @@ export declare class PriceBookService {
     }>;
     updateCustomerLaborRate(id: string, dto: UpsertCustomerLaborPointRateDto): Promise<{
         id: string;
-        customerId: string;
-        notes: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
+        notes: string | null;
+        customerId: string;
         currency: string;
         pointValue: Prisma.Decimal;
         taxRate: Prisma.Decimal;
@@ -161,41 +161,41 @@ export declare class PriceBookService {
         };
     } & {
         id: string;
-        customerId: string;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
-        costPrice: Prisma.Decimal;
+        notes: string | null;
+        customerId: string;
         currency: string;
         taxRate: Prisma.Decimal;
         active: boolean;
         salePrice: Prisma.Decimal;
+        costPrice: Prisma.Decimal;
         priceBookItemId: string;
     })[]>;
     upsertCustomerPriceOverride(dto: UpsertCustomerPriceOverrideDto): Promise<{
         id: string;
-        customerId: string;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
-        costPrice: Prisma.Decimal;
+        notes: string | null;
+        customerId: string;
         currency: string;
         taxRate: Prisma.Decimal;
         active: boolean;
         salePrice: Prisma.Decimal;
+        costPrice: Prisma.Decimal;
         priceBookItemId: string;
     }>;
     updateCustomerPriceOverride(id: string, dto: UpsertCustomerPriceOverrideDto): Promise<{
         id: string;
-        customerId: string;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
-        costPrice: Prisma.Decimal;
+        notes: string | null;
+        customerId: string;
         currency: string;
         taxRate: Prisma.Decimal;
         active: boolean;
         salePrice: Prisma.Decimal;
+        costPrice: Prisma.Decimal;
         priceBookItemId: string;
     }>;
     calculateLaborPoints(points: number, rateId?: string, customerId?: string): Promise<{

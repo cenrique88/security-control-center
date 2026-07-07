@@ -14,43 +14,43 @@ export declare class VehiclesService {
     constructor(prisma: PrismaService, fuelService: FuelService);
     list(filters: VehicleFilters): Promise<{
         id: string;
+        name: string;
+        plate: string | null;
+        traccarDeviceId: string | null;
+        fuelKmPerLiter: Prisma.Decimal | null;
+        active: boolean;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        active: boolean;
-        traccarDeviceId: string | null;
-        plate: string | null;
-        fuelKmPerLiter: Prisma.Decimal | null;
     }[]>;
     create(dto: CreateVehicleDto): Promise<{
         id: string;
+        name: string;
+        plate: string | null;
+        traccarDeviceId: string | null;
+        fuelKmPerLiter: Prisma.Decimal | null;
+        active: boolean;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        active: boolean;
-        traccarDeviceId: string | null;
-        plate: string | null;
-        fuelKmPerLiter: Prisma.Decimal | null;
     }>;
     update(id: string, dto: UpdateVehicleDto): Promise<{
         id: string;
+        name: string;
+        plate: string | null;
+        traccarDeviceId: string | null;
+        fuelKmPerLiter: Prisma.Decimal | null;
+        active: boolean;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        active: boolean;
-        traccarDeviceId: string | null;
-        plate: string | null;
-        fuelKmPerLiter: Prisma.Decimal | null;
     }>;
     remove(id: string): Promise<{
         id: string;
+        name: string;
+        plate: string | null;
+        traccarDeviceId: string | null;
+        fuelKmPerLiter: Prisma.Decimal | null;
+        active: boolean;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        active: boolean;
-        traccarDeviceId: string | null;
-        plate: string | null;
-        fuelKmPerLiter: Prisma.Decimal | null;
     }>;
     getTraccarSettings(): Promise<{
         token: string;
@@ -105,13 +105,13 @@ export declare class VehiclesService {
     } | {
         vehicle: {
             id: string;
+            name: string;
+            plate: string | null;
+            traccarDeviceId: string | null;
+            fuelKmPerLiter: Prisma.Decimal | null;
+            active: boolean;
             createdAt: Date;
             updatedAt: Date;
-            name: string;
-            active: boolean;
-            traccarDeviceId: string | null;
-            plate: string | null;
-            fuelKmPerLiter: Prisma.Decimal | null;
         };
         date: string;
         configured: boolean;
@@ -181,9 +181,11 @@ export declare class VehiclesService {
     private traccarHeaders;
     private detectCustomerVisits;
     private detectStops;
-    private calculateDistanceKm;
+    private calculateMovingDistanceKm;
     private calculateMovingMinutes;
     private calculateSpeedStats;
+    private segmentSpeedKmh;
+    private positionSpeedKmh;
     private haversineKm;
     private toRadians;
     private positionTime;

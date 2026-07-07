@@ -1,3 +1,4 @@
+import { CustomerType } from "@prisma/client";
 import { CustomersService } from "./customers.service";
 import { CreateCustomerDocumentDto } from "./dto/create-customer-document.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
@@ -6,7 +7,7 @@ import { UpdateCustomerDto } from "./dto/update-customer.dto";
 export declare class CustomersController {
     private readonly customersService;
     constructor(customersService: CustomersService);
-    list(search?: string, status?: "ACTIVE" | "PROSPECT" | "INACTIVE", type?: "NORMAL" | "THIRD_PARTY"): Promise<({
+    list(search?: string, status?: "ACTIVE" | "PROSPECT" | "INACTIVE", type?: CustomerType): Promise<({
         _count: {
             workOrders: number;
             sites: number;
@@ -16,22 +17,22 @@ export declare class CustomersController {
         };
     } & {
         id: string;
-        address: string | null;
-        latitude: import("@prisma/client/runtime/library").Decimal | null;
-        longitude: import("@prisma/client/runtime/library").Decimal | null;
-        notes: string | null;
+        email: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        reference: string;
-        email: string | null;
         phone: string | null;
         taxId: string | null;
         legalName: string | null;
+        reference: string;
+        address: string | null;
+        latitude: import("@prisma/client/runtime/library").Decimal | null;
+        longitude: import("@prisma/client/runtime/library").Decimal | null;
         traccarGeofenceId: number | null;
         logoUrl: string | null;
         type: import(".prisma/client").$Enums.CustomerType;
         status: import(".prisma/client").$Enums.CustomerStatus;
+        notes: string | null;
     })[]>;
     create(dto: CreateCustomerDto): Promise<{
         _count: {
@@ -43,22 +44,22 @@ export declare class CustomersController {
         };
     } & {
         id: string;
-        address: string | null;
-        latitude: import("@prisma/client/runtime/library").Decimal | null;
-        longitude: import("@prisma/client/runtime/library").Decimal | null;
-        notes: string | null;
+        email: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        reference: string;
-        email: string | null;
         phone: string | null;
         taxId: string | null;
         legalName: string | null;
+        reference: string;
+        address: string | null;
+        latitude: import("@prisma/client/runtime/library").Decimal | null;
+        longitude: import("@prisma/client/runtime/library").Decimal | null;
         traccarGeofenceId: number | null;
         logoUrl: string | null;
         type: import(".prisma/client").$Enums.CustomerType;
         status: import(".prisma/client").$Enums.CustomerStatus;
+        notes: string | null;
     }>;
     update(id: string, dto: UpdateCustomerDto): Promise<{
         _count: {
@@ -70,37 +71,30 @@ export declare class CustomersController {
         };
     } & {
         id: string;
-        address: string | null;
-        latitude: import("@prisma/client/runtime/library").Decimal | null;
-        longitude: import("@prisma/client/runtime/library").Decimal | null;
-        notes: string | null;
+        email: string | null;
+        name: string;
         createdAt: Date;
         updatedAt: Date;
-        name: string;
-        reference: string;
-        email: string | null;
         phone: string | null;
         taxId: string | null;
         legalName: string | null;
+        reference: string;
+        address: string | null;
+        latitude: import("@prisma/client/runtime/library").Decimal | null;
+        longitude: import("@prisma/client/runtime/library").Decimal | null;
         traccarGeofenceId: number | null;
         logoUrl: string | null;
         type: import(".prisma/client").$Enums.CustomerType;
         status: import(".prisma/client").$Enums.CustomerStatus;
+        notes: string | null;
     }>;
     profile(id: string): Promise<{
         customer: {
-            _count: {
-                workOrders: number;
-                sites: number;
-                quotes: number;
-                payments: number;
-                meetings: number;
-            };
             workOrders: ({
                 site: {
                     id: string;
-                    address: string;
                     name: string;
+                    address: string;
                 } | null;
                 inventoryMovements: ({
                     installedDevice: {
@@ -118,26 +112,26 @@ export declare class CustomersController {
                     };
                 } & {
                     id: string;
-                    workOrderId: string | null;
                     createdAt: Date;
                     type: import(".prisma/client").$Enums.InventoryMovementType;
-                    itemId: string;
+                    customerId: string | null;
+                    workOrderId: string | null;
+                    sourceType: string | null;
                     quantity: number;
                     stockAfter: number;
                     reason: string | null;
+                    itemId: string;
                     installedDeviceId: string | null;
                 })[];
             } & {
                 id: string;
-                title: string;
-                customerId: string;
-                siteId: string | null;
-                scheduledAt: Date | null;
-                notes: string | null;
                 createdAt: Date;
                 updatedAt: Date;
                 type: import(".prisma/client").$Enums.ServiceType;
                 status: import(".prisma/client").$Enums.WorkOrderStatus;
+                notes: string | null;
+                title: string;
+                scheduledAt: Date | null;
                 completedAt: Date | null;
                 reportBeforeNotes: string | null;
                 reportAfterNotes: string | null;
@@ -145,6 +139,8 @@ export declare class CustomersController {
                 reportTests: string | null;
                 reportRecommendations: string | null;
                 reportPhotos: import("@prisma/client/runtime/library").JsonValue | null;
+                siteId: string | null;
+                customerId: string;
             })[];
             sites: ({
                 _count: {
@@ -153,27 +149,27 @@ export declare class CustomersController {
                 };
             } & {
                 id: string;
+                name: string;
+                createdAt: Date;
+                updatedAt: Date;
                 address: string;
                 latitude: import("@prisma/client/runtime/library").Decimal | null;
                 longitude: import("@prisma/client/runtime/library").Decimal | null;
-                customerId: string;
-                notes: string | null;
-                createdAt: Date;
-                updatedAt: Date;
-                name: string;
                 traccarGeofenceId: number | null;
+                notes: string | null;
+                customerId: string;
             })[];
             quotes: {
                 number: string;
                 id: string;
-                title: string;
-                customerId: string;
                 createdAt: Date;
                 updatedAt: Date;
-                currency: string;
                 status: import(".prisma/client").$Enums.QuoteStatus;
+                title: string;
+                customerId: string;
                 service: import(".prisma/client").$Enums.ServiceType;
                 pricingMode: import(".prisma/client").$Enums.QuotePricingMode;
+                currency: string;
                 issueDate: Date;
                 validUntil: Date | null;
                 taxIncluded: boolean;
@@ -204,19 +200,28 @@ export declare class CustomersController {
             }[];
             payments: {
                 id: string;
-                customerId: string;
                 createdAt: Date;
                 updatedAt: Date;
+                reference: string | null;
+                notes: string | null;
+                customerId: string;
+                currency: string;
+                transactionType: string;
+                category: string;
                 concept: string;
                 amount: import("@prisma/client/runtime/library").Decimal;
+                method: string | null;
                 dueDate: Date | null;
                 paidAt: Date | null;
+                quoteId: string | null;
+                workOrderId: string | null;
+                vehicleId: string | null;
             }[];
             documents: {
                 id: string;
-                customerId: string;
-                createdAt: Date;
                 name: string;
+                createdAt: Date;
+                customerId: string;
                 mimeType: string | null;
                 size: number | null;
                 dataUrl: string;
@@ -224,8 +229,8 @@ export declare class CustomersController {
             meetings: ({
                 attachments: {
                     id: string;
-                    createdAt: Date;
                     name: string;
+                    createdAt: Date;
                     meetingId: string;
                     mimeType: string | null;
                     size: number | null;
@@ -233,12 +238,12 @@ export declare class CustomersController {
                 }[];
             } & {
                 id: string;
-                customerId: string;
-                notes: string | null;
                 createdAt: Date;
                 updatedAt: Date;
                 type: import(".prisma/client").$Enums.MeetingType;
                 status: import(".prisma/client").$Enums.MeetingStatus;
+                notes: string | null;
+                customerId: string;
                 dateTime: Date;
                 contact: string | null;
                 objective: string;
@@ -254,24 +259,31 @@ export declare class CustomersController {
                 reminderMinutesBefore: number;
                 reminderSentAt: Date | null;
             })[];
+            _count: {
+                workOrders: number;
+                sites: number;
+                quotes: number;
+                payments: number;
+                meetings: number;
+            };
         } & {
             id: string;
-            address: string | null;
-            latitude: import("@prisma/client/runtime/library").Decimal | null;
-            longitude: import("@prisma/client/runtime/library").Decimal | null;
-            notes: string | null;
+            email: string | null;
+            name: string;
             createdAt: Date;
             updatedAt: Date;
-            name: string;
-            reference: string;
-            email: string | null;
             phone: string | null;
             taxId: string | null;
             legalName: string | null;
+            reference: string;
+            address: string | null;
+            latitude: import("@prisma/client/runtime/library").Decimal | null;
+            longitude: import("@prisma/client/runtime/library").Decimal | null;
             traccarGeofenceId: number | null;
             logoUrl: string | null;
             type: import(".prisma/client").$Enums.CustomerType;
             status: import(".prisma/client").$Enums.CustomerStatus;
+            notes: string | null;
         };
         sites: ({
             _count: {
@@ -280,21 +292,21 @@ export declare class CustomersController {
             };
         } & {
             id: string;
+            name: string;
+            createdAt: Date;
+            updatedAt: Date;
             address: string;
             latitude: import("@prisma/client/runtime/library").Decimal | null;
             longitude: import("@prisma/client/runtime/library").Decimal | null;
-            customerId: string;
-            notes: string | null;
-            createdAt: Date;
-            updatedAt: Date;
-            name: string;
             traccarGeofenceId: number | null;
+            notes: string | null;
+            customerId: string;
         })[];
         workOrders: ({
             site: {
                 id: string;
-                address: string;
                 name: string;
+                address: string;
             } | null;
             inventoryMovements: ({
                 installedDevice: {
@@ -312,26 +324,26 @@ export declare class CustomersController {
                 };
             } & {
                 id: string;
-                workOrderId: string | null;
                 createdAt: Date;
                 type: import(".prisma/client").$Enums.InventoryMovementType;
-                itemId: string;
+                customerId: string | null;
+                workOrderId: string | null;
+                sourceType: string | null;
                 quantity: number;
                 stockAfter: number;
                 reason: string | null;
+                itemId: string;
                 installedDeviceId: string | null;
             })[];
         } & {
             id: string;
-            title: string;
-            customerId: string;
-            siteId: string | null;
-            scheduledAt: Date | null;
-            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
             type: import(".prisma/client").$Enums.ServiceType;
             status: import(".prisma/client").$Enums.WorkOrderStatus;
+            notes: string | null;
+            title: string;
+            scheduledAt: Date | null;
             completedAt: Date | null;
             reportBeforeNotes: string | null;
             reportAfterNotes: string | null;
@@ -339,36 +351,38 @@ export declare class CustomersController {
             reportTests: string | null;
             reportRecommendations: string | null;
             reportPhotos: import("@prisma/client/runtime/library").JsonValue | null;
+            siteId: string | null;
+            customerId: string;
         })[];
         equipment: ({
             site: {
-                id: string;
-                address: string;
-                name: string;
                 customer: {
                     id: string;
                     name: string;
                 };
+                id: string;
+                name: string;
+                address: string;
             };
             inventoryMovements: {
-                id: string;
-                workOrderId: string | null;
-                createdAt: Date;
                 workOrder: {
                     id: string;
+                    status: import(".prisma/client").$Enums.WorkOrderStatus;
                     title: string;
                     scheduledAt: Date | null;
-                    status: import(".prisma/client").$Enums.WorkOrderStatus;
                     completedAt: Date | null;
                 } | null;
+                id: string;
+                createdAt: Date;
+                workOrderId: string | null;
             }[];
         } & {
             id: string;
-            siteId: string;
-            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
             type: import(".prisma/client").$Enums.ServiceType;
+            notes: string | null;
+            siteId: string;
             brand: string | null;
             model: string | null;
             serial: string | null;
@@ -378,14 +392,14 @@ export declare class CustomersController {
         quotes: {
             number: string;
             id: string;
-            title: string;
-            customerId: string;
             createdAt: Date;
             updatedAt: Date;
-            currency: string;
             status: import(".prisma/client").$Enums.QuoteStatus;
+            title: string;
+            customerId: string;
             service: import(".prisma/client").$Enums.ServiceType;
             pricingMode: import(".prisma/client").$Enums.QuotePricingMode;
+            currency: string;
             issueDate: Date;
             validUntil: Date | null;
             taxIncluded: boolean;
@@ -416,19 +430,28 @@ export declare class CustomersController {
         }[];
         payments: {
             id: string;
-            customerId: string;
             createdAt: Date;
             updatedAt: Date;
+            reference: string | null;
+            notes: string | null;
+            customerId: string;
+            currency: string;
+            transactionType: string;
+            category: string;
             concept: string;
             amount: import("@prisma/client/runtime/library").Decimal;
+            method: string | null;
             dueDate: Date | null;
             paidAt: Date | null;
+            quoteId: string | null;
+            workOrderId: string | null;
+            vehicleId: string | null;
         }[];
         meetings: ({
             attachments: {
                 id: string;
-                createdAt: Date;
                 name: string;
+                createdAt: Date;
                 meetingId: string;
                 mimeType: string | null;
                 size: number | null;
@@ -436,12 +459,12 @@ export declare class CustomersController {
             }[];
         } & {
             id: string;
-            customerId: string;
-            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
             type: import(".prisma/client").$Enums.MeetingType;
             status: import(".prisma/client").$Enums.MeetingStatus;
+            notes: string | null;
+            customerId: string;
             dateTime: Date;
             contact: string | null;
             objective: string;
@@ -459,9 +482,9 @@ export declare class CustomersController {
         })[];
         documents: {
             id: string;
-            customerId: string;
-            createdAt: Date;
             name: string;
+            createdAt: Date;
+            customerId: string;
             mimeType: string | null;
             size: number | null;
             dataUrl: string;
@@ -474,15 +497,15 @@ export declare class CustomersController {
         };
     } & {
         id: string;
+        name: string;
+        createdAt: Date;
+        updatedAt: Date;
         address: string;
         latitude: import("@prisma/client/runtime/library").Decimal | null;
         longitude: import("@prisma/client/runtime/library").Decimal | null;
-        customerId: string;
-        notes: string | null;
-        createdAt: Date;
-        updatedAt: Date;
-        name: string;
         traccarGeofenceId: number | null;
+        notes: string | null;
+        customerId: string;
     })[]>;
     createSite(id: string, dto: CreateSiteDto): Promise<{
         _count: {
@@ -491,30 +514,30 @@ export declare class CustomersController {
         };
     } & {
         id: string;
+        name: string;
+        createdAt: Date;
+        updatedAt: Date;
         address: string;
         latitude: import("@prisma/client/runtime/library").Decimal | null;
         longitude: import("@prisma/client/runtime/library").Decimal | null;
-        customerId: string;
-        notes: string | null;
-        createdAt: Date;
-        updatedAt: Date;
-        name: string;
         traccarGeofenceId: number | null;
+        notes: string | null;
+        customerId: string;
     }>;
     createDocument(id: string, dto: CreateCustomerDocumentDto): Promise<{
         id: string;
-        customerId: string;
-        createdAt: Date;
         name: string;
+        createdAt: Date;
+        customerId: string;
         mimeType: string | null;
         size: number | null;
         dataUrl: string;
     }>;
     deleteDocument(id: string, documentId: string): Promise<{
         id: string;
-        customerId: string;
-        createdAt: Date;
         name: string;
+        createdAt: Date;
+        customerId: string;
         mimeType: string | null;
         size: number | null;
         dataUrl: string;

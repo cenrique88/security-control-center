@@ -13,8 +13,17 @@ exports.UpdatePaymentDto = void 0;
 const class_validator_1 = require("class-validator");
 class UpdatePaymentDto {
     customerId;
+    quoteId;
+    workOrderId;
+    vehicleId;
+    transactionType;
+    category;
     concept;
     amount;
+    currency;
+    method;
+    reference;
+    notes;
     dueDate;
     paidAt;
 }
@@ -28,6 +37,31 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
+], UpdatePaymentDto.prototype, "quoteId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdatePaymentDto.prototype, "workOrderId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdatePaymentDto.prototype, "vehicleId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(["INCOME", "EXPENSE"]),
+    __metadata("design:type", String)
+], UpdatePaymentDto.prototype, "transactionType", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdatePaymentDto.prototype, "category", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
 ], UpdatePaymentDto.prototype, "concept", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
@@ -35,6 +69,26 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], UpdatePaymentDto.prototype, "amount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdatePaymentDto.prototype, "currency", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdatePaymentDto.prototype, "method", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdatePaymentDto.prototype, "reference", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdatePaymentDto.prototype, "notes", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsDateString)(),

@@ -24,6 +24,8 @@ enum CustomerStatus {
 enum CustomerType {
   NORMAL
   THIRD_PARTY
+  IMPORTER
+  INTERNAL
 }
 
 enum WorkOrderStatus {
@@ -133,6 +135,8 @@ model Customer {
   meetings    Meeting[]
   laborPointRates CustomerLaborPointRate[]
   priceOverrides CustomerPriceOverride[]
+  inventoryItems InventoryItem[]
+  inventoryMovements InventoryMovement[]
 
   @@index([type])
 }
@@ -187,6 +191,7 @@ model WorkOrder {
   customer    Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
   site        Site?           @relation(fields: [siteId], references: [id], onDelete: SetNull)
   inventoryMovements InventoryMovement[]
+  payments    Payment[]
 }
 
 model InstalledDevice {
@@ -215,6 +220,8 @@ model InventoryItem {
   stock            Int                 @default(0)
   minStock         Int                 @default(0)
   managedStock     Boolean             @default(true)
+  sourceType       String              @default("MATERIAL")
+  customerId       String?
   location         String?
   supplier         String?
   supplierCategory String?
@@ -225,7 +232,12 @@ model InventoryItem {
   notes            String?
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
+  customer         Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
   movements        InventoryMovement[]
+
+  @@index([sourceType])
+  @@index([customerId])
+  @@index([supplier])
 }
 
 model PriceBookItem {
@@ -311,13 +323,19 @@ model InventoryMovement {
   type            InventoryMovementType
   quantity        Int
   stockAfter      Int
+  sourceType      String?
+  customerId      String?
   reason          String?
   workOrderId     String?
   installedDeviceId String?
   createdAt       DateTime              @default(now())
   item            InventoryItem         @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  customer        Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
   workOrder       WorkOrder?            @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
   installedDevice InstalledDevice?      @relation(fields: [installedDeviceId], references: [id], onDelete: SetNull)
+
+  @@index([sourceType])
+  @@index([customerId])
 }
 
 model Quote {
@@ -362,6 +380,7 @@ model Quote {
   meeting              Meeting?       @relation(fields: [meetingId], references: [id], onDelete: SetNull)
   items                QuoteItem[]
   history              QuoteHistory[]
+  payments             Payment[]
 
   @@index([customerId])
   @@index([meetingId])
@@ -407,15 +426,33 @@ model QuoteHistory {
 }
 
 model Payment {
-  id          String   @id @default(cuid())
-  customerId  String
-  concept     String
-  amount      Decimal  @db.Decimal(12, 2)
-  dueDate     DateTime?
-  paidAt      DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id              String     @id @default(cuid())
+  customerId      String
+  quoteId         String?
+  workOrderId     String?
+  vehicleId       String?
+  transactionType String     @default("INCOME")
+  category        String     @default("CLIENT_PAYMENT")
+  concept         String
+  amount          Decimal    @db.Decimal(12, 2)
+  currency        String     @default("UYU")
+  method          String?
+  reference       String?
+  notes           String?
+  dueDate         DateTime?
+  paidAt          DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  customer        Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  quote           Quote?     @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  workOrder       WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+  vehicle         Vehicle?   @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  @@index([transactionType])
+  @@index([category])
+  @@index([quoteId])
+  @@index([workOrderId])
+  @@index([vehicleId])
 }
 
 model Meeting {
@@ -486,6 +523,7 @@ model Vehicle {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   dispatchStops   DispatchStop[]
+  payments        Payment[]
 }
 
 model DispatchStop {

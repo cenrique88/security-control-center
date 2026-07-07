@@ -70,9 +70,10 @@ export class DashboardService {
         },
       }),
       this.prisma.payment.count(),
-      this.prisma.payment.count({ where: { paidAt: null } }),
+      this.prisma.payment.count({ where: { transactionType: "INCOME", paidAt: null } }),
       this.prisma.payment.count({
         where: {
+          transactionType: "INCOME",
           paidAt: null,
           dueDate: {
             lt: new Date(),
@@ -84,6 +85,7 @@ export class DashboardService {
           amount: true,
         },
         where: {
+          transactionType: "INCOME",
           paidAt: null,
         },
       }),
@@ -170,8 +172,8 @@ export class DashboardService {
         { label: "Trabajos completados", value: completedJobs, detail: `${totalWorkOrders} ordenes totales` },
         { label: "Presupuestos pendientes", value: pendingQuotes, detail: `${acceptedQuotes} aceptados` },
         { label: "Pipeline presupuestado", value: quotePipeline, detail: "Importe pendiente de aprobacion" },
-        { label: "Cobros pendientes", value: pendingPayments, detail: `${overduePayments} vencidos` },
-        { label: "Monto a cobrar", value: pendingPaymentAmount, detail: "Suma de cobros sin pagar" },
+        { label: "Ingresos pendientes", value: pendingPayments, detail: `${overduePayments} vencidos` },
+        { label: "Monto a cobrar", value: pendingPaymentAmount, detail: "Suma de ingresos sin aplicar" },
         { label: "Equipos por mes", value: installedDevicesThisMonthTotal, detail: `${installedDevicesTotal} equipos instalados en total` },
         { label: "Vehiculos activos", value: activeVehicles, detail: `${inactiveVehicles} inactivos` },
         { label: "Stock disponible", value: inventory.availableStock, detail: `${inventory.installed} unidades instaladas desde almacen` },

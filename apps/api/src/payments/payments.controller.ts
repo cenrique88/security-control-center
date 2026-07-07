@@ -14,8 +14,10 @@ export class PaymentsController {
     @Query("search") search?: string,
     @Query("customerId") customerId?: string,
     @Query("status") status?: "PAID" | "PENDING" | "OVERDUE",
+    @Query("type") type?: "INCOME" | "EXPENSE",
+    @Query("category") category?: string,
   ) {
-    return this.paymentsService.list({ search, customerId, status });
+    return this.paymentsService.list({ search, customerId, status, type, category });
   }
 
   @Post()

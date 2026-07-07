@@ -25,6 +25,9 @@ let DispatchController = class DispatchController {
     listStops(date, vehicleId) {
         return this.dispatchService.list(date, vehicleId);
     }
+    places() {
+        return this.dispatchService.places();
+    }
     saveStops(dto) {
         return this.dispatchService.save(dto);
     }
@@ -41,6 +44,12 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], DispatchController.prototype, "listStops", null);
+__decorate([
+    (0, common_1.Get)("places"),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], DispatchController.prototype, "places", null);
 __decorate([
     (0, common_1.Patch)("stops"),
     __param(0, (0, common_1.Body)()),

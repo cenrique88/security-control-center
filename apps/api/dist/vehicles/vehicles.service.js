@@ -13,6 +13,7 @@ exports.VehiclesService = void 0;
 const common_1 = require("@nestjs/common");
 const fuel_service_1 = require("../fuel/fuel.service");
 const prisma_service_1 = require("../prisma/prisma.service");
+const MOVEMENT_SPEED_THRESHOLD_KMH = 5;
 let VehiclesService = class VehiclesService {
     prisma;
     fuelService;
@@ -135,11 +136,11 @@ let VehiclesService = class VehiclesService {
         const sorted = positions
             .filter((position) => Number.isFinite(position.latitude) && Number.isFinite(position.longitude))
             .sort((left, right) => this.positionTime(left).getTime() - this.positionTime(right).getTime());
-        const distanceKm = this.roundNumber(this.calculateDistanceKm(sorted), 2);
-        const stops = this.detectStops(sorted, settings.minStopMinutes);
+        const distanceKm = this.roundNumber(this.calculateMovingDistanceKm(sorted), 2);
+        const stops = this.detectStops(sorted, settings.minStopMinutes, MOVEMENT_SPEED_THRESHOLD_KMH);
         const visits = await this.detectCustomerVisits(stops, settings.matchRadiusMeters);
-        const movingMinutes = this.calculateMovingMinutes(sorted, stops);
-        const speedStats = this.calculateSpeedStats(sorted);
+        const movingMinutes = Math.round(this.calculateMovingMinutes(sorted, MOVEMENT_SPEED_THRESHOLD_KMH));
+        const speedStats = this.calculateSpeedStats(sorted, MOVEMENT_SPEED_THRESHOLD_KMH);
         const fuelKmPerLiter = Number(vehicle.fuelKmPerLiter) || 10;
         const estimatedLiters = fuelKmPerLiter > 0 ? this.roundNumber(distanceKm / fuelKmPerLiter, 2) : 0;
         const fuel = await this.fuelService.getUruguaySuperPrice();
@@ -358,9 +359,16 @@ let VehiclesService = class VehiclesService {
         stops.forEach((stop) => {
             let best = null;
             customers.forEach((customer) => {
+                const customerLat = Number(customer.latitude);
+                const customerLon = Number(customer.longitude);
+                const hasCustomerCoords = Number.isFinite(customerLat) && Number.isFinite(customerLon);
+                const customerDistanceMeters = hasCustomerCoords
+                    ? this.haversineKm(stop.latitude, stop.longitude, customerLat, customerLon) * 1000
+                    : undefined;
+                const customerGpsMatch = customerDistanceMeters !== undefined && customerDistanceMeters <= matchRadiusMeters;
                 const addressScore = this.matchesText(stop.address, customer.address);
-                if (addressScore || this.matchesText(stop.address, customer.name)) {
-                    best = {
+                if (customerGpsMatch || addressScore || this.matchesText(stop.address, customer.name)) {
+                    const candidate = {
                         stopIndex: stop.index,
                         customerId: customer.id,
                         customerName: customer.name,
@@ -368,8 +376,12 @@ let VehiclesService = class VehiclesService {
                         arrival: stop.arrival,
                         departure: stop.departure,
                         durationMinutes: stop.durationMinutes,
-                        match: addressScore ? "ADDRESS" : "NAME",
+                        match: customerGpsMatch ? "GPS" : addressScore ? "ADDRESS" : "NAME",
+                        distanceMeters: customerDistanceMeters === undefined ? undefined : this.roundNumber(customerDistanceMeters, 0),
                     };
+                    if (!best || (candidate.distanceMeters ?? Number.MAX_SAFE_INTEGER) < (best.distanceMeters ?? Number.MAX_SAFE_INTEGER)) {
+                        best = candidate;
+                    }
                 }
                 customer.sites.forEach((site) => {
                     const siteLat = Number(site.latitude);
@@ -405,18 +417,22 @@ let VehiclesService = class VehiclesService {
         });
         return visits;
     }
-    detectStops(positions, minStopMinutes) {
+    detectStops(positions, minStopMinutes, speedThresholdKmh) {
         const stops = [];
-        let start = 0;
-        for (let index = 1; index <= positions.length; index += 1) {
+        let stopStartIndex = null;
+        for (let index = 1; index < positions.length; index += 1) {
             const previous = positions[index - 1];
             const current = positions[index];
-            const moving = current ? this.haversineKm(previous.latitude, previous.longitude, current.latitude, current.longitude) > 0.12 : true;
-            if (!moving) {
+            const moving = this.segmentSpeedKmh(previous, current) > speedThresholdKmh;
+            if (!moving && stopStartIndex === null) {
+                stopStartIndex = index - 1;
+            }
+            const closesStop = moving || index === positions.length - 1;
+            if (stopStartIndex === null || !closesStop) {
                 continue;
             }
-            const startPosition = positions[start];
-            const endPosition = previous;
+            const startPosition = positions[stopStartIndex];
+            const endPosition = moving ? previous : current;
             const durationMinutes = Math.round((this.positionTime(endPosition).getTime() - this.positionTime(startPosition).getTime()) / 60000);
             if (durationMinutes > minStopMinutes) {
                 stops.push({
@@ -429,34 +445,62 @@ let VehiclesService = class VehiclesService {
                     address: endPosition.address || startPosition.address,
                 });
             }
-            start = index;
+            stopStartIndex = null;
         }
         return stops;
     }
-    calculateDistanceKm(positions) {
+    calculateMovingDistanceKm(positions) {
         return positions.reduce((sum, position, index) => {
             if (index === 0) {
                 return sum;
             }
             const previous = positions[index - 1];
+            if (this.segmentSpeedKmh(previous, position) <= MOVEMENT_SPEED_THRESHOLD_KMH) {
+                return sum;
+            }
             return sum + this.haversineKm(previous.latitude, previous.longitude, position.latitude, position.longitude);
         }, 0);
     }
-    calculateMovingMinutes(positions, stops) {
+    calculateMovingMinutes(positions, speedThresholdKmh) {
         if (positions.length < 2) {
             return 0;
         }
-        const totalMinutes = Math.round((this.positionTime(positions[positions.length - 1]).getTime() - this.positionTime(positions[0]).getTime()) / 60000);
-        return Math.max(0, totalMinutes - stops.reduce((sum, stop) => sum + stop.durationMinutes, 0));
+        return positions.reduce((minutes, position, index) => {
+            if (index === 0) {
+                return minutes;
+            }
+            const previous = positions[index - 1];
+            if (this.segmentSpeedKmh(previous, position) <= speedThresholdKmh) {
+                return minutes;
+            }
+            const deltaMinutes = Math.max(0, (this.positionTime(position).getTime() - this.positionTime(previous).getTime()) / 60000);
+            return minutes + deltaMinutes;
+        }, 0);
     }
-    calculateSpeedStats(positions) {
-        const speeds = positions.map((position) => (Number(position.speed) || 0) * 1.852);
-        const movingSpeeds = speeds.filter((speed) => speed > 1);
+    calculateSpeedStats(positions, speedThresholdKmh) {
+        const speeds = positions.map((position) => this.positionSpeedKmh(position));
+        const movingSpeeds = speeds.filter((speed) => speed > speedThresholdKmh);
         return {
             minSpeedKmh: this.roundNumber(movingSpeeds.length ? Math.min(...movingSpeeds) : 0, 1),
-            averageSpeedKmh: this.roundNumber(speeds.length ? speeds.reduce((sum, speed) => sum + speed, 0) / speeds.length : 0, 1),
-            maxSpeedKmh: this.roundNumber(speeds.length ? Math.max(...speeds) : 0, 1),
+            averageSpeedKmh: this.roundNumber(movingSpeeds.length ? movingSpeeds.reduce((sum, speed) => sum + speed, 0) / movingSpeeds.length : 0, 1),
+            maxSpeedKmh: this.roundNumber(movingSpeeds.length ? Math.max(...movingSpeeds) : 0, 1),
         };
+    }
+    segmentSpeedKmh(previous, current) {
+        const rawSpeed = Number(current.speed);
+        if (Number.isFinite(rawSpeed)) {
+            return rawSpeed * 1.852;
+        }
+        const minutes = (this.positionTime(current).getTime() - this.positionTime(previous).getTime()) / 60000;
+        if (minutes <= 0) {
+            return 0;
+        }
+        const distanceKm = this.haversineKm(previous.latitude, previous.longitude, current.latitude, current.longitude);
+        return (distanceKm / minutes) * 60;
+    }
+    positionSpeedKmh(position) {
+        const speed = Number(position.speed);
+        return Number.isFinite(speed) ? speed * 1.852 : 0;
     }
     haversineKm(lat1, lon1, lat2, lon2) {
         const radius = 6371;

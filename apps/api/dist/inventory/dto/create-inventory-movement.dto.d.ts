@@ -7,6 +7,8 @@ export declare class CreateInventoryMovementDto {
     itemId: string;
     type: InventoryMovementTypeDto;
     quantity: number;
+    sourceType?: string;
+    customerId?: string;
     reason?: string;
     workOrderId?: string;
     installedDeviceId?: string;

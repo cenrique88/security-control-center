@@ -7,8 +7,8 @@ export declare class AuthController {
     register(dto: RegisterDto): Promise<{
         user: {
             id: string;
-            name: string;
             email: string;
+            name: string;
             role: import(".prisma/client").$Enums.UserRole;
         };
         accessToken: string;

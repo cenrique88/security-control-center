@@ -9,31 +9,31 @@ export declare class WorkOrdersController {
     list(search?: string, customerId?: string, siteId?: string, type?: ServiceType, status?: WorkOrderStatus): Promise<({
         customer: {
             id: string;
+            email: string | null;
+            name: string;
+            phone: string | null;
+            taxId: string | null;
+            reference: string;
             address: string | null;
             latitude: import("@prisma/client/runtime/library").Decimal | null;
             longitude: import("@prisma/client/runtime/library").Decimal | null;
-            name: string;
-            reference: string;
-            email: string | null;
-            phone: string | null;
-            taxId: string | null;
             traccarGeofenceId: number | null;
             logoUrl: string | null;
             sites: {
                 id: string;
+                name: string;
                 address: string;
                 latitude: import("@prisma/client/runtime/library").Decimal | null;
                 longitude: import("@prisma/client/runtime/library").Decimal | null;
-                name: string;
                 traccarGeofenceId: number | null;
             }[];
         };
         site: {
             id: string;
+            name: string;
             address: string;
             latitude: import("@prisma/client/runtime/library").Decimal | null;
             longitude: import("@prisma/client/runtime/library").Decimal | null;
-            name: string;
             traccarGeofenceId: number | null;
         } | null;
         inventoryMovements: ({
@@ -52,26 +52,26 @@ export declare class WorkOrdersController {
             };
         } & {
             id: string;
-            workOrderId: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
-            itemId: string;
+            customerId: string | null;
+            workOrderId: string | null;
+            sourceType: string | null;
             quantity: number;
             stockAfter: number;
             reason: string | null;
+            itemId: string;
             installedDeviceId: string | null;
         })[];
     } & {
         id: string;
-        title: string;
-        customerId: string;
-        siteId: string | null;
-        scheduledAt: Date | null;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
         type: import(".prisma/client").$Enums.ServiceType;
         status: import(".prisma/client").$Enums.WorkOrderStatus;
+        notes: string | null;
+        title: string;
+        scheduledAt: Date | null;
         completedAt: Date | null;
         reportBeforeNotes: string | null;
         reportAfterNotes: string | null;
@@ -79,35 +79,37 @@ export declare class WorkOrdersController {
         reportTests: string | null;
         reportRecommendations: string | null;
         reportPhotos: import("@prisma/client/runtime/library").JsonValue | null;
+        siteId: string | null;
+        customerId: string;
     })[]>;
     create(dto: CreateWorkOrderDto): Promise<{
         customer: {
             id: string;
+            email: string | null;
+            name: string;
+            phone: string | null;
+            taxId: string | null;
+            reference: string;
             address: string | null;
             latitude: import("@prisma/client/runtime/library").Decimal | null;
             longitude: import("@prisma/client/runtime/library").Decimal | null;
-            name: string;
-            reference: string;
-            email: string | null;
-            phone: string | null;
-            taxId: string | null;
             traccarGeofenceId: number | null;
             logoUrl: string | null;
             sites: {
                 id: string;
+                name: string;
                 address: string;
                 latitude: import("@prisma/client/runtime/library").Decimal | null;
                 longitude: import("@prisma/client/runtime/library").Decimal | null;
-                name: string;
                 traccarGeofenceId: number | null;
             }[];
         };
         site: {
             id: string;
+            name: string;
             address: string;
             latitude: import("@prisma/client/runtime/library").Decimal | null;
             longitude: import("@prisma/client/runtime/library").Decimal | null;
-            name: string;
             traccarGeofenceId: number | null;
         } | null;
         inventoryMovements: ({
@@ -126,26 +128,26 @@ export declare class WorkOrdersController {
             };
         } & {
             id: string;
-            workOrderId: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
-            itemId: string;
+            customerId: string | null;
+            workOrderId: string | null;
+            sourceType: string | null;
             quantity: number;
             stockAfter: number;
             reason: string | null;
+            itemId: string;
             installedDeviceId: string | null;
         })[];
     } & {
         id: string;
-        title: string;
-        customerId: string;
-        siteId: string | null;
-        scheduledAt: Date | null;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
         type: import(".prisma/client").$Enums.ServiceType;
         status: import(".prisma/client").$Enums.WorkOrderStatus;
+        notes: string | null;
+        title: string;
+        scheduledAt: Date | null;
         completedAt: Date | null;
         reportBeforeNotes: string | null;
         reportAfterNotes: string | null;
@@ -153,23 +155,25 @@ export declare class WorkOrdersController {
         reportTests: string | null;
         reportRecommendations: string | null;
         reportPhotos: import("@prisma/client/runtime/library").JsonValue | null;
+        siteId: string | null;
+        customerId: string;
     }>;
     addMaterial(id: string, dto: AddWorkOrderMaterialDto): Promise<({
         workOrder: {
-            id: string;
-            title: string;
             customer: {
                 id: string;
                 name: string;
             };
+            id: string;
+            title: string;
         } | null;
         installedDevice: {
             id: string;
-            siteId: string;
-            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
             type: import(".prisma/client").$Enums.ServiceType;
+            notes: string | null;
+            siteId: string;
             brand: string | null;
             model: string | null;
             serial: string | null;
@@ -178,51 +182,55 @@ export declare class WorkOrdersController {
         } | null;
         item: {
             id: string;
-            notes: string | null;
+            name: string;
             createdAt: Date;
             updatedAt: Date;
-            name: string;
             reference: string;
-            sku: string | null;
+            notes: string | null;
+            customerId: string | null;
+            currency: string | null;
             category: import(".prisma/client").$Enums.ServiceType | null;
+            costPrice: import("@prisma/client/runtime/library").Decimal | null;
+            sku: string | null;
             unit: string;
             stock: number;
             minStock: number;
             managedStock: boolean;
+            sourceType: string;
             location: string | null;
             supplier: string | null;
             supplierCategory: string | null;
-            costPrice: import("@prisma/client/runtime/library").Decimal | null;
             taxAmount: import("@prisma/client/runtime/library").Decimal | null;
             priceWithTax: import("@prisma/client/runtime/library").Decimal | null;
-            currency: string | null;
         };
     } & {
         id: string;
-        workOrderId: string | null;
         createdAt: Date;
         type: import(".prisma/client").$Enums.InventoryMovementType;
-        itemId: string;
+        customerId: string | null;
+        workOrderId: string | null;
+        sourceType: string | null;
         quantity: number;
         stockAfter: number;
         reason: string | null;
+        itemId: string;
         installedDeviceId: string | null;
     }) | ({
         workOrder: {
-            id: string;
-            title: string;
             customer: {
                 id: string;
                 name: string;
             };
+            id: string;
+            title: string;
         } | null;
         installedDevice: {
             id: string;
-            siteId: string;
-            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
             type: import(".prisma/client").$Enums.ServiceType;
+            notes: string | null;
+            siteId: string;
             brand: string | null;
             model: string | null;
             serial: string | null;
@@ -231,64 +239,68 @@ export declare class WorkOrdersController {
         } | null;
         item: {
             id: string;
-            notes: string | null;
+            name: string;
             createdAt: Date;
             updatedAt: Date;
-            name: string;
             reference: string;
-            sku: string | null;
+            notes: string | null;
+            customerId: string | null;
+            currency: string | null;
             category: import(".prisma/client").$Enums.ServiceType | null;
+            costPrice: import("@prisma/client/runtime/library").Decimal | null;
+            sku: string | null;
             unit: string;
             stock: number;
             minStock: number;
             managedStock: boolean;
+            sourceType: string;
             location: string | null;
             supplier: string | null;
             supplierCategory: string | null;
-            costPrice: import("@prisma/client/runtime/library").Decimal | null;
             taxAmount: import("@prisma/client/runtime/library").Decimal | null;
             priceWithTax: import("@prisma/client/runtime/library").Decimal | null;
-            currency: string | null;
         };
     } & {
         id: string;
-        workOrderId: string | null;
         createdAt: Date;
         type: import(".prisma/client").$Enums.InventoryMovementType;
-        itemId: string;
+        customerId: string | null;
+        workOrderId: string | null;
+        sourceType: string | null;
         quantity: number;
         stockAfter: number;
         reason: string | null;
+        itemId: string;
         installedDeviceId: string | null;
     })[]>;
     update(id: string, dto: UpdateWorkOrderDto): Promise<{
         customer: {
             id: string;
+            email: string | null;
+            name: string;
+            phone: string | null;
+            taxId: string | null;
+            reference: string;
             address: string | null;
             latitude: import("@prisma/client/runtime/library").Decimal | null;
             longitude: import("@prisma/client/runtime/library").Decimal | null;
-            name: string;
-            reference: string;
-            email: string | null;
-            phone: string | null;
-            taxId: string | null;
             traccarGeofenceId: number | null;
             logoUrl: string | null;
             sites: {
                 id: string;
+                name: string;
                 address: string;
                 latitude: import("@prisma/client/runtime/library").Decimal | null;
                 longitude: import("@prisma/client/runtime/library").Decimal | null;
-                name: string;
                 traccarGeofenceId: number | null;
             }[];
         };
         site: {
             id: string;
+            name: string;
             address: string;
             latitude: import("@prisma/client/runtime/library").Decimal | null;
             longitude: import("@prisma/client/runtime/library").Decimal | null;
-            name: string;
             traccarGeofenceId: number | null;
         } | null;
         inventoryMovements: ({
@@ -307,26 +319,26 @@ export declare class WorkOrdersController {
             };
         } & {
             id: string;
-            workOrderId: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
-            itemId: string;
+            customerId: string | null;
+            workOrderId: string | null;
+            sourceType: string | null;
             quantity: number;
             stockAfter: number;
             reason: string | null;
+            itemId: string;
             installedDeviceId: string | null;
         })[];
     } & {
         id: string;
-        title: string;
-        customerId: string;
-        siteId: string | null;
-        scheduledAt: Date | null;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
         type: import(".prisma/client").$Enums.ServiceType;
         status: import(".prisma/client").$Enums.WorkOrderStatus;
+        notes: string | null;
+        title: string;
+        scheduledAt: Date | null;
         completedAt: Date | null;
         reportBeforeNotes: string | null;
         reportAfterNotes: string | null;
@@ -334,5 +346,7 @@ export declare class WorkOrdersController {
         reportTests: string | null;
         reportRecommendations: string | null;
         reportPhotos: import("@prisma/client/runtime/library").JsonValue | null;
+        siteId: string | null;
+        customerId: string;
     }>;
 }

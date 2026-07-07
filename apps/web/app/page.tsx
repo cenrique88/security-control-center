@@ -98,7 +98,7 @@ const modules = [
   { name: "Despachador", icon: MapPin },
   { name: "Reuniones", icon: PhoneCall },
   { name: "Presupuestos", icon: ClipboardList },
-  { name: "Cobros", icon: DollarSign },
+  { name: "Gastos e Ingresos", icon: DollarSign },
   { name: "Almacen", icon: Package },
   { name: "Equipos", icon: Video },
   { name: "Vehiculos", icon: Car },
@@ -111,6 +111,21 @@ const statusLabels: Record<CustomerStatus, string> = {
   PROSPECT: "Prospecto",
   INACTIVE: "Inactivo",
 };
+
+type CustomerDirectoryType = Exclude<CustomerType, "THIRD_PARTY">;
+
+const customerTypeLabels: Record<CustomerType, string> = {
+  NORMAL: "Cliente",
+  THIRD_PARTY: "Tercerizado",
+  IMPORTER: "Importador",
+  INTERNAL: "Uso personal",
+};
+
+const customerDirectoryModes: Array<{ value: CustomerDirectoryType; label: string; detail: string }> = [
+  { value: "NORMAL", label: "Clientes", detail: "Clientes finales" },
+  { value: "IMPORTER", label: "Importadores", detail: "Compras y proveedores" },
+  { value: "INTERNAL", label: "Uso personal", detail: "Gastos internos" },
+];
 
 const deviceTypeLabels: Record<DeviceType, string> = {
   CCTV: "CCTV",
@@ -185,6 +200,7 @@ type MessageRecipientOption = {
 
 type InventorySortKey = "reference" | "date" | "brand" | "model" | "installed" | "status";
 type InventoryColumnKey = InventorySortKey | "actions";
+type InventoryEntryMode = "MATERIAL" | "THIRD_PARTY_SUPPLY" | "ASSET";
 
 type QuoteCatalogOption = {
   id: string;
@@ -230,6 +246,55 @@ const inventorySortableColumns: Array<{ key: InventorySortKey; label: string }> 
   { key: "installed", label: "Instalado" },
   { key: "status", label: "Estado" },
 ];
+
+const inventoryEntryModes: Array<{ value: InventoryEntryMode; label: string; detail: string }> = [
+  { value: "MATERIAL", label: "Materiales", detail: "Stock e insumos propios" },
+  { value: "THIRD_PARTY_SUPPLY", label: "Tercerizados", detail: "Insumos por cliente" },
+  { value: "ASSET", label: "Activos", detail: "Herramientas y equipos internos" },
+];
+
+const inventorySourceLabels: Record<string, string> = {
+  MATERIAL: "Materiales",
+  THIRD_PARTY_SUPPLY: "Tercerizado",
+  ASSET: "Activo",
+};
+
+const financeTypeLabels = {
+  INCOME: "Ingreso",
+  EXPENSE: "Egreso",
+} as const;
+
+const financeCategories: Record<"INCOME" | "EXPENSE", Array<{ value: string; label: string }>> = {
+  INCOME: [
+    { value: "CLIENT_PAYMENT", label: "Cobro cliente" },
+    { value: "QUOTE_ADVANCE", label: "Seña / adelanto" },
+    { value: "QUOTE_BALANCE", label: "Saldo presupuesto" },
+    { value: "MAINTENANCE_FEE", label: "Mantenimiento mensual" },
+    { value: "THIRD_PARTY_SERVICE", label: "Servicio tercerizado" },
+    { value: "EQUIPMENT_SALE", label: "Venta de equipos" },
+    { value: "OTHER_INCOME", label: "Otro ingreso" },
+  ],
+  EXPENSE: [
+    { value: "MATERIAL_PURCHASE", label: "Compra de materiales" },
+    { value: "SUPPLIES", label: "Insumos" },
+    { value: "IMPORTER_PAYMENT", label: "Pago importador" },
+    { value: "FUEL", label: "Combustible" },
+    { value: "TOLL", label: "Peajes" },
+    { value: "PARKING", label: "Estacionamiento / tarifado" },
+    { value: "LABOR", label: "Mano de obra" },
+    { value: "THIRD_PARTY_COST", label: "Costo tercerizado" },
+    { value: "TOOLS", label: "Herramientas" },
+    { value: "VEHICLE_EXPENSE", label: "Vehiculos" },
+    { value: "PERSONAL_USE", label: "Uso personal" },
+    { value: "TAXES", label: "Impuestos" },
+    { value: "OTHER_EXPENSE", label: "Otro egreso" },
+  ],
+};
+
+const financeCategoryLabels = [...financeCategories.INCOME, ...financeCategories.EXPENSE].reduce<Record<string, string>>(
+  (labels, category) => ({ ...labels, [category.value]: category.label }),
+  {},
+);
 
 const emptyCustomerForm: CustomerPayload = {
   name: "",
@@ -327,8 +392,14 @@ const emptyMeetingForm: MeetingPayload = {
 
 const emptyPaymentForm: PaymentPayload = {
   customerId: "",
+  transactionType: "INCOME",
+  category: "CLIENT_PAYMENT",
   concept: "",
   amount: 0,
+  currency: "UYU",
+  method: "",
+  reference: "",
+  notes: "",
   dueDate: "",
   paidAt: "",
 };
@@ -349,6 +420,8 @@ const emptyInventoryForm: InventoryItemPayload = {
   stock: 0,
   minStock: 0,
   managedStock: true,
+  sourceType: "MATERIAL",
+  customerId: "",
   location: "",
   supplier: "",
   notes: "",
@@ -358,6 +431,8 @@ const emptyInventoryMovementForm: InventoryMovementPayload = {
   itemId: "",
   type: "OUT",
   quantity: 1,
+  sourceType: "MATERIAL",
+  customerId: "",
   reason: "",
   workOrderId: "",
   installedDeviceId: "",
@@ -491,7 +566,7 @@ const fallbackSummary: DashboardSummary = {
     { label: "Gmail no leidos", value: 0, detail: "Gmail pendiente de conectar" },
     { label: "WhatsApp activos", value: 0, detail: "OpenWA pendiente" },
     { label: "Vehiculos activos", value: 0, detail: "Traccar pendiente" },
-    { label: "Cobros pendientes", value: 0, detail: "Sin datos cargados" },
+    { label: "Finanzas pendientes", value: 0, detail: "Sin datos cargados" },
     { label: "Alertas tecnicas", value: 0, detail: "Pendiente de integraciones" },
   ],
 };
@@ -560,15 +635,19 @@ export default function Home() {
   const [quoteStatus, setQuoteStatus] = useState<"ALL" | QuoteStatus>("ALL");
   const [paymentSearch, setPaymentSearch] = useState("");
   const [paymentStatus, setPaymentStatus] = useState<"ALL" | "PENDING" | "PAID" | "OVERDUE">("ALL");
+  const [paymentType, setPaymentType] = useState<"ALL" | "INCOME" | "EXPENSE">("ALL");
   const [vehicleSearch, setVehicleSearch] = useState("");
   const [vehicleStatus, setVehicleStatus] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryCategory, setInventoryCategory] = useState<DeviceType | "ALL">("ALL");
   const [inventorySupplier, setInventorySupplier] = useState("ALL");
+  const [inventoryCustomer, setInventoryCustomer] = useState("ALL");
+  const [inventorySource, setInventorySource] = useState<InventoryEntryMode | "ALL">("ALL");
   const [inventoryMode, setInventoryMode] = useState<"stock" | "catalog" | "all">("stock");
   const [inventoryStockFilter, setInventoryStockFilter] = useState<"ALL" | "LOW">("ALL");
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerStatus, setCustomerStatus] = useState<CustomerStatus | "ALL">("ALL");
+  const [customerDirectoryType, setCustomerDirectoryType] = useState<CustomerDirectoryType>("NORMAL");
   const [status, setStatus] = useState("Cargando datos...");
   const [loading, setLoading] = useState(false);
   const [customersLoading, setCustomersLoading] = useState(false);
@@ -664,7 +743,7 @@ export default function Home() {
         value: summary.inventory?.installed ?? 0,
         detail: `${summary.inventory?.availableStock ?? 0} unidades disponibles`,
       },
-      { label: "Cobros pendientes", value: summary.pendingPayments },
+      { label: "Ingresos pendientes", value: summary.pendingPayments },
       { label: "Sin stock", value: summary.inventory?.outOfStock ?? 0 },
       { label: "A cobrar", value: formatCurrency(summary.pendingPaymentAmount ?? 0) },
       { label: "Gmail no leidos", value: summary.integrations?.gmail.unread ?? 0 },
@@ -696,9 +775,9 @@ export default function Home() {
     addNotification(
       {
         id: "payments-overdue",
-        title: "Cobros vencidos",
-        detail: "Hay cobros pendientes con fecha vencida.",
-        module: "Cobros",
+        title: "Ingresos vencidos",
+        detail: "Hay ingresos pendientes con fecha vencida.",
+        module: "Gastos e Ingresos",
         severity: "critical",
         value: summary.overduePayments ?? 0,
       },
@@ -708,9 +787,9 @@ export default function Home() {
     addNotification(
       {
         id: "payments-pending",
-        title: "Cobros pendientes",
+        title: "Ingresos pendientes",
         detail: `Monto a cobrar: ${formatCurrency(summary.pendingPaymentAmount ?? 0)}`,
-        module: "Cobros",
+        module: "Gastos e Ingresos",
         severity: "warning",
         value: summary.pendingPayments,
       },
@@ -798,9 +877,14 @@ export default function Home() {
     return options;
   }, [customers, messageCompose, whatsAppSync.chats, whatsAppSync.groups]);
 
-  const normalCustomers = useMemo(
-    () => customers.filter((customer) => (customer.type ?? "NORMAL") === "NORMAL"),
+  const directoryCustomers = useMemo(
+    () => customers.filter((customer) => customer.type !== "THIRD_PARTY"),
     [customers],
+  );
+
+  const normalCustomers = useMemo(
+    () => directoryCustomers.filter((customer) => (customer.type ?? "NORMAL") === customerDirectoryType),
+    [customerDirectoryType, directoryCustomers],
   );
 
   const thirdPartyCustomers = useMemo(
@@ -810,12 +894,12 @@ export default function Home() {
 
   const customerStats = useMemo(
     () => [
-      { label: "Clientes", value: normalCustomers.length },
+      { label: "Clientes", value: directoryCustomers.filter((customer) => (customer.type ?? "NORMAL") === "NORMAL").length },
+      { label: "Importadores", value: directoryCustomers.filter((customer) => customer.type === "IMPORTER").length },
+      { label: "Uso personal", value: directoryCustomers.filter((customer) => customer.type === "INTERNAL").length },
       { label: "Activos", value: normalCustomers.filter((customer) => customer.status === "ACTIVE").length },
-      { label: "Prospectos", value: normalCustomers.filter((customer) => customer.status === "PROSPECT").length },
-      { label: "Inactivos", value: normalCustomers.filter((customer) => customer.status === "INACTIVE").length },
     ],
-    [normalCustomers],
+    [directoryCustomers, normalCustomers],
   );
 
   const thirdPartyStats = useMemo(
@@ -961,17 +1045,20 @@ export default function Home() {
   );
 
   const paymentStats = useMemo(
-    () => [
-      { label: "Cobros", value: payments.length },
-      { label: "Pendientes", value: payments.filter((payment) => !payment.paidAt).length },
-      { label: "Vencidos", value: payments.filter((payment) => isOverdue(payment)).length },
-      {
-        label: "A cobrar",
-        value: formatCurrency(
-          payments.filter((payment) => !payment.paidAt).reduce((sum, payment) => sum + toMoneyNumber(payment.amount), 0),
-        ),
-      },
-    ],
+    () => {
+      const income = payments
+        .filter((payment) => (payment.transactionType ?? "INCOME") === "INCOME")
+        .reduce((sum, payment) => sum + toMoneyNumber(payment.amount), 0);
+      const expense = payments
+        .filter((payment) => payment.transactionType === "EXPENSE")
+        .reduce((sum, payment) => sum + toMoneyNumber(payment.amount), 0);
+      return [
+        { label: "Ingresos", value: formatCurrency(income) },
+        { label: "Egresos", value: formatCurrency(expense) },
+        { label: "Balance", value: formatCurrency(income - expense) },
+        { label: "Pendientes", value: payments.filter((payment) => !payment.paidAt).length },
+      ];
+    },
     [payments],
   );
 
@@ -1112,7 +1199,7 @@ export default function Home() {
           loadInventory(token, { mode: "all", category: "ALL", supplier: "ALL", search: "" }),
         ]);
         break;
-      case "Cobros":
+      case "Gastos e Ingresos":
         void loadPayments(token);
         break;
       case "Almacen":
@@ -1138,10 +1225,10 @@ export default function Home() {
 
   useEffect(() => {
     if (activeModule === "Clientes" || activeModule === "Tercerizados") {
-      const type: CustomerType = activeModule === "Tercerizados" ? "THIRD_PARTY" : "NORMAL";
+      const type: CustomerType = activeModule === "Tercerizados" ? "THIRD_PARTY" : customerDirectoryType;
       setCustomerForm((currentForm) => (editingCustomerId ? currentForm : { ...currentForm, type }));
     }
-  }, [activeModule, editingCustomerId]);
+  }, [activeModule, customerDirectoryType, editingCustomerId]);
 
   useEffect(() => {
     const customerId = quoteForm.customerId || selectedCustomerId || "";
@@ -1298,8 +1385,13 @@ export default function Home() {
       });
       setCustomers(data);
       if (!selectedCustomerId && data[0]) {
-        setSelectedCustomerId(data[0].id);
-        void loadSites(data[0].id, activeToken);
+        const preferredCustomer =
+          activeModule === "Tercerizados"
+            ? data.find((customer) => customer.type === "THIRD_PARTY")
+            : data.find((customer) => customer.type !== "THIRD_PARTY");
+        const firstCustomer = preferredCustomer ?? data[0];
+        setSelectedCustomerId(firstCustomer.id);
+        void loadSites(firstCustomer.id, activeToken);
       }
     } catch {
       setCustomerError("No se pudieron cargar los clientes");
@@ -1524,6 +1616,9 @@ export default function Home() {
       if (paymentStatus !== "ALL") {
         params.set("status", paymentStatus);
       }
+      if (paymentType !== "ALL") {
+        params.set("type", paymentType);
+      }
 
       const query = params.toString();
       const data = await apiRequest<Payment[]>(`/api/payments${query ? `?${query}` : ""}`, {
@@ -1531,7 +1626,7 @@ export default function Home() {
       });
       setPayments(data);
     } catch {
-      setPaymentError("No se pudieron cargar los cobros");
+      setPaymentError("No se pudieron cargar los movimientos");
     } finally {
       setPaymentsLoading(false);
     }
@@ -1539,7 +1634,14 @@ export default function Home() {
 
   async function loadInventory(
     activeToken = token,
-    options?: { mode?: "stock" | "catalog" | "all"; category?: DeviceType | "ALL"; supplier?: string; search?: string },
+    options?: {
+      mode?: "stock" | "catalog" | "all";
+      category?: DeviceType | "ALL";
+      supplier?: string;
+      customerId?: string;
+      sourceType?: InventoryEntryMode | "ALL";
+      search?: string;
+    },
   ) {
     if (!activeToken) {
       return;
@@ -1552,6 +1654,8 @@ export default function Home() {
       const search = options?.search ?? inventorySearch;
       const category = options?.category ?? inventoryCategory;
       const supplier = options?.supplier ?? inventorySupplier;
+      const customerId = options?.customerId ?? inventoryCustomer;
+      const sourceType = options?.sourceType ?? inventorySource;
       const mode = options?.mode ?? inventoryMode;
       if (search.trim()) {
         params.set("search", search.trim());
@@ -1561,6 +1665,12 @@ export default function Home() {
       }
       if (supplier !== "ALL") {
         params.set("supplier", supplier);
+      }
+      if (customerId !== "ALL") {
+        params.set("customerId", customerId);
+      }
+      if (sourceType !== "ALL") {
+        params.set("sourceType", sourceType);
       }
       params.set("mode", mode);
       if (inventoryStockFilter === "LOW") {
@@ -1809,7 +1919,7 @@ export default function Home() {
       return;
     }
 
-    const currentType: CustomerType = activeModule === "Tercerizados" ? "THIRD_PARTY" : "NORMAL";
+    const currentType: CustomerType = activeModule === "Tercerizados" ? "THIRD_PARTY" : customerForm.type ?? customerDirectoryType;
     const payload = cleanCustomerPayload({
       ...customerForm,
       type: editingCustomerId ? customerForm.type ?? currentType : currentType,
@@ -1825,7 +1935,7 @@ export default function Home() {
         method,
         body: JSON.stringify(payload),
       });
-      setCustomerForm({ ...emptyCustomerForm, type: currentType });
+      setCustomerForm({ ...emptyCustomerForm, type: activeModule === "Tercerizados" ? "THIRD_PARTY" : customerDirectoryType });
       setEditingCustomerId(null);
       await Promise.all([loadCustomers(token), loadSummary(token)]);
     } catch (error) {
@@ -2141,7 +2251,7 @@ export default function Home() {
 
     const customerId = paymentForm.customerId || selectedCustomerId || "";
     if (!customerId || !paymentForm.concept.trim()) {
-      setPaymentError("Selecciona un cliente y escribe el concepto del cobro");
+      setPaymentError("Selecciona una entidad y escribe el concepto del movimiento");
       return;
     }
 
@@ -2156,7 +2266,7 @@ export default function Home() {
       setPaymentForm({ ...emptyPaymentForm, customerId: selectedCustomerId ?? "" });
       await Promise.all([loadPayments(token), loadCustomers(token), loadSummary(token)]);
     } catch {
-      setPaymentError("No se pudo guardar el cobro");
+      setPaymentError("No se pudo guardar el movimiento");
     } finally {
       setPaymentsLoading(false);
     }
@@ -2243,6 +2353,8 @@ export default function Home() {
       setInventoryMovementForm((currentForm) => ({
         ...emptyInventoryMovementForm,
         itemId: currentForm.itemId,
+        sourceType: currentForm.sourceType,
+        customerId: currentForm.customerId,
       }));
       await Promise.all([loadInventory(token), loadSummary(token)]);
     } catch (error) {
@@ -2265,6 +2377,7 @@ export default function Home() {
     setInventoryLoading(true);
     setInventoryError("");
     try {
+      const item = inventoryItems.find((currentItem) => currentItem.id === itemId);
       await apiRequest("/api/inventory/movements", {
         token,
         method: "POST",
@@ -2272,6 +2385,8 @@ export default function Home() {
           itemId,
           type,
           quantity,
+          sourceType: item?.sourceType || "MATERIAL",
+          customerId: item?.customerId || undefined,
           reason: type === "IN" ? "Entrada al almacen" : "Ajuste manual de stock",
         }),
       });
@@ -2293,6 +2408,8 @@ export default function Home() {
       stock: item.stock,
       minStock: item.minStock,
       managedStock: item.managedStock,
+      sourceType: item.sourceType ?? "MATERIAL",
+      customerId: item.customerId ?? "",
       location: item.location ?? "",
       supplier: item.supplier ?? "",
       supplierCategory: item.supplierCategory ?? "",
@@ -2502,7 +2619,7 @@ export default function Home() {
       });
       await Promise.all([loadPayments(token), loadSummary(token)]);
     } catch {
-      setPaymentError("No se pudo marcar el cobro como pagado");
+      setPaymentError("No se pudo marcar el movimiento como aplicado");
     } finally {
       setPaymentsLoading(false);
     }
@@ -2583,6 +2700,9 @@ export default function Home() {
     setCustomerProfile(null);
     setCustomerProfileError("");
     setActiveModule(customer.type === "THIRD_PARTY" ? "Tercerizados" : "Clientes");
+    if (customer.type !== "THIRD_PARTY") {
+      setCustomerDirectoryType((customer.type ?? "NORMAL") as CustomerDirectoryType);
+    }
     setEditingCustomerId(customer.id);
     setCustomerForm({
       name: customer.name,
@@ -2746,7 +2866,7 @@ export default function Home() {
 
   function cancelCustomerEdit() {
     setEditingCustomerId(null);
-    setCustomerForm({ ...emptyCustomerForm, type: activeModule === "Tercerizados" ? "THIRD_PARTY" : "NORMAL" });
+    setCustomerForm({ ...emptyCustomerForm, type: activeModule === "Tercerizados" ? "THIRD_PARTY" : customerDirectoryType });
     setCustomerError("");
   }
 
@@ -3174,7 +3294,7 @@ export default function Home() {
                           ? loadMeetings(token, null)
                           : activeModule === "Presupuestos"
                             ? loadQuotes()
-                          : activeModule === "Cobros"
+                          : activeModule === "Gastos e Ingresos"
                             ? loadPayments()
                           : activeModule === "Almacen"
                             ? loadInventory()
@@ -3282,6 +3402,7 @@ export default function Home() {
             customerProfile={customerProfile}
             customerProfileError={customerProfileError}
             customerProfileLoading={customerProfileLoading}
+            customerDirectoryType={customerDirectoryType}
             customerSearch={customerSearch}
             customerStats={customerStats}
             customerStatus={customerStatus}
@@ -3289,11 +3410,11 @@ export default function Home() {
             locating={locating}
             loading={customersLoading}
             siteLocating={siteLocating}
-            selectedCustomer={selectedCustomer?.type === "NORMAL" || !selectedCustomer?.type ? selectedCustomer : null}
-            selectedCustomerId={selectedCustomer?.type === "NORMAL" || !selectedCustomer?.type ? selectedCustomerId : null}
+            selectedCustomer={selectedCustomer && selectedCustomer.type !== "THIRD_PARTY" ? selectedCustomer : null}
+            selectedCustomerId={selectedCustomer && selectedCustomer.type !== "THIRD_PARTY" ? selectedCustomerId : null}
             siteError={siteError}
             siteForm={siteForm}
-            sites={selectedCustomer?.type === "NORMAL" || !selectedCustomer?.type ? sites : []}
+            sites={selectedCustomer && selectedCustomer.type !== "THIRD_PARTY" ? sites : []}
             sitesLoading={sitesLoading}
             onCancelEdit={cancelCustomerEdit}
             onCloseProfile={() => {
@@ -3302,6 +3423,7 @@ export default function Home() {
             }}
             onEditCustomer={editCustomer}
             onFormChange={setCustomerForm}
+            onDirectoryTypeChange={setCustomerDirectoryType}
             onLocate={captureCustomerLocation}
             onLocateSite={captureSiteLocation}
             onAddDocument={addCustomerDocument}
@@ -3330,6 +3452,7 @@ export default function Home() {
             customerProfile={customerProfile}
             customerProfileError={customerProfileError}
             customerProfileLoading={customerProfileLoading}
+            customerDirectoryType={customerDirectoryType}
             customerSearch={customerSearch}
             customerStats={thirdPartyStats}
             customerStatus={customerStatus}
@@ -3350,6 +3473,7 @@ export default function Home() {
             }}
             onEditCustomer={editCustomer}
             onFormChange={setCustomerForm}
+            onDirectoryTypeChange={setCustomerDirectoryType}
             onLocate={captureCustomerLocation}
             onLocateSite={captureSiteLocation}
             onAddDocument={addCustomerDocument}
@@ -3484,7 +3608,7 @@ export default function Home() {
             onSelectCustomer={selectCustomer}
             onStatusChange={setQuoteStatus}
           />
-        ) : activeModule === "Cobros" ? (
+        ) : activeModule === "Gastos e Ingresos" ? (
           <PaymentsView
             customers={customers}
             loading={paymentsLoading}
@@ -3493,6 +3617,7 @@ export default function Home() {
             paymentSearch={paymentSearch}
             paymentStats={paymentStats}
             paymentStatus={paymentStatus}
+            paymentType={paymentType}
             payments={payments}
             selectedCustomerId={selectedCustomerId}
             onFormChange={setPaymentForm}
@@ -3502,9 +3627,11 @@ export default function Home() {
             onSearchChange={setPaymentSearch}
             onSelectCustomer={selectCustomer}
             onStatusChange={setPaymentStatus}
+            onTypeChange={setPaymentType}
           />
         ) : activeModule === "Almacen" ? (
           <InventoryView
+            customers={customers}
             devices={devices}
             editingInventoryItemId={editingInventoryItemId}
             inventoryCategory={inventoryCategory}
@@ -3515,7 +3642,9 @@ export default function Home() {
             inventoryMode={inventoryMode}
             inventoryMovementForm={inventoryMovementForm}
             inventorySearch={inventorySearch}
+            inventoryCustomer={inventoryCustomer}
             inventoryStats={inventoryStats}
+            inventorySource={inventorySource}
             inventoryStockFilter={inventoryStockFilter}
             inventorySupplier={inventorySupplier}
             loading={inventoryLoading}
@@ -3533,7 +3662,9 @@ export default function Home() {
             onSearchChange={setInventorySearch}
             onCategoryChange={setInventoryCategory}
             onModeChange={setInventoryMode}
+            onCustomerChange={setInventoryCustomer}
             onStockFilterChange={setInventoryStockFilter}
+            onSourceChange={setInventorySource}
             onSupplierChange={setInventorySupplier}
           />
         ) : activeModule === "Vehiculos" ? (
@@ -4174,6 +4305,7 @@ function CustomersView({
   customerProfile,
   customerProfileError,
   customerProfileLoading,
+  customerDirectoryType,
   customerSearch,
   customerStats,
   customerStatus,
@@ -4191,6 +4323,7 @@ function CustomersView({
   onCloseProfile,
   onEditCustomer,
   onFormChange,
+  onDirectoryTypeChange,
   onLocate,
   onLocateSite,
   onAddDocument,
@@ -4217,6 +4350,7 @@ function CustomersView({
   customerProfile: CustomerProfile | null;
   customerProfileError: string;
   customerProfileLoading: boolean;
+  customerDirectoryType: CustomerDirectoryType;
   customerSearch: string;
   customerStats: Array<{ label: string; value: number }>;
   customerStatus: CustomerStatus | "ALL";
@@ -4234,6 +4368,7 @@ function CustomersView({
   onCloseProfile: () => void;
   onEditCustomer: (customer: Customer) => void;
   onFormChange: (form: CustomerPayload) => void;
+  onDirectoryTypeChange: (value: CustomerDirectoryType) => void;
   onLocate: () => void;
   onLocateSite: () => void;
   onAddDocument: (customerId: string, payload: CustomerDocumentPayload) => Promise<void>;
@@ -4347,6 +4482,25 @@ function CustomersView({
             ) : null}
           </div>
 
+          {mode === "customers" ? (
+            <div className="quoteModeSelector inventoryModeSelector" aria-label="Tipo de ficha">
+              {customerDirectoryModes.map((entryMode) => (
+                <button
+                  key={entryMode.value}
+                  type="button"
+                  className={customerForm.type === entryMode.value ? "active" : ""}
+                  onClick={() => {
+                    onDirectoryTypeChange(entryMode.value);
+                    onFormChange({ ...customerForm, type: entryMode.value });
+                  }}
+                >
+                  <strong>{entryMode.label}</strong>
+                  <span>{entryMode.detail}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           <div className="formGrid">
             <label>
               {copy.nameLabel}
@@ -4387,6 +4541,25 @@ function CustomersView({
                 ))}
               </select>
             </label>
+            {mode === "customers" ? (
+              <label>
+                Tipo
+                <select
+                  value={(customerForm.type ?? customerDirectoryType) as CustomerDirectoryType}
+                  onChange={(event) => {
+                    const nextType = event.target.value as CustomerDirectoryType;
+                    onDirectoryTypeChange(nextType);
+                    onFormChange({ ...customerForm, type: nextType });
+                  }}
+                >
+                  {customerDirectoryModes.map((entryMode) => (
+                    <option key={entryMode.value} value={entryMode.value}>
+                      {entryMode.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label>
               Email
               <input
@@ -4537,6 +4710,7 @@ function CustomersView({
                 <tr>
                   <th>{copy.tableName}</th>
                   <th>Contacto</th>
+                  {mode === "customers" ? <th className="centerColumn">Tipo</th> : null}
                   <th className="centerColumn">Estado</th>
                   <th className="centerColumn">Geozona</th>
                   <th className="centerColumn">Sitios</th>
@@ -4559,6 +4733,11 @@ function CustomersView({
                       <strong>{customer.phone || "Sin telefono"}</strong>
                       <span>{customer.email || customer.address || "Sin contacto"}</span>
                     </td>
+                    {mode === "customers" ? (
+                      <td data-label="Tipo" className="centerColumn">
+                        <span className="statusPill prospect">{customerTypeLabels[customer.type ?? "NORMAL"]}</span>
+                      </td>
+                    ) : null}
                     <td data-label="Estado" className="centerColumn">
                       <span className={`statusPill ${customer.status.toLowerCase()}`}>
                         {statusLabels[customer.status]}
@@ -4586,7 +4765,7 @@ function CustomersView({
                 ))}
                 {!customers.length ? (
                   <tr>
-                    <td colSpan={7} className="emptyTable">
+                    <td colSpan={mode === "customers" ? 8 : 7} className="emptyTable">
                       {copy.emptyList}
                     </td>
                   </tr>
@@ -5315,8 +5494,11 @@ function DispatcherView({
   const [stopFutureClients, setStopFutureClients] = useState<Record<string, string>>({});
   const [stopNotes, setStopNotes] = useState<Record<string, string>>({});
   const [savedDispatchStops, setSavedDispatchStops] = useState<DispatchStopRecord[]>([]);
+  const [learnedDispatchPlaces, setLearnedDispatchPlaces] = useState<DispatchStopRecord[]>([]);
   const [dispatchSuppliers, setDispatchSuppliers] = useState<string[]>([]);
   const [savingDispatchRoute, setSavingDispatchRoute] = useState(false);
+  const [editingDispatchStops, setEditingDispatchStops] = useState<Record<string, boolean>>({});
+  const [savingDispatchStopKey, setSavingDispatchStopKey] = useState<string | null>(null);
   const [savingStopId, setSavingStopId] = useState<string | null>(null);
   const [dispatchMessage, setDispatchMessage] = useState("");
   const [dailySummary, setDailySummary] = useState<VehicleDailySummary | null>(null);
@@ -5340,16 +5522,21 @@ function DispatcherView({
   );
   const activeVehicles = vehicles.filter((vehicle) => vehicle.active);
   const selectedVehicle = activeVehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? activeVehicles[0] ?? null;
-  const gpsTimelineStops = useMemo(() => buildGpsTimelineStops(dailySummary), [dailySummary]);
+  const gpsTimelineStops = useMemo(
+    () => buildGpsTimelineStops(dailySummary, plan.baseLocation, learnedDispatchPlaces),
+    [dailySummary, plan.baseLocation, learnedDispatchPlaces],
+  );
+  const usingGpsTimeline = gpsTimelineStops.length > 0;
+  const visibleRouteStopCount = usingGpsTimeline ? gpsTimelineStops.length : plan.orderedStops.length;
   const mapsUrl = useMemo(
-    () => buildGoogleMapsRouteUrl(plan.orderedStops, plan.baseLocation) || buildGpsGoogleMapsRouteUrl(gpsTimelineStops, plan.baseLocation),
+    () => buildGpsGoogleMapsRouteUrl(gpsTimelineStops, plan.baseLocation) || buildGoogleMapsRouteUrl(plan.orderedStops, plan.baseLocation),
     [gpsTimelineStops, plan.orderedStops, plan.baseLocation],
   );
   const dispatchSummary = useMemo(
     () => buildDispatcherDailySummary(plan, workOrders, selectedVehicle, dailySummary, stopCosts),
     [plan, workOrders, selectedVehicle, dailySummary, stopCosts],
   );
-  const routeReady = routeReviewed || Boolean(mapsUrl && plan.orderedStops.length && !plan.missingLocation.length);
+  const routeReady = routeReviewed || Boolean(mapsUrl && (usingGpsTimeline || (plan.orderedStops.length && !plan.missingLocation.length)));
   const materialsReady =
     materialsConfirmed ||
     (workOrders.length > 0 && workOrders.every((workOrder) => (workOrder.inventoryMovements?.length ?? 0) > 0));
@@ -5366,6 +5553,7 @@ function DispatcherView({
     setStopFutureClients({});
     setStopNotes({});
     setSavedDispatchStops([]);
+    setEditingDispatchStops({});
     setDispatchMessage("");
   }, [agendaDate, workOrders]);
 
@@ -5533,6 +5721,29 @@ function DispatcherView({
     }
 
     let active = true;
+    apiRequest<DispatchStopRecord[]>("/api/dispatch/places", { token })
+      .then((places) => {
+        if (active) {
+          setLearnedDispatchPlaces(places);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setLearnedDispatchPlaces([]);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [token, savedDispatchStops.length]);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    let active = true;
     apiRequest<TraccarSettings>("/api/vehicles/traccar/settings", { token })
       .then((settings) => {
         if (!active) {
@@ -5557,7 +5768,9 @@ function DispatcherView({
   }, [token]);
 
   async function copyRouteSummary() {
-    const text = buildDispatchRouteText(plan.orderedStops, selectedVehicle, plan.baseLocation);
+    const text = usingGpsTimeline
+      ? buildGpsDispatchRouteText(gpsTimelineStops, selectedVehicle, plan.baseLocation)
+      : buildDispatchRouteText(plan.orderedStops, selectedVehicle, plan.baseLocation);
     if (!text) {
       return;
     }
@@ -5693,7 +5906,7 @@ function DispatcherView({
           </label>
         ) : null}
         <label className="wideControl">
-          Notas de parada
+          Nombre / notas del lugar
           <input
             value={stopNotes[stopKey] ?? ""}
             onChange={(event) =>
@@ -5702,7 +5915,7 @@ function DispatcherView({
                 [stopKey]: event.target.value,
               }))
             }
-            placeholder="Compra, referencia, contacto, detalle del gasto"
+            placeholder="Ej: Casa de Joaquin, importador, referencia, detalle del gasto"
           />
         </label>
       </>
@@ -5710,58 +5923,64 @@ function DispatcherView({
   }
 
   function buildSavedRouteStops(): DispatchStopPayload[] {
-    if (plan.orderedStops.length) {
-      return plan.orderedStops.map((stop) => {
-        const key = stop.workOrder.id;
-        const time = stopTimes[key] || formatInputTime(stop.workOrder.scheduledAt);
-        const costs = stopCosts[key] ?? { parking: 0, tolls: 0 };
-        return {
-          stopKey: key,
-          placeType: stopPlaceTypes[key] ?? "CLIENT",
-          title: stop.workOrder.title,
-          address: getWorkOrderRouteSite(stop.workOrder)?.address || stop.workOrder.customer.address || undefined,
-          latitude: stop.latitude,
-          longitude: stop.longitude,
-          customerId: stop.workOrder.customerId,
-          siteId: stop.workOrder.siteId ?? undefined,
-          workOrderId: stop.workOrder.id,
-          supplierName: stopSuppliers[key],
-          futureClientName: stopFutureClients[key],
-          kind: stopKinds[key] ?? "CLIENT",
-          zone: stopZones[key] ?? stop.zone,
-          scheduledAt: time ? mergeDateAndTime(selectedDate, time).toISOString() : stop.workOrder.scheduledAt ?? undefined,
-          durationMinutes: stopDurations[key] ?? stop.estimatedMinutes,
-          parkingCost: costs.parking,
-          tollCost: costs.tolls,
-          notes: stopNotes[key],
-          source: "WORK_ORDER",
-        };
-      });
+    if (usingGpsTimeline) {
+      return gpsTimelineStops.map((stop) => buildGpsDispatchStopPayload(stop));
     }
 
-    return gpsTimelineStops.map((stop) => {
+    return plan.orderedStops.map((stop) => buildWorkOrderDispatchStopPayload(stop));
+  }
+
+  function buildWorkOrderDispatchStopPayload(stop: DispatchRouteStop): DispatchStopPayload {
+    const key = stop.workOrder.id;
+    const time = stopTimes[key] || formatInputTime(stop.workOrder.scheduledAt);
+    const costs = stopCosts[key] ?? { parking: 0, tolls: 0 };
+    return {
+      stopKey: key,
+      placeType: stopPlaceTypes[key] ?? "CLIENT",
+      title: stop.workOrder.title,
+      address: getWorkOrderRouteSite(stop.workOrder)?.address || stop.workOrder.customer.address || undefined,
+      latitude: stop.latitude,
+      longitude: stop.longitude,
+      customerId: stop.workOrder.customerId,
+      siteId: stop.workOrder.siteId ?? undefined,
+      workOrderId: stop.workOrder.id,
+      supplierName: stopSuppliers[key],
+      futureClientName: stopFutureClients[key],
+      kind: stopKinds[key] ?? "CLIENT",
+      zone: stopZones[key] ?? stop.zone,
+      scheduledAt: time ? mergeDateAndTime(selectedDate, time).toISOString() : stop.workOrder.scheduledAt ?? undefined,
+      durationMinutes: stopDurations[key] ?? stop.estimatedMinutes,
+      parkingCost: costs.parking,
+      tollCost: costs.tolls,
+      notes: stopNotes[key],
+      source: "WORK_ORDER",
+    };
+  }
+
+  function buildGpsDispatchStopPayload(stop: ReturnType<typeof buildGpsTimelineStops>[number]): DispatchStopPayload {
       const key = stop.id;
       const costs = stopCosts[key] ?? { parking: 0, tolls: 0 };
       const time = stopTimes[key] || formatInputTime(stop.arrival);
+      const manualPlaceName = stopNotes[key]?.trim();
+      const learnedTitle = manualPlaceName && !stop.customerName && !stop.isBaseStop ? manualPlaceName : stop.title;
       return {
         stopKey: key,
-        placeType: stopPlaceTypes[key] ?? (stop.customerName ? "CLIENT" : "OTHER"),
-        title: stop.title,
+          placeType: stopPlaceTypes[key] ?? stop.learnedPlaceType ?? (stop.isBaseStop ? "WAREHOUSE" : stop.customerName ? "CLIENT" : "OTHER"),
+        title: learnedTitle,
         address: stop.address || undefined,
         latitude: stop.latitude,
         longitude: stop.longitude,
         supplierName: stopSuppliers[key],
         futureClientName: stopFutureClients[key],
-        kind: stopKinds[key] ?? (stop.customerName ? "CLIENT" : "NOT_CLIENT"),
-        zone: stopZones[key],
+        kind: stopKinds[key] ?? (stop.isBaseStop ? "WAREHOUSE" : stop.customerName ? "CLIENT" : "NOT_CLIENT"),
+        zone: stopZones[key] ?? stop.learnedZone ?? undefined,
         scheduledAt: time ? mergeDateAndTime(selectedDate, time).toISOString() : stop.arrival,
         durationMinutes: stopDurations[key] ?? stop.durationMinutes,
         parkingCost: costs.parking,
         tollCost: costs.tolls,
-        notes: stopNotes[key],
+        notes: stopNotes[key] ?? stop.learnedNotes ?? undefined,
         source: "TRACCAR",
       };
-    });
   }
 
   async function saveDispatchRoute() {
@@ -5788,11 +6007,43 @@ function DispatcherView({
         }),
       });
       setSavedDispatchStops(saved);
+      setLearnedDispatchPlaces((current) => mergeDispatchPlaceMemory(current, saved));
       setDispatchMessage("Ruta guardada con gastos, lugares e importadores.");
     } catch (error) {
       setDispatchMessage(`No se pudo guardar la ruta: ${getErrorMessage(error)}`);
     } finally {
       setSavingDispatchRoute(false);
+    }
+  }
+
+  async function saveSingleDispatchStop(payload: DispatchStopPayload) {
+    if (!token) {
+      return;
+    }
+
+    setSavingDispatchStopKey(payload.stopKey);
+    setDispatchMessage("");
+    try {
+      const saved = await apiRequest<DispatchStopRecord[]>("/api/dispatch/stops", {
+        token,
+        method: "PATCH",
+        body: JSON.stringify({
+          date: agendaDate,
+          vehicleId: selectedVehicle?.id,
+          stops: [payload],
+        }),
+      });
+      setSavedDispatchStops((current) => [
+        ...current.filter((record) => !saved.some((item) => item.stopKey === record.stopKey)),
+        ...saved,
+      ]);
+      setLearnedDispatchPlaces((current) => mergeDispatchPlaceMemory(current, saved));
+      setEditingDispatchStops((current) => ({ ...current, [payload.stopKey]: false }));
+      setDispatchMessage("Parada guardada.");
+    } catch (error) {
+      setDispatchMessage(`No se pudo guardar la parada: ${getErrorMessage(error)}`);
+    } finally {
+      setSavingDispatchStopKey(null);
     }
   }
 
@@ -5805,15 +6056,15 @@ function DispatcherView({
         </article>
         <article>
           <span>Con ubicacion</span>
-          <strong>{plan.routableStops.length || gpsTimelineStops.length}</strong>
+          <strong>{usingGpsTimeline ? gpsTimelineStops.length : plan.routableStops.length}</strong>
         </article>
         <article>
           <span>Sin ubicacion</span>
           <strong>{plan.missingLocation.length}</strong>
         </article>
         <article>
-          <span>{plan.orderedStops.length ? "Km estimados" : "Km reales"}</span>
-          <strong>{formatNumber(plan.orderedStops.length ? plan.estimatedKm : dispatchSummary.distanceKm)} km</strong>
+          <span>{usingGpsTimeline ? "Km reales" : "Km estimados"}</span>
+          <strong>{formatNumber(usingGpsTimeline ? dispatchSummary.distanceKm : plan.estimatedKm)} km</strong>
         </article>
       </div>
 
@@ -5835,7 +6086,7 @@ function DispatcherView({
               </option>
             ))}
           </select>
-          <button type="button" onClick={copyRouteSummary} disabled={!plan.orderedStops.length}>
+          <button type="button" onClick={copyRouteSummary} disabled={!visibleRouteStopCount}>
             <FileText size={18} />
             {routeCopied ? "Copiada" : "Copiar ruta"}
           </button>
@@ -5885,7 +6136,7 @@ function DispatcherView({
               <p>Ruta sugerida</p>
               <h2>Linea de paradas</h2>
             </div>
-            <span className="statusPill completed">{plan.strategy}</span>
+            <span className="statusPill completed">{usingGpsTimeline ? "GPS real" : plan.strategy}</span>
           </div>
 
           <div className="dispatchTimeline">
@@ -5902,9 +6153,15 @@ function DispatcherView({
               </div>
             </article>
 
-            {plan.orderedStops.map((stop, index) => {
-              const kind = stopKinds[stop.workOrder.id] ?? "CLIENT";
-              const costs = stopCosts[stop.workOrder.id] ?? { parking: 0, tolls: 0 };
+            {!usingGpsTimeline && plan.orderedStops.map((stop, index) => {
+              const key = stop.workOrder.id;
+              const kind = stopKinds[key] ?? "CLIENT";
+              const costs = stopCosts[key] ?? { parking: 0, tolls: 0 };
+              const isEditing = Boolean(editingDispatchStops[key]);
+              const visibleTime = stopTimes[key] || formatInputTime(stop.workOrder.scheduledAt);
+              const visibleZone = stopZones[key] ?? stop.zone;
+              const visibleDuration = stopDurations[key] ?? stop.estimatedMinutes;
+              const placeType = stopPlaceTypes[key] ?? "CLIENT";
               return (
                 <article key={stop.workOrder.id} className="dispatchStop">
                   <span className="dispatchStopIndex">{index + 1}</span>
@@ -5914,38 +6171,69 @@ function DispatcherView({
                         <strong>{stop.workOrder.title}</strong>
                         <p>{stop.workOrder.customer.name} - {stop.siteLabel}</p>
                       </div>
-                      <span className={`statusPill ${workOrderStatusClass(stop.workOrder.status)}`}>
-                        {workStatusLabels[stop.workOrder.status]}
-                      </span>
+                      <div className="dispatchStopActions">
+                        <span className={`statusPill ${workOrderStatusClass(stop.workOrder.status)}`}>
+                          {workStatusLabels[stop.workOrder.status]}
+                        </span>
+                        <button
+                          type="button"
+                          className="iconTextButton"
+                          onClick={() => setEditingDispatchStops((current) => ({ ...current, [key]: !current[key] }))}
+                        >
+                          <Edit3 size={16} />
+                          {isEditing ? "Cerrar" : "Editar"}
+                        </button>
+                      </div>
                     </header>
                     <dl className="dispatchStopDetails">
-                      <div>
-                        <dt>Hora</dt>
-                        <dd className="dispatchTimeValue">{stopTimes[stop.workOrder.id] || formatInputTime(stop.workOrder.scheduledAt)}</dd>
-                      </div>
-                      <div>
-                        <dt>Zona</dt>
-                        <dd>{stop.zone}</dd>
-                      </div>
-                      <div>
-                        <dt>Duracion</dt>
-                        <dd>{formatDuration(stop.estimatedMinutes)}</dd>
-                      </div>
-                      <div>
-                        <dt>Tramo</dt>
-                        <dd>{stop.legKm ? `${formatNumber(stop.legKm)} km` : "Inicio"}</dd>
-                      </div>
+                      {visibleTime ? (
+                        <div>
+                          <dt>Hora</dt>
+                          <dd className="dispatchTimeValue">{visibleTime}</dd>
+                        </div>
+                      ) : null}
+                      {visibleZone ? (
+                        <div>
+                          <dt>Zona</dt>
+                          <dd>{visibleZone}</dd>
+                        </div>
+                      ) : null}
+                      {visibleDuration ? (
+                        <div>
+                          <dt>Duracion</dt>
+                          <dd>{formatDuration(visibleDuration)}</dd>
+                        </div>
+                      ) : null}
+                      {stop.legKm ? (
+                        <div>
+                          <dt>Tramo</dt>
+                          <dd>{formatNumber(stop.legKm)} km</dd>
+                        </div>
+                      ) : null}
+                      {placeType !== "CLIENT" ? (
+                        <div>
+                          <dt>Lugar</dt>
+                          <dd>{dispatchPlaceLabels[placeType]}</dd>
+                        </div>
+                      ) : null}
+                      {costs.parking || costs.tolls ? (
+                        <div>
+                          <dt>Gastos</dt>
+                          <dd>{formatCurrency(costs.parking + costs.tolls)}</dd>
+                        </div>
+                      ) : null}
                     </dl>
+                    {isEditing ? (
                     <div className="dispatchStopControls">
                       <label>
                         Hora visible
                         <input
                           type="time"
-                          value={stopTimes[stop.workOrder.id] ?? formatInputTime(stop.workOrder.scheduledAt)}
+                          value={stopTimes[key] ?? formatInputTime(stop.workOrder.scheduledAt)}
                           onChange={(event) =>
                             setStopTimes((current) => ({
                               ...current,
-                              [stop.workOrder.id]: event.target.value,
+                              [key]: event.target.value,
                             }))
                           }
                           onBlur={(event) => {
@@ -5960,7 +6248,7 @@ function DispatcherView({
                         Tipo de parada
                         <select
                           value={kind}
-                          onChange={(event) => setStopKinds((current) => ({ ...current, [stop.workOrder.id]: event.target.value as DispatchStopKind }))}
+                          onChange={(event) => setStopKinds((current) => ({ ...current, [key]: event.target.value as DispatchStopKind }))}
                         >
                           <option value="CLIENT">Cliente</option>
                           <option value="NOT_CLIENT">No cliente</option>
@@ -5969,18 +6257,18 @@ function DispatcherView({
                           <option value="TRANSFER">Traslado</option>
                         </select>
                       </label>
-                      {renderDispatchStopExtras(stop.workOrder.id, "CLIENT")}
+                      {renderDispatchStopExtras(key, "CLIENT")}
                       <label>
                         Tiempo operativo
                         <input
                           type="number"
                           min="0"
                           step="5"
-                          value={stopDurations[stop.workOrder.id] ?? stop.estimatedMinutes}
+                          value={stopDurations[key] ?? stop.estimatedMinutes}
                           onChange={(event) =>
                             setStopDurations((current) => ({
                               ...current,
-                              [stop.workOrder.id]: Math.max(0, Number(event.target.value) || 0),
+                              [key]: Math.max(0, Number(event.target.value) || 0),
                             }))
                           }
                         />
@@ -5988,11 +6276,11 @@ function DispatcherView({
                       <label>
                         Zona operativa
                         <input
-                          value={stopZones[stop.workOrder.id] ?? stop.zone}
+                          value={stopZones[key] ?? stop.zone}
                           onChange={(event) =>
                             setStopZones((current) => ({
                               ...current,
-                              [stop.workOrder.id]: event.target.value,
+                              [key]: event.target.value,
                             }))
                           }
                           placeholder="Ej: Centro, Carrasco, Pocitos"
@@ -6008,9 +6296,9 @@ function DispatcherView({
                           onChange={(event) =>
                             setStopCosts((current) => ({
                               ...current,
-                              [stop.workOrder.id]: {
+                              [key]: {
                                 parking: Math.max(0, Number(event.target.value) || 0),
-                                tolls: current[stop.workOrder.id]?.tolls ?? 0,
+                                tolls: current[key]?.tolls ?? 0,
                               },
                             }))
                           }
@@ -6027,8 +6315,8 @@ function DispatcherView({
                           onChange={(event) =>
                             setStopCosts((current) => ({
                               ...current,
-                              [stop.workOrder.id]: {
-                                parking: current[stop.workOrder.id]?.parking ?? 0,
+                              [key]: {
+                                parking: current[key]?.parking ?? 0,
                                 tolls: Math.max(0, Number(event.target.value) || 0),
                               },
                             }))
@@ -6036,7 +6324,17 @@ function DispatcherView({
                           placeholder="UYU 0"
                         />
                       </label>
+                      <button
+                        type="button"
+                        className="dispatchStopSaveButton"
+                        onClick={() => saveSingleDispatchStop(buildWorkOrderDispatchStopPayload(stop))}
+                        disabled={savingDispatchStopKey === key}
+                      >
+                        <Save size={16} />
+                        {savingDispatchStopKey === key ? "Guardando" : "Guardar parada"}
+                      </button>
                     </div>
+                    ) : null}
                     {costs.parking || costs.tolls ? (
                       <small>
                         Gastos de parada: {formatCurrency(costs.parking + costs.tolls)}
@@ -6050,8 +6348,14 @@ function DispatcherView({
               );
             })}
 
-            {!plan.orderedStops.length && gpsTimelineStops.map((stop, index) => {
-                const costs = stopCosts[stop.id] ?? { parking: 0, tolls: 0 };
+            {usingGpsTimeline && gpsTimelineStops.map((stop, index) => {
+                const key = stop.id;
+                const costs = stopCosts[key] ?? { parking: 0, tolls: 0 };
+                const isEditing = Boolean(editingDispatchStops[key]);
+                const defaultPlaceType = stop.learnedPlaceType ?? (stop.isBaseStop ? "WAREHOUSE" : stop.customerName ? "CLIENT" : "OTHER");
+                const placeType = stopPlaceTypes[key] ?? defaultPlaceType;
+                const visibleZone = stopZones[key] ?? stop.learnedZone;
+                const visibleDuration = stopDurations[key] ?? stop.durationMinutes;
                 return (
                   <article key={stop.id} className="dispatchStop">
                     <span className="dispatchStopIndex">{index + 1}</span>
@@ -6061,36 +6365,69 @@ function DispatcherView({
                           <strong>{stop.title}</strong>
                           <p>{stop.address || `${formatNumber(stop.latitude)}, ${formatNumber(stop.longitude)}`}</p>
                         </div>
-                        <span className="statusPill completed">GPS real</span>
+                        <div className="dispatchStopActions">
+                          <span className="statusPill completed">GPS real</span>
+                          <button
+                            type="button"
+                            className="iconTextButton"
+                            onClick={() => setEditingDispatchStops((current) => ({ ...current, [key]: !current[key] }))}
+                          >
+                            <Edit3 size={16} />
+                            {isEditing ? "Cerrar" : "Editar"}
+                          </button>
+                        </div>
                       </header>
                       <dl className="dispatchStopDetails">
                         <div>
                           <dt>Llegada</dt>
-                          <dd className="dispatchTimeValue">{stopTimes[stop.id] || formatInputTime(stop.arrival)}</dd>
+                          <dd className="dispatchTimeValue">{stopTimes[key] || formatInputTime(stop.arrival)}</dd>
                         </div>
-                        <div>
-                          <dt>Salida</dt>
-                          <dd>{formatInputTime(stop.departure)}</dd>
-                        </div>
-                        <div>
-                          <dt>Detenido</dt>
-                          <dd>{formatDuration(stopDurations[stop.id] ?? stop.durationMinutes)}</dd>
-                        </div>
+                        {formatInputTime(stop.departure) ? (
+                          <div>
+                            <dt>Salida</dt>
+                            <dd className="dispatchTimeValue">{formatInputTime(stop.departure)}</dd>
+                          </div>
+                        ) : null}
+                        {visibleDuration ? (
+                          <div>
+                            <dt>Detenido</dt>
+                            <dd>{formatDuration(visibleDuration)}</dd>
+                          </div>
+                        ) : null}
+                        {visibleZone ? (
+                          <div>
+                            <dt>Zona</dt>
+                            <dd>{visibleZone}</dd>
+                          </div>
+                        ) : null}
                         <div>
                           <dt>Tipo</dt>
-                          <dd>{stop.customerName ? "Cliente" : "Parada GPS"}</dd>
+                          <dd>{stop.isBaseStop ? "Base operativa" : stop.customerName ? "Cliente" : "Parada GPS"}</dd>
                         </div>
+                        {placeType !== defaultPlaceType ? (
+                          <div>
+                            <dt>Lugar</dt>
+                            <dd>{dispatchPlaceLabels[placeType]}</dd>
+                          </div>
+                        ) : null}
+                        {costs.parking || costs.tolls ? (
+                          <div>
+                            <dt>Gastos</dt>
+                            <dd>{formatCurrency(costs.parking + costs.tolls)}</dd>
+                          </div>
+                        ) : null}
                       </dl>
+                      {isEditing ? (
                       <div className="dispatchStopControls">
                         <label>
                           Hora visible
-                          <input
-                            type="time"
-                            value={stopTimes[stop.id] ?? formatInputTime(stop.arrival)}
+                        <input
+                          type="time"
+                            value={stopTimes[key] ?? formatInputTime(stop.arrival)}
                             onChange={(event) =>
                               setStopTimes((current) => ({
                                 ...current,
-                                [stop.id]: event.target.value,
+                                [key]: event.target.value,
                               }))
                             }
                           />
@@ -6098,11 +6435,11 @@ function DispatcherView({
                         <label>
                           Tipo de parada
                           <select
-                            value={stopKinds[stop.id] ?? (stop.customerName ? "CLIENT" : "NOT_CLIENT")}
+                            value={stopKinds[key] ?? (stop.isBaseStop ? "WAREHOUSE" : stop.customerName ? "CLIENT" : "NOT_CLIENT")}
                             onChange={(event) =>
                               setStopKinds((current) => ({
                                 ...current,
-                                [stop.id]: event.target.value as DispatchStopKind,
+                                [key]: event.target.value as DispatchStopKind,
                               }))
                             }
                           >
@@ -6113,18 +6450,18 @@ function DispatcherView({
                             <option value="TRANSFER">Traslado</option>
                           </select>
                         </label>
-                        {renderDispatchStopExtras(stop.id, stop.customerName ? "CLIENT" : "OTHER")}
+                        {renderDispatchStopExtras(key, defaultPlaceType)}
                         <label>
                           Tiempo operativo
                           <input
                             type="number"
                             min="0"
                             step="5"
-                            value={stopDurations[stop.id] ?? stop.durationMinutes}
+                            value={stopDurations[key] ?? stop.durationMinutes}
                             onChange={(event) =>
                               setStopDurations((current) => ({
                                 ...current,
-                                [stop.id]: Math.max(0, Number(event.target.value) || 0),
+                                [key]: Math.max(0, Number(event.target.value) || 0),
                               }))
                             }
                           />
@@ -6132,11 +6469,11 @@ function DispatcherView({
                         <label>
                           Zona operativa
                           <input
-                            value={stopZones[stop.id] ?? ""}
+                            value={stopZones[key] ?? stop.learnedZone ?? ""}
                             onChange={(event) =>
                               setStopZones((current) => ({
                                 ...current,
-                                [stop.id]: event.target.value,
+                                [key]: event.target.value,
                               }))
                             }
                             placeholder="Ej: Centro, importadores, visita tecnica"
@@ -6152,9 +6489,9 @@ function DispatcherView({
                             onChange={(event) =>
                               setStopCosts((current) => ({
                                 ...current,
-                                [stop.id]: {
+                                [key]: {
                                   parking: Math.max(0, Number(event.target.value) || 0),
-                                  tolls: current[stop.id]?.tolls ?? 0,
+                                  tolls: current[key]?.tolls ?? 0,
                                 },
                               }))
                             }
@@ -6171,8 +6508,8 @@ function DispatcherView({
                             onChange={(event) =>
                               setStopCosts((current) => ({
                                 ...current,
-                                [stop.id]: {
-                                  parking: current[stop.id]?.parking ?? 0,
+                                [key]: {
+                                  parking: current[key]?.parking ?? 0,
                                   tolls: Math.max(0, Number(event.target.value) || 0),
                                 },
                               }))
@@ -6180,20 +6517,30 @@ function DispatcherView({
                             placeholder="UYU 0"
                           />
                         </label>
+                        <button
+                          type="button"
+                          className="dispatchStopSaveButton"
+                          onClick={() => saveSingleDispatchStop(buildGpsDispatchStopPayload(stop))}
+                          disabled={savingDispatchStopKey === key}
+                        >
+                          <Save size={16} />
+                          {savingDispatchStopKey === key ? "Guardando" : "Guardar parada"}
+                        </button>
                       </div>
+                      ) : null}
                     </div>
                   </article>
                 );
             })}
 
             <article className="dispatchStop dispatchBaseStop">
-              <span className="dispatchStopIndex">{(plan.orderedStops.length || gpsTimelineStops.length) + 1}</span>
+              <span className="dispatchStopIndex">{visibleRouteStopCount + 1}</span>
               <div>
                 <strong>Regreso / cierre</strong>
                 <p>{plan.baseLocation ? plan.baseLocation.name : "Fin de recorrido operativo"}</p>
                 <small>
                   {plan.returnKm ? `${formatNumber(plan.returnKm)} km de regreso. ` : ""}
-                  {plan.orderedStops.length
+                  {!usingGpsTimeline && plan.orderedStops.length
                     ? `${formatDuration(plan.estimatedMinutes)} de trabajo estimado en total`
                     : `${formatDuration(dispatchSummary.stoppedMinutes)} detenido segun GPS`}
                 </small>
@@ -6216,7 +6563,9 @@ function DispatcherView({
                 <span>{alert}</span>
               </article>
             ))}
-            {!plan.alerts.length ? <p className="emptyPanel">La ruta esta lista para revisar.</p> : null}
+            {!plan.alerts.length ? (
+              <p className="emptyPanel">Sin alertas: revisa la linea de paradas y guarda la ruta.</p>
+            ) : null}
           </div>
 
           <div className="dispatcherMetrics">
@@ -6315,13 +6664,13 @@ function DispatcherView({
                 <span>Base configurada</span>
                 <strong>{plan.baseLocation ? "Listo" : "Pendiente"}</strong>
               </li>
-              <li className={!plan.missingLocation.length && plan.orderedStops.length ? "ready" : "pending"}>
+              <li className={usingGpsTimeline || (!plan.missingLocation.length && plan.orderedStops.length) ? "ready" : "pending"}>
                 <span>Ubicaciones completas</span>
-                <strong>{!plan.missingLocation.length && plan.orderedStops.length ? "Listo" : "Pendiente"}</strong>
+                <strong>{usingGpsTimeline || (!plan.missingLocation.length && plan.orderedStops.length) ? "Listo" : "Pendiente"}</strong>
               </li>
               <li className={routeReady ? "ready" : "pending"}>
                 <span>Ruta revisada</span>
-                <button type="button" onClick={() => setRouteReviewed(true)} disabled={!plan.orderedStops.length}>
+                <button type="button" onClick={() => setRouteReviewed(true)} disabled={!visibleRouteStopCount}>
                   {routeReady ? "Listo" : "Confirmar"}
                 </button>
               </li>
@@ -8608,7 +8957,7 @@ function QuotesView({
                         <strong>{customer.name}</strong>
                         <span>
                           {[
-                            customer.type === "THIRD_PARTY" ? "Tercerizado" : "Cliente",
+                            customerTypeLabels[customer.type ?? "NORMAL"],
                             customer.reference,
                             customer.phone,
                             customer.taxId,
@@ -9283,6 +9632,7 @@ function PaymentsView({
   paymentSearch,
   paymentStats,
   paymentStatus,
+  paymentType,
   payments,
   selectedCustomerId,
   onFormChange,
@@ -9292,6 +9642,7 @@ function PaymentsView({
   onSearchChange,
   onSelectCustomer,
   onStatusChange,
+  onTypeChange,
 }: {
   customers: Customer[];
   loading: boolean;
@@ -9300,6 +9651,7 @@ function PaymentsView({
   paymentSearch: string;
   paymentStats: Array<{ label: string; value: number | string }>;
   paymentStatus: "ALL" | "PENDING" | "PAID" | "OVERDUE";
+  paymentType: "ALL" | "INCOME" | "EXPENSE";
   payments: Payment[];
   selectedCustomerId: string | null;
   onFormChange: (form: PaymentPayload) => void;
@@ -9309,10 +9661,13 @@ function PaymentsView({
   onSearchChange: (value: string) => void;
   onSelectCustomer: (customerId: string) => void;
   onStatusChange: (value: "ALL" | "PENDING" | "PAID" | "OVERDUE") => void;
+  onTypeChange: (value: "ALL" | "INCOME" | "EXPENSE") => void;
 }) {
+  const transactionType = paymentForm.transactionType ?? "INCOME";
+
   return (
     <section className="paymentsModule">
-      <div className="summaryGrid customerStats" aria-label="Resumen de cobros">
+      <div className="summaryGrid customerStats" aria-label="Resumen de gastos e ingresos">
         {paymentStats.map((card) => (
           <article key={card.label}>
             <span>{card.label}</span>
@@ -9325,14 +9680,34 @@ function PaymentsView({
         <form className="paymentForm" onSubmit={onSave}>
           <div className="sectionHeader compactHeader">
             <div>
-              <p>Finanzas</p>
-              <h2>Nuevo cobro</h2>
+              <p>Finanzas operativas</p>
+              <h2>Nuevo movimiento</h2>
             </div>
+          </div>
+
+          <div className="quoteModeSelector inventoryModeSelector" aria-label="Tipo de movimiento">
+            {(["INCOME", "EXPENSE"] as const).map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={transactionType === type ? "active" : ""}
+                onClick={() =>
+                  onFormChange({
+                    ...paymentForm,
+                    transactionType: type,
+                    category: financeCategories[type][0]?.value ?? "",
+                  })
+                }
+              >
+                <strong>{financeTypeLabels[type]}</strong>
+                <span>{type === "INCOME" ? "Dinero que entra" : "Costo o egreso operativo"}</span>
+              </button>
+            ))}
           </div>
 
           <div className="formGrid">
             <label>
-              Cliente
+              Entidad vinculada
               <select
                 value={paymentForm.customerId || selectedCustomerId || ""}
                 onChange={(event) => {
@@ -9343,7 +9718,20 @@ function PaymentsView({
                 <option value="">Seleccionar cliente</option>
                 {customers.map((customer) => (
                   <option key={customer.id} value={customer.id}>
-                    {customer.name}
+                    {customer.name} - {customerTypeLabels[customer.type ?? "NORMAL"]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Categoria
+              <select
+                value={paymentForm.category || financeCategories[transactionType][0]?.value || ""}
+                onChange={(event) => onFormChange({ ...paymentForm, category: event.target.value })}
+              >
+                {financeCategories[transactionType].map((category) => (
+                  <option key={category.value} value={category.value}>
+                    {category.label}
                   </option>
                 ))}
               </select>
@@ -9358,12 +9746,45 @@ function PaymentsView({
                 onChange={(event) => onFormChange({ ...paymentForm, amount: Number(event.target.value) })}
               />
             </label>
+            <label>
+              Moneda
+              <select
+                value={paymentForm.currency || "UYU"}
+                onChange={(event) => onFormChange({ ...paymentForm, currency: event.target.value })}
+              >
+                <option value="UYU">UYU</option>
+                <option value="USD">USD</option>
+              </select>
+            </label>
+            <label>
+              Metodo
+              <select
+                value={paymentForm.method || ""}
+                onChange={(event) => onFormChange({ ...paymentForm, method: event.target.value })}
+              >
+                <option value="">Sin definir</option>
+                <option value="Efectivo">Efectivo</option>
+                <option value="Transferencia">Transferencia</option>
+                <option value="Debito">Debito</option>
+                <option value="Credito">Credito</option>
+                <option value="Mercado Pago">Mercado Pago</option>
+                <option value="Cheque">Cheque</option>
+              </select>
+            </label>
+            <label>
+              Referencia
+              <input
+                value={paymentForm.reference || ""}
+                onChange={(event) => onFormChange({ ...paymentForm, reference: event.target.value })}
+                placeholder="Factura, recibo, comprobante"
+              />
+            </label>
             <label className="wideField">
               Concepto
               <input
                 value={paymentForm.concept}
                 onChange={(event) => onFormChange({ ...paymentForm, concept: event.target.value })}
-                placeholder="Entrega presupuesto, saldo instalacion, mantenimiento mensual"
+                placeholder="Entrega presupuesto, combustible, importador, mantenimiento mensual"
               />
             </label>
             <label>
@@ -9382,13 +9803,21 @@ function PaymentsView({
                 onChange={(event) => onFormChange({ ...paymentForm, paidAt: event.target.value })}
               />
             </label>
+            <label className="wideField">
+              Observaciones
+              <textarea
+                value={paymentForm.notes || ""}
+                onChange={(event) => onFormChange({ ...paymentForm, notes: event.target.value })}
+                placeholder="Detalle operativo, orden vinculada, motivo del egreso o ingreso"
+              />
+            </label>
           </div>
 
           {paymentError ? <p className="formError">{paymentError}</p> : null}
 
           <button type="submit" className="primaryButton" disabled={loading}>
             <Plus size={18} />
-            Crear cobro
+            Guardar movimiento
           </button>
         </form>
 
@@ -9402,6 +9831,15 @@ function PaymentsView({
                 placeholder="Buscar por concepto o cliente"
               />
             </label>
+            <select
+              value={paymentType}
+              onChange={(event) => onTypeChange(event.target.value as "ALL" | "INCOME" | "EXPENSE")}
+              aria-label="Filtrar por tipo"
+            >
+              <option value="ALL">Ingresos y egresos</option>
+              <option value="INCOME">Ingresos</option>
+              <option value="EXPENSE">Egresos</option>
+            </select>
             <select
               value={paymentStatus}
               onChange={(event) => onStatusChange(event.target.value as "ALL" | "PENDING" | "PAID" | "OVERDUE")}
@@ -9425,23 +9863,40 @@ function PaymentsView({
                   <span className={`statusPill ${paymentStatusClass(payment)}`}>
                     {paymentStatusLabel(payment)}
                   </span>
-                  <strong>{formatCurrency(payment.amount)}</strong>
+                  <strong>
+                    {payment.transactionType === "EXPENSE" ? "-" : "+"}
+                    {formatPrice(payment.amount, payment.currency || "UYU")}
+                  </strong>
                 </div>
+                <p>{financeTypeLabels[payment.transactionType ?? "INCOME"]} - {financeCategoryLabels[payment.category] ?? payment.category}</p>
                 <h3>{payment.concept}</h3>
                 <dl>
                   <div>
-                    <dt>Cliente</dt>
+                    <dt>Entidad</dt>
                     <dd>{payment.customer.name}</dd>
+                  </div>
+                  <div>
+                    <dt>Metodo</dt>
+                    <dd>{payment.method || "Sin definir"}</dd>
                   </div>
                   <div>
                     <dt>Vence</dt>
                     <dd>{formatShortDate(payment.dueDate)}</dd>
                   </div>
                   <div>
-                    <dt>Pago</dt>
+                    <dt>Aplicado</dt>
                     <dd>{payment.paidAt ? formatShortDate(payment.paidAt) : "Pendiente"}</dd>
                   </div>
                 </dl>
+                {[payment.quote?.number, payment.workOrder?.title, payment.vehicle?.name, payment.reference, payment.notes]
+                  .filter(Boolean)
+                  .length ? (
+                  <p className="materialSummary">
+                    {[payment.quote?.number, payment.workOrder?.title, payment.vehicle?.name, payment.reference, payment.notes]
+                      .filter(Boolean)
+                      .join(" - ")}
+                  </p>
+                ) : null}
                 <div className="paymentActions">
                   <button
                     type="button"
@@ -9450,12 +9905,12 @@ function PaymentsView({
                     disabled={Boolean(payment.paidAt)}
                   >
                     <Save size={16} />
-                    Marcar pago
+                    Marcar aplicado
                   </button>
                 </div>
               </article>
             ))}
-            {!payments.length ? <p className="emptyPanel">No hay cobros para los filtros actuales.</p> : null}
+            {!payments.length ? <p className="emptyPanel">No hay movimientos para los filtros actuales.</p> : null}
           </div>
         </section>
       </div>
@@ -10120,6 +10575,7 @@ function VehicleDetailModal({
 }
 
 function InventoryView({
+  customers,
   devices,
   editingInventoryItemId,
   inventoryCategory,
@@ -10130,13 +10586,16 @@ function InventoryView({
   inventoryMode,
   inventoryMovementForm,
   inventorySearch,
+  inventoryCustomer,
   inventoryStats,
+  inventorySource,
   inventoryStockFilter,
   inventorySupplier,
   loading,
   workOrders,
   onCancelEdit,
   onCategoryChange,
+  onCustomerChange,
   onDeleteItem,
   onDeleteMovement,
   onEditItem,
@@ -10149,8 +10608,10 @@ function InventoryView({
   onSave,
   onSearchChange,
   onStockFilterChange,
+  onSourceChange,
   onSupplierChange,
 }: {
+  customers: Customer[];
   devices: InstalledDevice[];
   editingInventoryItemId: string | null;
   inventoryCategory: DeviceType | "ALL";
@@ -10161,13 +10622,16 @@ function InventoryView({
   inventoryMode: "stock" | "catalog" | "all";
   inventoryMovementForm: InventoryMovementPayload;
   inventorySearch: string;
+  inventoryCustomer: string;
   inventoryStats: Array<{ label: string; value: number | string }>;
+  inventorySource: InventoryEntryMode | "ALL";
   inventoryStockFilter: "ALL" | "LOW";
   inventorySupplier: string;
   loading: boolean;
   workOrders: WorkOrder[];
   onCancelEdit: () => void;
   onCategoryChange: (value: DeviceType | "ALL") => void;
+  onCustomerChange: (value: string) => void;
   onDeleteItem: (item: InventoryItem) => void;
   onDeleteMovement: (movementId: string) => void;
   onEditItem: (item: InventoryItem) => void;
@@ -10180,6 +10644,7 @@ function InventoryView({
   onSave: (event: FormEvent<HTMLFormElement>) => void;
   onSearchChange: (value: string) => void;
   onStockFilterChange: (value: "ALL" | "LOW") => void;
+  onSourceChange: (value: InventoryEntryMode | "ALL") => void;
   onSupplierChange: (value: string) => void;
 }) {
   const [movementItemQuery, setMovementItemQuery] = useState("");
@@ -10261,6 +10726,34 @@ function InventoryView({
     setStockForms((current) => ({ ...current, [itemId]: nextForm }));
   }
 
+  function applyInventoryEntryMode(mode: InventoryEntryMode) {
+    const nextForm: InventoryItemPayload = {
+      ...inventoryForm,
+      sourceType: mode,
+      managedStock: mode !== "ASSET",
+      minStock: 0,
+      customerId: mode === "THIRD_PARTY_SUPPLY" ? inventoryForm.customerId : "",
+      supplierCategory:
+        mode === "MATERIAL"
+          ? inventoryForm.supplierCategory || "Materiales"
+          : mode === "THIRD_PARTY_SUPPLY"
+            ? inventoryForm.supplierCategory || "Insumos tercerizados"
+            : inventoryForm.supplierCategory || "Activos",
+      location:
+        mode === "ASSET"
+          ? inventoryForm.location || "Activos internos"
+          : inventoryForm.location,
+      stock: mode === "ASSET" ? 0 : inventoryForm.stock,
+    };
+    onFormChange(nextForm);
+    onMovementFormChange({
+      ...inventoryMovementForm,
+      sourceType: mode,
+      customerId: mode === "THIRD_PARTY_SUPPLY" ? inventoryMovementForm.customerId : "",
+      type: mode === "ASSET" ? "ADJUST" : "IN",
+    });
+  }
+
   function toggleInventorySort(key: InventorySortKey) {
     setInventorySort((current) => ({
       key,
@@ -10315,7 +10808,50 @@ function InventoryView({
                 </button>
               ) : null}
             </div>
+            <div className="quoteModeSelector inventoryModeSelector" aria-label="Modalidad de ingreso al almacen">
+              {inventoryEntryModes.map((mode) => (
+                <button
+                  key={mode.value}
+                  type="button"
+                  className={inventoryForm.sourceType === mode.value ? "active" : ""}
+                  onClick={() => applyInventoryEntryMode(mode.value)}
+                >
+                  <strong>{mode.label}</strong>
+                  <span>{mode.detail}</span>
+                </button>
+              ))}
+            </div>
             <div className="formGrid">
+              <label>
+                Cliente / importador / uso
+                <select
+                  value={inventoryForm.customerId || ""}
+                  onChange={(event) => {
+                    const customer = customers.find((item) => item.id === event.target.value);
+                    onFormChange({
+                      ...inventoryForm,
+                      customerId: event.target.value,
+                      sourceType: event.target.value && inventoryForm.sourceType !== "ASSET" ? "THIRD_PARTY_SUPPLY" : inventoryForm.sourceType,
+                      location: event.target.value ? customer?.name || inventoryForm.location : inventoryForm.location,
+                    });
+                  }}
+                >
+                  <option value="">Sin cliente</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name} - {customerTypeLabels[customer.type ?? "NORMAL"]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Importador / origen
+                <input
+                  value={inventoryForm.supplier}
+                  onChange={(event) => onFormChange({ ...inventoryForm, supplier: event.target.value })}
+                  placeholder="Microfal, Hikvision, proveedor"
+                />
+              </label>
               <label>
                 SKU
                 <input value={inventoryForm.sku} onChange={(event) => onFormChange({ ...inventoryForm, sku: event.target.value })} />
@@ -10401,11 +10937,12 @@ function InventoryView({
                   placeholder="Estante, camioneta, deposito"
                 />
               </label>
-              <label className="wideField">
-                Proveedor
+              <label>
+                Catalogo
                 <input
-                  value={inventoryForm.supplier}
-                  onChange={(event) => onFormChange({ ...inventoryForm, supplier: event.target.value })}
+                  value={inventoryForm.supplierCategory}
+                  onChange={(event) => onFormChange({ ...inventoryForm, supplierCategory: event.target.value })}
+                  placeholder="Cliente, importador, activos"
                 />
               </label>
               <label className="wideField">
@@ -10427,6 +10964,39 @@ function InventoryView({
               </div>
             </div>
             <div className="formGrid">
+              <label>
+                Origen
+                <select
+                  value={inventoryMovementForm.sourceType || "MATERIAL"}
+                  onChange={(event) =>
+                    onMovementFormChange({
+                      ...inventoryMovementForm,
+                      sourceType: event.target.value,
+                      customerId: event.target.value === "THIRD_PARTY_SUPPLY" ? inventoryMovementForm.customerId : "",
+                    })
+                  }
+                >
+                  {inventoryEntryModes.map((mode) => (
+                    <option key={mode.value} value={mode.value}>
+                      {mode.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Cliente / importador / uso
+                <select
+                  value={inventoryMovementForm.customerId || ""}
+                  onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, customerId: event.target.value })}
+                >
+                  <option value="">Sin cliente</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name} - {customerTypeLabels[customer.type ?? "NORMAL"]}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="wideField">
                 Articulo
                 <div className="autocompleteField">
@@ -10496,7 +11066,14 @@ function InventoryView({
                 Trabajo relacionado
                 <select
                   value={inventoryMovementForm.workOrderId}
-                  onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, workOrderId: event.target.value })}
+                  onChange={(event) => {
+                    const workOrder = workOrders.find((item) => item.id === event.target.value);
+                    onMovementFormChange({
+                      ...inventoryMovementForm,
+                      workOrderId: event.target.value,
+                      customerId: workOrder?.customerId || inventoryMovementForm.customerId,
+                    });
+                  }}
                 >
                   <option value="">Sin trabajo</option>
                   {workOrders.map((workOrder) => (
@@ -10559,6 +11136,26 @@ function InventoryView({
               {suppliers.map((supplier) => (
                 <option key={supplier} value={supplier}>
                   {supplier}
+                </option>
+              ))}
+            </select>
+            <select value={inventoryCustomer} onChange={(event) => onCustomerChange(event.target.value)} aria-label="Filtrar por cliente">
+              <option value="ALL">Cliente / importador / uso</option>
+              {customers.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {customer.name} - {customerTypeLabels[customer.type ?? "NORMAL"]}
+                </option>
+              ))}
+            </select>
+            <select
+              value={inventorySource}
+              onChange={(event) => onSourceChange(event.target.value as InventoryEntryMode | "ALL")}
+              aria-label="Filtrar por tipo de catalogo"
+            >
+              <option value="ALL">Origen</option>
+              {inventoryEntryModes.map((mode) => (
+                <option key={mode.value} value={mode.value}>
+                  {mode.label}
                 </option>
               ))}
             </select>
@@ -10658,8 +11255,14 @@ function InventoryView({
                   </div>
                   <div>
                     <dt>Categoria</dt>
-                    <dd>{item.category ? deviceTypeLabels[item.category] : "Sin categoria"}</dd>
+                    <dd>{inventorySourceLabels[item.sourceType || ""] || (item.category ? deviceTypeLabels[item.category] : "Sin categoria")}</dd>
                   </div>
+                  {item.customer ? (
+                    <div>
+                      <dt>Cliente</dt>
+                      <dd>{item.customer.name}</dd>
+                    </div>
+                  ) : null}
                   <div>
                     <dt>Ubicacion</dt>
                     <dd>{item.location || "Sin ubicacion"}</dd>
@@ -10673,7 +11276,7 @@ function InventoryView({
                     <dd>{formatPrice(item.priceWithTax, item.currency)}</dd>
                   </div>
                 </dl>
-                <p>{[item.sku ? `SKU ${item.sku}` : "", item.supplierCategory, item.notes].filter(Boolean).join(" · ") || "Sin datos adicionales"}</p>
+                <p>{[item.sku ? `SKU ${item.sku}` : "", item.supplierCategory, item.customer?.name, item.notes].filter(Boolean).join(" - ") || "Sin datos adicionales"}</p>
                 <div className="stockQuickActions">
                   <div>
                     <label>
@@ -10745,7 +11348,9 @@ function InventoryView({
                       <p>
                         {[
                           selectedInventoryItem.reference,
+                          inventorySourceLabels[selectedInventoryItem.sourceType || ""],
                           selectedInventoryItem.sku ? `SKU ${selectedInventoryItem.sku}` : "",
+                          selectedInventoryItem.customer?.name,
                           selectedInventoryItem.supplier,
                           selectedInventoryItem.supplierCategory,
                         ]
@@ -11706,8 +12311,17 @@ function cleanMeetingPayload(form: MeetingPayload): MeetingPayload {
 function cleanPaymentPayload(form: PaymentPayload): PaymentPayload {
   return {
     customerId: form.customerId,
+    quoteId: form.quoteId || undefined,
+    workOrderId: form.workOrderId || undefined,
+    vehicleId: form.vehicleId || undefined,
+    transactionType: form.transactionType ?? "INCOME",
+    category: form.category?.trim() || (form.transactionType === "EXPENSE" ? "OTHER_EXPENSE" : "CLIENT_PAYMENT"),
     concept: form.concept.trim(),
     amount: Number(form.amount) || 0,
+    currency: form.currency || "UYU",
+    method: form.method?.trim() || undefined,
+    reference: form.reference?.trim() || undefined,
+    notes: form.notes?.trim() || undefined,
     dueDate: form.dueDate || undefined,
     paidAt: form.paidAt || undefined,
   };
@@ -11732,6 +12346,8 @@ function cleanInventoryPayload(form: InventoryItemPayload): InventoryItemPayload
     stock: Number(form.stock) || 0,
     minStock: 0,
     managedStock: form.managedStock ?? true,
+    sourceType: form.sourceType?.trim() || "MATERIAL",
+    customerId: form.customerId || undefined,
     location: form.location?.trim() || undefined,
     supplier: form.supplier?.trim() || undefined,
     supplierCategory: form.supplierCategory?.trim() || undefined,
@@ -11748,6 +12364,8 @@ function cleanInventoryMovementPayload(form: InventoryMovementPayload): Inventor
     itemId: form.itemId,
     type: form.type,
     quantity: Number(form.quantity) || 0,
+    sourceType: form.sourceType?.trim() || undefined,
+    customerId: form.customerId || undefined,
     reason: form.reason?.trim() || undefined,
     workOrderId: form.workOrderId || undefined,
     installedDeviceId: form.installedDeviceId || undefined,
@@ -11859,6 +12477,16 @@ function formatDuration(totalMinutes: string | number) {
 }
 
 type DispatchStopKind = "CLIENT" | "NOT_CLIENT" | "WAREHOUSE" | "LUNCH" | "TRANSFER";
+
+const dispatchPlaceLabels: Record<DispatchPlaceType, string> = {
+  CLIENT: "Cliente",
+  FUTURE_CLIENT: "Futuro cliente",
+  IMPORTER: "Importador",
+  WAREHOUSE: "Base / deposito",
+  LUNCH: "Almuerzo",
+  TRANSFER: "Traslado",
+  OTHER: "Otro",
+};
 
 type DispatchRouteStop = {
   workOrder: WorkOrder;
@@ -12001,6 +12629,33 @@ function buildDispatchRouteText(stops: DispatchRouteStop[], vehicle: Vehicle | n
   return lines.join("\n");
 }
 
+function buildGpsDispatchRouteText(
+  stops: ReturnType<typeof buildGpsTimelineStops>,
+  vehicle: Vehicle | null,
+  baseLocation?: DispatchBaseLocation | null,
+) {
+  if (!stops.length) {
+    return "";
+  }
+
+  const lines = [
+    "Recorrido real Security Solutions",
+    vehicle ? `Movil: ${vehicle.name}${vehicle.plate ? ` (${vehicle.plate})` : ""}` : "Movil: sin asignar",
+    baseLocation ? `Base: ${baseLocation.name} - ${baseLocation.address || `${baseLocation.latitude},${baseLocation.longitude}`}` : "Base: sin configurar",
+    "",
+    ...stops.map((stop, index) => {
+      const place = stop.isBaseStop ? "Base operativa" : stop.customerName ? "Cliente" : "Parada GPS";
+      const arrival = formatInputTime(stop.arrival);
+      const departure = formatInputTime(stop.departure);
+      const duration = formatDuration(stop.durationMinutes);
+      return `${index + 1}. ${arrival}${departure ? ` a ${departure}` : ""} - ${stop.title} - ${place} - ${duration}`;
+    }),
+    baseLocation ? `Cierre: ${baseLocation.name}` : "",
+  ];
+
+  return lines.join("\n");
+}
+
 function buildDispatcherDailySummary(
   plan: ReturnType<typeof buildDispatchPlan>,
   workOrders: WorkOrder[],
@@ -12036,21 +12691,40 @@ function buildDispatcherDailySummary(
   };
 }
 
-function buildGpsTimelineStops(summary: VehicleDailySummary | null) {
+function buildGpsTimelineStops(
+  summary: VehicleDailySummary | null,
+  baseLocation?: DispatchBaseLocation | null,
+  learnedPlaces: DispatchStopRecord[] = [],
+) {
   if (!summary?.positions) {
     return [];
   }
 
   const visitsByStop = new Map(summary.visits.map((visit) => [visit.stopIndex, visit]));
   return summary.stops
-    .filter((stop) => stop.durationMinutes > 5)
+    .filter((stop) => stop.durationMinutes >= 5)
     .map((stop) => {
       const visit = visitsByStop.get(stop.index);
+      const isBaseStop = Boolean(
+        baseLocation &&
+          haversineKm(stop.latitude, stop.longitude, baseLocation.latitude, baseLocation.longitude) <= 0.15,
+      );
+      const learnedPlace = !isBaseStop && !visit ? findLearnedDispatchPlace(stop.latitude, stop.longitude, learnedPlaces) : null;
+      const learnedTitle = learnedPlace ? getLearnedDispatchPlaceTitle(learnedPlace) : "";
       return {
         id: `gps-${stop.index}`,
-        title: visit ? `${visit.customerName}${visit.siteName ? ` - ${visit.siteName}` : ""}` : `Parada GPS ${stop.index + 1}`,
+        title: isBaseStop
+          ? baseLocation!.name
+          : visit
+            ? `${visit.customerName}${visit.siteName ? ` - ${visit.siteName}` : ""}`
+            : learnedTitle || `Parada GPS ${stop.index + 1}`,
         customerName: visit?.customerName,
-        address: visit?.address || stop.address,
+        learnedPlaceId: learnedPlace?.id,
+        learnedPlaceType: learnedPlace?.placeType,
+        learnedZone: learnedPlace?.zone,
+        learnedNotes: learnedPlace?.notes,
+        address: isBaseStop ? baseLocation!.address || stop.address : visit?.address || learnedPlace?.address || stop.address,
+        isBaseStop,
         arrival: stop.arrival,
         departure: stop.departure,
         durationMinutes: stop.durationMinutes,
@@ -12058,6 +12732,47 @@ function buildGpsTimelineStops(summary: VehicleDailySummary | null) {
         longitude: stop.longitude,
       };
     });
+}
+
+function findLearnedDispatchPlace(
+  latitude: number,
+  longitude: number,
+  learnedPlaces: DispatchStopRecord[],
+): DispatchStopRecord | null {
+  let closestPlace: DispatchStopRecord | null = null;
+  let closestDistanceKm = Number.POSITIVE_INFINITY;
+
+  learnedPlaces.forEach((place) => {
+    if (!hasCoordinates(place.latitude, place.longitude)) {
+      return;
+    }
+
+    const distanceKm = haversineKm(latitude, longitude, Number(place.latitude), Number(place.longitude));
+    if (distanceKm > 0.12) {
+      return;
+    }
+
+    if (distanceKm < closestDistanceKm) {
+      closestPlace = place;
+      closestDistanceKm = distanceKm;
+    }
+  });
+
+  return closestPlace;
+}
+
+function getLearnedDispatchPlaceTitle(place: DispatchStopRecord) {
+  const cleanTitle = place.title?.trim();
+  if (cleanTitle && !/^Parada GPS/i.test(cleanTitle)) {
+    return cleanTitle;
+  }
+
+  return place.notes?.trim() || cleanTitle || "";
+}
+
+function mergeDispatchPlaceMemory(current: DispatchStopRecord[], saved: DispatchStopRecord[]) {
+  const next = [...saved, ...current.filter((record) => !saved.some((item) => item.id === record.id))];
+  return next.slice(0, 500);
 }
 
 function buildGpsGoogleMapsRouteUrl(

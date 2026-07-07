@@ -9,6 +9,8 @@ enum CustomerStatusDto {
 enum CustomerTypeDto {
   NORMAL = "NORMAL",
   THIRD_PARTY = "THIRD_PARTY",
+  IMPORTER = "IMPORTER",
+  INTERNAL = "INTERNAL",
 }
 
 export class UpdateCustomerDto {

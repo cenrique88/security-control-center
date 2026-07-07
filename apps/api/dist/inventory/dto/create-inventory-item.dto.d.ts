@@ -18,6 +18,8 @@ export declare class CreateInventoryItemDto {
     stock?: number;
     minStock?: number;
     managedStock?: boolean;
+    sourceType?: string;
+    customerId?: string;
     location?: string;
     supplier?: string;
     supplierCategory?: string;

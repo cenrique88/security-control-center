@@ -73,6 +73,30 @@ let DispatchService = class DispatchService {
         });
         return rows.map((row) => row.supplier).filter(Boolean);
     }
+    async places() {
+        return this.prisma.dispatchStop.findMany({
+            where: {
+                latitude: {
+                    not: null,
+                },
+                longitude: {
+                    not: null,
+                },
+                OR: [
+                    {
+                        source: "TRACCAR",
+                    },
+                    {
+                        source: "CRM",
+                    },
+                ],
+            },
+            orderBy: {
+                updatedAt: "desc",
+            },
+            take: 500,
+        });
+    }
     toStopData(stop) {
         return {
             placeType: (stop.placeType ?? "CLIENT"),

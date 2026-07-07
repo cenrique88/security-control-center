@@ -21,6 +21,8 @@ var CustomerTypeDto;
 (function (CustomerTypeDto) {
     CustomerTypeDto["NORMAL"] = "NORMAL";
     CustomerTypeDto["THIRD_PARTY"] = "THIRD_PARTY";
+    CustomerTypeDto["IMPORTER"] = "IMPORTER";
+    CustomerTypeDto["INTERNAL"] = "INTERNAL";
 })(CustomerTypeDto || (CustomerTypeDto = {}));
 class CreateCustomerDto {
     name;

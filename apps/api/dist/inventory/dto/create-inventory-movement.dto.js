@@ -21,6 +21,8 @@ class CreateInventoryMovementDto {
     itemId;
     type;
     quantity;
+    sourceType;
+    customerId;
     reason;
     workOrderId;
     installedDeviceId;
@@ -39,6 +41,16 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], CreateInventoryMovementDto.prototype, "quantity", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementDto.prototype, "sourceType", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementDto.prototype, "customerId", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),

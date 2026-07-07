@@ -81,7 +81,7 @@ export type DashboardSummary = {
 };
 
 export type CustomerStatus = "ACTIVE" | "PROSPECT" | "INACTIVE";
-export type CustomerType = "NORMAL" | "THIRD_PARTY";
+export type CustomerType = "NORMAL" | "THIRD_PARTY" | "IMPORTER" | "INTERNAL";
 
 export type Customer = {
   id: string;
@@ -562,8 +562,17 @@ export type LaborPointCalculation = {
 export type Payment = {
   id: string;
   customerId: string;
+  quoteId?: string | null;
+  workOrderId?: string | null;
+  vehicleId?: string | null;
+  transactionType: "INCOME" | "EXPENSE";
+  category: string;
   concept: string;
   amount: string | number;
+  currency: string;
+  method?: string | null;
+  reference?: string | null;
+  notes?: string | null;
   dueDate?: string | null;
   paidAt?: string | null;
   createdAt: string;
@@ -573,13 +582,39 @@ export type Payment = {
     name: string;
     phone?: string | null;
     email?: string | null;
+    type?: CustomerType;
   };
+  quote?: {
+    id: string;
+    number: string;
+    title: string;
+    total: string | number;
+  } | null;
+  workOrder?: {
+    id: string;
+    title: string;
+    status: WorkOrderStatus;
+  } | null;
+  vehicle?: {
+    id: string;
+    name: string;
+    plate?: string | null;
+  } | null;
 };
 
 export type PaymentPayload = {
   customerId: string;
+  quoteId?: string;
+  workOrderId?: string;
+  vehicleId?: string;
+  transactionType?: "INCOME" | "EXPENSE";
+  category?: string;
   concept: string;
   amount: number;
+  currency?: string;
+  method?: string;
+  reference?: string;
+  notes?: string;
   dueDate?: string;
   paidAt?: string;
 };
@@ -747,6 +782,8 @@ export type InventoryMovement = {
   type: InventoryMovementType;
   quantity: number;
   stockAfter: number;
+  sourceType?: string | null;
+  customerId?: string | null;
   reason?: string | null;
   workOrderId?: string | null;
   installedDeviceId?: string | null;
@@ -764,6 +801,10 @@ export type InventoryMovement = {
       id: string;
       name: string;
     };
+  } | null;
+  customer?: {
+    id: string;
+    name: string;
   } | null;
   installedDevice?: {
     id: string;
@@ -785,6 +826,8 @@ export type InventoryItem = {
   installedQuantity?: number;
   minStock: number;
   managedStock: boolean;
+  sourceType?: string | null;
+  customerId?: string | null;
   location?: string | null;
   supplier?: string | null;
   supplierCategory?: string | null;
@@ -795,6 +838,10 @@ export type InventoryItem = {
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+  customer?: {
+    id: string;
+    name: string;
+  } | null;
   movements: InventoryMovement[];
 };
 
@@ -806,6 +853,8 @@ export type InventoryItemPayload = {
   stock?: number;
   minStock?: number;
   managedStock?: boolean;
+  sourceType?: string;
+  customerId?: string;
   location?: string;
   supplier?: string;
   supplierCategory?: string;
@@ -820,6 +869,8 @@ export type InventoryMovementPayload = {
   itemId: string;
   type: InventoryMovementType;
   quantity: number;
+  sourceType?: string;
+  customerId?: string;
   reason?: string;
   workOrderId?: string;
   installedDeviceId?: string;

@@ -19,6 +19,14 @@ export class CreateInventoryMovementDto {
 
   @IsOptional()
   @IsString()
+  sourceType?: string;
+
+  @IsOptional()
+  @IsString()
+  customerId?: string;
+
+  @IsOptional()
+  @IsString()
   reason?: string;
 
   @IsOptional()

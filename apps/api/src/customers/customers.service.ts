@@ -9,7 +9,7 @@ import { UpdateCustomerDto } from "./dto/update-customer.dto";
 type CustomerFilters = {
   search?: string;
   status?: "ACTIVE" | "PROSPECT" | "INACTIVE";
-  type?: "NORMAL" | "THIRD_PARTY";
+  type?: CustomerType;
 };
 
 @Injectable()

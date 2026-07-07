@@ -16,9 +16,11 @@ export class InventoryController {
     @Query("category") category?: ServiceType,
     @Query("lowStock") lowStock?: string,
     @Query("supplier") supplier?: string,
+    @Query("customerId") customerId?: string,
+    @Query("sourceType") sourceType?: string,
     @Query("mode") mode?: "catalog" | "stock" | "all",
   ) {
-    return this.inventoryService.list({ search, category, lowStock, supplier, mode });
+    return this.inventoryService.list({ search, category, lowStock, supplier, customerId, sourceType, mode });
   }
 
   @Get("summary")

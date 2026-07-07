@@ -5,7 +5,9 @@ declare enum CustomerStatusDto {
 }
 declare enum CustomerTypeDto {
     NORMAL = "NORMAL",
-    THIRD_PARTY = "THIRD_PARTY"
+    THIRD_PARTY = "THIRD_PARTY",
+    IMPORTER = "IMPORTER",
+    INTERNAL = "INTERNAL"
 }
 export declare class CreateCustomerDto {
     name: string;

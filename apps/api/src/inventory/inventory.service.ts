@@ -9,6 +9,8 @@ type InventoryFilters = {
   category?: ServiceType;
   lowStock?: string;
   supplier?: string;
+  customerId?: string;
+  sourceType?: string;
   mode?: "catalog" | "stock" | "all";
 };
 
@@ -25,6 +27,14 @@ export class InventoryService {
 
     if (filters.supplier?.trim()) {
       where.supplier = filters.supplier.trim();
+    }
+
+    if (filters.customerId?.trim()) {
+      where.customerId = filters.customerId.trim();
+    }
+
+    if (filters.sourceType?.trim()) {
+      where.sourceType = filters.sourceType.trim();
     }
 
     if (filters.mode === "catalog") {
@@ -47,6 +57,8 @@ export class InventoryService {
         { location: { contains: query, mode: "insensitive" } },
         { supplier: { contains: query, mode: "insensitive" } },
         { supplierCategory: { contains: query, mode: "insensitive" } },
+        { sourceType: { contains: query, mode: "insensitive" } },
+        { customer: { name: { contains: query, mode: "insensitive" } } },
         { notes: { contains: query, mode: "insensitive" } },
       ];
     }
@@ -56,6 +68,7 @@ export class InventoryService {
         where,
         orderBy: [{ updatedAt: "desc" }],
         include: {
+          customer: true,
           movements: {
             take: 5,
             orderBy: { createdAt: "desc" },
@@ -88,6 +101,8 @@ export class InventoryService {
             stock: dto.stock ?? 0,
             minStock: dto.minStock ?? 0,
             managedStock: dto.managedStock ?? true,
+            sourceType: this.cleanOptional(dto.sourceType) ?? "MATERIAL",
+            customerId: this.cleanNullable(dto.customerId),
             location: this.cleanNullable(dto.location),
             supplier: this.cleanNullable(dto.supplier),
             supplierCategory: this.cleanNullable(dto.supplierCategory),
@@ -103,6 +118,7 @@ export class InventoryService {
               orderBy: { createdAt: "desc" },
               include: this.movementInclude(),
             },
+            customer: true,
           },
         });
       });
@@ -128,6 +144,8 @@ export class InventoryService {
           stock: dto.stock,
           minStock: dto.minStock,
           managedStock: dto.managedStock,
+          sourceType: this.cleanOptional(dto.sourceType),
+          customerId: dto.customerId === undefined ? undefined : this.cleanNullable(dto.customerId),
           location: dto.location === undefined ? undefined : this.cleanNullable(dto.location),
           supplier: dto.supplier === undefined ? undefined : this.cleanNullable(dto.supplier),
           supplierCategory: dto.supplierCategory === undefined ? undefined : this.cleanNullable(dto.supplierCategory),
@@ -143,6 +161,7 @@ export class InventoryService {
             orderBy: { createdAt: "desc" },
             include: this.movementInclude(),
           },
+          customer: true,
         },
       });
     } catch (error) {
@@ -163,6 +182,10 @@ export class InventoryService {
 
       if (dto.workOrderId) {
         await this.ensureWorkOrder(tx, dto.workOrderId);
+      }
+
+      if (dto.customerId) {
+        await this.ensureCustomer(tx, dto.customerId);
       }
 
       if (dto.installedDeviceId) {
@@ -189,6 +212,8 @@ export class InventoryService {
           type,
           quantity,
           stockAfter,
+          sourceType: this.cleanNullable(dto.sourceType),
+          customerId: this.cleanNullable(dto.customerId),
           reason: this.cleanNullable(dto.reason),
           workOrderId: this.cleanNullable(dto.workOrderId),
           installedDeviceId: this.cleanNullable(dto.installedDeviceId),
@@ -335,6 +360,12 @@ export class InventoryService {
           },
         },
       },
+      customer: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
       installedDevice: {
         select: {
           id: true,
@@ -369,6 +400,13 @@ export class InventoryService {
     const workOrder = await tx.workOrder.findUnique({ where: { id }, select: { id: true } });
     if (!workOrder) {
       throw new NotFoundException("Work order not found");
+    }
+  }
+
+  private async ensureCustomer(tx: Prisma.TransactionClient, id: string) {
+    const customer = await tx.customer.findUnique({ where: { id }, select: { id: true } });
+    if (!customer) {
+      throw new NotFoundException("Customer not found");
     }
   }
 

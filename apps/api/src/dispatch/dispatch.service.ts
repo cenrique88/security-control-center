@@ -71,6 +71,31 @@ export class DispatchService {
     return rows.map((row) => row.supplier).filter(Boolean);
   }
 
+  async places() {
+    return this.prisma.dispatchStop.findMany({
+      where: {
+        latitude: {
+          not: null,
+        },
+        longitude: {
+          not: null,
+        },
+        OR: [
+          {
+            source: "TRACCAR",
+          },
+          {
+            source: "CRM",
+          },
+        ],
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+      take: 500,
+    });
+  }
+
   private toStopData(stop: SaveDispatchStopsDto["stops"][number]) {
     return {
       placeType: (stop.placeType ?? "CLIENT") as DispatchPlaceType,

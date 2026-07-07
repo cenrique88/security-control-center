@@ -30,6 +30,33 @@ export declare class DispatchController {
         createdAt: Date;
         updatedAt: Date;
     }[]>;
+    places(): Promise<{
+        id: string;
+        date: Date;
+        vehicleId: string | null;
+        vehicleKey: string;
+        stopKey: string;
+        placeType: import(".prisma/client").$Enums.DispatchPlaceType;
+        title: string;
+        address: string | null;
+        latitude: import("@prisma/client/runtime/library").Decimal | null;
+        longitude: import("@prisma/client/runtime/library").Decimal | null;
+        customerId: string | null;
+        siteId: string | null;
+        workOrderId: string | null;
+        supplierName: string | null;
+        futureClientName: string | null;
+        kind: string | null;
+        zone: string | null;
+        scheduledAt: Date | null;
+        durationMinutes: number;
+        parkingCost: import("@prisma/client/runtime/library").Decimal;
+        tollCost: import("@prisma/client/runtime/library").Decimal;
+        notes: string | null;
+        source: string;
+        createdAt: Date;
+        updatedAt: Date;
+    }[]>;
     saveStops(dto: SaveDispatchStopsDto): Promise<{
         id: string;
         date: Date;

@@ -6,33 +6,33 @@ export declare class DevicesController {
     constructor(devicesService: DevicesService);
     list(search?: string, customerId?: string, siteId?: string, type?: ServiceType): Promise<({
         site: {
-            id: string;
-            address: string;
-            name: string;
             customer: {
                 id: string;
                 name: string;
             };
+            id: string;
+            name: string;
+            address: string;
         };
         inventoryMovements: {
-            id: string;
-            workOrderId: string | null;
-            createdAt: Date;
             workOrder: {
                 id: string;
+                status: import(".prisma/client").$Enums.WorkOrderStatus;
                 title: string;
                 scheduledAt: Date | null;
-                status: import(".prisma/client").$Enums.WorkOrderStatus;
                 completedAt: Date | null;
             } | null;
+            id: string;
+            createdAt: Date;
+            workOrderId: string | null;
         }[];
     } & {
         id: string;
-        siteId: string;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
         type: import(".prisma/client").$Enums.ServiceType;
+        notes: string | null;
+        siteId: string;
         brand: string | null;
         model: string | null;
         serial: string | null;
@@ -41,33 +41,33 @@ export declare class DevicesController {
     })[]>;
     create(dto: CreateDeviceDto): Promise<{
         site: {
-            id: string;
-            address: string;
-            name: string;
             customer: {
                 id: string;
                 name: string;
             };
+            id: string;
+            name: string;
+            address: string;
         };
         inventoryMovements: {
-            id: string;
-            workOrderId: string | null;
-            createdAt: Date;
             workOrder: {
                 id: string;
+                status: import(".prisma/client").$Enums.WorkOrderStatus;
                 title: string;
                 scheduledAt: Date | null;
-                status: import(".prisma/client").$Enums.WorkOrderStatus;
                 completedAt: Date | null;
             } | null;
+            id: string;
+            createdAt: Date;
+            workOrderId: string | null;
         }[];
     } & {
         id: string;
-        siteId: string;
-        notes: string | null;
         createdAt: Date;
         updatedAt: Date;
         type: import(".prisma/client").$Enums.ServiceType;
+        notes: string | null;
+        siteId: string;
         brand: string | null;
         model: string | null;
         serial: string | null;
