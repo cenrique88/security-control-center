@@ -21,6 +21,12 @@ class CreateInventoryMovementDto {
     itemId;
     type;
     quantity;
+    unitCost;
+    currency;
+    createExpense;
+    paymentCategory;
+    paymentMethod;
+    paymentReference;
     sourceType;
     customerId;
     reason;
@@ -41,6 +47,37 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], CreateInventoryMovementDto.prototype, "quantity", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], CreateInventoryMovementDto.prototype, "unitCost", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementDto.prototype, "currency", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateInventoryMovementDto.prototype, "createExpense", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementDto.prototype, "paymentCategory", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementDto.prototype, "paymentMethod", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementDto.prototype, "paymentReference", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),

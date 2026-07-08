@@ -234,6 +234,7 @@ model InventoryItem {
   updatedAt        DateTime            @updatedAt
   customer         Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
   movements        InventoryMovement[]
+  payments         Payment[]
 
   @@index([sourceType])
   @@index([customerId])
@@ -320,9 +321,13 @@ model CustomerPriceOverride {
 model InventoryMovement {
   id              String                @id @default(cuid())
   itemId          String
+  paymentId       String?
   type            InventoryMovementType
   quantity        Int
   stockAfter      Int
+  unitCost        Decimal?              @db.Decimal(12, 2)
+  totalCost       Decimal?              @db.Decimal(12, 2)
+  currency        String?               @default("UYU")
   sourceType      String?
   customerId      String?
   reason          String?
@@ -330,10 +335,12 @@ model InventoryMovement {
   installedDeviceId String?
   createdAt       DateTime              @default(now())
   item            InventoryItem         @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  payment         Payment?              @relation(fields: [paymentId], references: [id], onDelete: SetNull)
   customer        Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
   workOrder       WorkOrder?            @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
   installedDevice InstalledDevice?      @relation(fields: [installedDeviceId], references: [id], onDelete: SetNull)
 
+  @@index([paymentId])
   @@index([sourceType])
   @@index([customerId])
 }
@@ -431,10 +438,13 @@ model Payment {
   quoteId         String?
   workOrderId     String?
   vehicleId       String?
+  inventoryItemId String?
   transactionType String     @default("INCOME")
   category        String     @default("CLIENT_PAYMENT")
   concept         String
   amount          Decimal    @db.Decimal(12, 2)
+  quantity        Int?
+  unitPrice       Decimal?   @db.Decimal(12, 2)
   currency        String     @default("UYU")
   method          String?
   reference       String?
@@ -447,12 +457,15 @@ model Payment {
   quote           Quote?     @relation(fields: [quoteId], references: [id], onDelete: SetNull)
   workOrder       WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
   vehicle         Vehicle?   @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  inventoryMovements InventoryMovement[]
 
   @@index([transactionType])
   @@index([category])
   @@index([quoteId])
   @@index([workOrderId])
   @@index([vehicleId])
+  @@index([inventoryItemId])
 }
 
 model Meeting {

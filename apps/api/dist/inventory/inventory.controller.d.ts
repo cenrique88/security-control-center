@@ -9,22 +9,22 @@ export declare class InventoryController {
         installedQuantity: number;
         customer: {
             id: string;
-            email: string | null;
+            reference: string;
             name: string;
+            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
-            phone: string | null;
-            taxId: string | null;
+            type: import(".prisma/client").$Enums.CustomerType;
+            status: import(".prisma/client").$Enums.CustomerStatus;
             legalName: string | null;
-            reference: string;
+            taxId: string | null;
+            email: string | null;
+            phone: string | null;
             address: string | null;
             latitude: import("@prisma/client/runtime/library").Decimal | null;
             longitude: import("@prisma/client/runtime/library").Decimal | null;
             traccarGeofenceId: number | null;
             logoUrl: string | null;
-            type: import(".prisma/client").$Enums.CustomerType;
-            status: import(".prisma/client").$Enums.CustomerStatus;
-            notes: string | null;
         } | null;
         movements: ({
             customer: {
@@ -32,11 +32,11 @@ export declare class InventoryController {
                 name: string;
             } | null;
             workOrder: {
+                id: string;
                 customer: {
                     id: string;
                     name: string;
                 };
-                id: string;
                 title: string;
             } | null;
             installedDevice: {
@@ -45,40 +45,51 @@ export declare class InventoryController {
                 model: string | null;
                 serial: string | null;
             } | null;
+            payment: {
+                id: string;
+                currency: string;
+                concept: string;
+                amount: import("@prisma/client/runtime/library").Decimal;
+                paidAt: Date | null;
+            } | null;
         } & {
             id: string;
+            sourceType: string | null;
+            customerId: string | null;
+            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
-            customerId: string | null;
             workOrderId: string | null;
-            sourceType: string | null;
             quantity: number;
-            stockAfter: number;
-            reason: string | null;
             itemId: string;
+            paymentId: string | null;
+            stockAfter: number;
+            unitCost: import("@prisma/client/runtime/library").Decimal | null;
+            totalCost: import("@prisma/client/runtime/library").Decimal | null;
+            reason: string | null;
             installedDeviceId: string | null;
         })[];
         id: string;
-        name: string;
-        createdAt: Date;
-        updatedAt: Date;
         reference: string;
-        notes: string | null;
-        customerId: string | null;
-        currency: string | null;
-        category: import(".prisma/client").$Enums.ServiceType | null;
-        costPrice: import("@prisma/client/runtime/library").Decimal | null;
         sku: string | null;
+        name: string;
+        category: import(".prisma/client").$Enums.ServiceType | null;
         unit: string;
         stock: number;
         minStock: number;
         managedStock: boolean;
         sourceType: string;
+        customerId: string | null;
         location: string | null;
         supplier: string | null;
         supplierCategory: string | null;
+        costPrice: import("@prisma/client/runtime/library").Decimal | null;
         taxAmount: import("@prisma/client/runtime/library").Decimal | null;
         priceWithTax: import("@prisma/client/runtime/library").Decimal | null;
+        currency: string | null;
+        notes: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }[]>;
     summary(): Promise<{
         totalItems: number;
@@ -91,22 +102,22 @@ export declare class InventoryController {
     createItem(dto: CreateInventoryItemDto): Promise<{
         customer: {
             id: string;
-            email: string | null;
+            reference: string;
             name: string;
+            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
-            phone: string | null;
-            taxId: string | null;
+            type: import(".prisma/client").$Enums.CustomerType;
+            status: import(".prisma/client").$Enums.CustomerStatus;
             legalName: string | null;
-            reference: string;
+            taxId: string | null;
+            email: string | null;
+            phone: string | null;
             address: string | null;
             latitude: import("@prisma/client/runtime/library").Decimal | null;
             longitude: import("@prisma/client/runtime/library").Decimal | null;
             traccarGeofenceId: number | null;
             logoUrl: string | null;
-            type: import(".prisma/client").$Enums.CustomerType;
-            status: import(".prisma/client").$Enums.CustomerStatus;
-            notes: string | null;
         } | null;
         movements: ({
             customer: {
@@ -114,11 +125,11 @@ export declare class InventoryController {
                 name: string;
             } | null;
             workOrder: {
+                id: string;
                 customer: {
                     id: string;
                     name: string;
                 };
-                id: string;
                 title: string;
             } | null;
             installedDevice: {
@@ -127,61 +138,72 @@ export declare class InventoryController {
                 model: string | null;
                 serial: string | null;
             } | null;
+            payment: {
+                id: string;
+                currency: string;
+                concept: string;
+                amount: import("@prisma/client/runtime/library").Decimal;
+                paidAt: Date | null;
+            } | null;
         } & {
             id: string;
+            sourceType: string | null;
+            customerId: string | null;
+            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
-            customerId: string | null;
             workOrderId: string | null;
-            sourceType: string | null;
             quantity: number;
-            stockAfter: number;
-            reason: string | null;
             itemId: string;
+            paymentId: string | null;
+            stockAfter: number;
+            unitCost: import("@prisma/client/runtime/library").Decimal | null;
+            totalCost: import("@prisma/client/runtime/library").Decimal | null;
+            reason: string | null;
             installedDeviceId: string | null;
         })[];
     } & {
         id: string;
-        name: string;
-        createdAt: Date;
-        updatedAt: Date;
         reference: string;
-        notes: string | null;
-        customerId: string | null;
-        currency: string | null;
-        category: import(".prisma/client").$Enums.ServiceType | null;
-        costPrice: import("@prisma/client/runtime/library").Decimal | null;
         sku: string | null;
+        name: string;
+        category: import(".prisma/client").$Enums.ServiceType | null;
         unit: string;
         stock: number;
         minStock: number;
         managedStock: boolean;
         sourceType: string;
+        customerId: string | null;
         location: string | null;
         supplier: string | null;
         supplierCategory: string | null;
+        costPrice: import("@prisma/client/runtime/library").Decimal | null;
         taxAmount: import("@prisma/client/runtime/library").Decimal | null;
         priceWithTax: import("@prisma/client/runtime/library").Decimal | null;
+        currency: string | null;
+        notes: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     updateItem(id: string, dto: CreateInventoryItemDto): Promise<{
         customer: {
             id: string;
-            email: string | null;
+            reference: string;
             name: string;
+            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
-            phone: string | null;
-            taxId: string | null;
+            type: import(".prisma/client").$Enums.CustomerType;
+            status: import(".prisma/client").$Enums.CustomerStatus;
             legalName: string | null;
-            reference: string;
+            taxId: string | null;
+            email: string | null;
+            phone: string | null;
             address: string | null;
             latitude: import("@prisma/client/runtime/library").Decimal | null;
             longitude: import("@prisma/client/runtime/library").Decimal | null;
             traccarGeofenceId: number | null;
             logoUrl: string | null;
-            type: import(".prisma/client").$Enums.CustomerType;
-            status: import(".prisma/client").$Enums.CustomerStatus;
-            notes: string | null;
         } | null;
         movements: ({
             customer: {
@@ -189,11 +211,11 @@ export declare class InventoryController {
                 name: string;
             } | null;
             workOrder: {
+                id: string;
                 customer: {
                     id: string;
                     name: string;
                 };
-                id: string;
                 title: string;
             } | null;
             installedDevice: {
@@ -202,41 +224,52 @@ export declare class InventoryController {
                 model: string | null;
                 serial: string | null;
             } | null;
+            payment: {
+                id: string;
+                currency: string;
+                concept: string;
+                amount: import("@prisma/client/runtime/library").Decimal;
+                paidAt: Date | null;
+            } | null;
         } & {
             id: string;
+            sourceType: string | null;
+            customerId: string | null;
+            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
-            customerId: string | null;
             workOrderId: string | null;
-            sourceType: string | null;
             quantity: number;
-            stockAfter: number;
-            reason: string | null;
             itemId: string;
+            paymentId: string | null;
+            stockAfter: number;
+            unitCost: import("@prisma/client/runtime/library").Decimal | null;
+            totalCost: import("@prisma/client/runtime/library").Decimal | null;
+            reason: string | null;
             installedDeviceId: string | null;
         })[];
     } & {
         id: string;
-        name: string;
-        createdAt: Date;
-        updatedAt: Date;
         reference: string;
-        notes: string | null;
-        customerId: string | null;
-        currency: string | null;
-        category: import(".prisma/client").$Enums.ServiceType | null;
-        costPrice: import("@prisma/client/runtime/library").Decimal | null;
         sku: string | null;
+        name: string;
+        category: import(".prisma/client").$Enums.ServiceType | null;
         unit: string;
         stock: number;
         minStock: number;
         managedStock: boolean;
         sourceType: string;
+        customerId: string | null;
         location: string | null;
         supplier: string | null;
         supplierCategory: string | null;
+        costPrice: import("@prisma/client/runtime/library").Decimal | null;
         taxAmount: import("@prisma/client/runtime/library").Decimal | null;
         priceWithTax: import("@prisma/client/runtime/library").Decimal | null;
+        currency: string | null;
+        notes: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     createMovement(dto: CreateInventoryMovementDto): Promise<{
         customer: {
@@ -244,11 +277,11 @@ export declare class InventoryController {
             name: string;
         } | null;
         workOrder: {
+            id: string;
             customer: {
                 id: string;
                 name: string;
             };
-            id: string;
             title: string;
         } | null;
         installedDevice: {
@@ -257,40 +290,51 @@ export declare class InventoryController {
             model: string | null;
             serial: string | null;
         } | null;
+        payment: {
+            id: string;
+            currency: string;
+            concept: string;
+            amount: import("@prisma/client/runtime/library").Decimal;
+            paidAt: Date | null;
+        } | null;
         item: {
             id: string;
-            name: string;
-            createdAt: Date;
-            updatedAt: Date;
             reference: string;
-            notes: string | null;
-            customerId: string | null;
-            currency: string | null;
-            category: import(".prisma/client").$Enums.ServiceType | null;
-            costPrice: import("@prisma/client/runtime/library").Decimal | null;
             sku: string | null;
+            name: string;
+            category: import(".prisma/client").$Enums.ServiceType | null;
             unit: string;
             stock: number;
             minStock: number;
             managedStock: boolean;
             sourceType: string;
+            customerId: string | null;
             location: string | null;
             supplier: string | null;
             supplierCategory: string | null;
+            costPrice: import("@prisma/client/runtime/library").Decimal | null;
             taxAmount: import("@prisma/client/runtime/library").Decimal | null;
             priceWithTax: import("@prisma/client/runtime/library").Decimal | null;
+            currency: string | null;
+            notes: string | null;
+            createdAt: Date;
+            updatedAt: Date;
         };
     } & {
         id: string;
+        sourceType: string | null;
+        customerId: string | null;
+        currency: string | null;
         createdAt: Date;
         type: import(".prisma/client").$Enums.InventoryMovementType;
-        customerId: string | null;
         workOrderId: string | null;
-        sourceType: string | null;
         quantity: number;
-        stockAfter: number;
-        reason: string | null;
         itemId: string;
+        paymentId: string | null;
+        stockAfter: number;
+        unitCost: import("@prisma/client/runtime/library").Decimal | null;
+        totalCost: import("@prisma/client/runtime/library").Decimal | null;
+        reason: string | null;
         installedDeviceId: string | null;
     }>;
     deleteMovement(id: string): Promise<{
@@ -299,11 +343,11 @@ export declare class InventoryController {
             name: string;
         } | null;
         workOrder: {
+            id: string;
             customer: {
                 id: string;
                 name: string;
             };
-            id: string;
             title: string;
         } | null;
         installedDevice: {
@@ -312,63 +356,74 @@ export declare class InventoryController {
             model: string | null;
             serial: string | null;
         } | null;
+        payment: {
+            id: string;
+            currency: string;
+            concept: string;
+            amount: import("@prisma/client/runtime/library").Decimal;
+            paidAt: Date | null;
+        } | null;
         item: {
             id: string;
-            name: string;
-            createdAt: Date;
-            updatedAt: Date;
             reference: string;
-            notes: string | null;
-            customerId: string | null;
-            currency: string | null;
-            category: import(".prisma/client").$Enums.ServiceType | null;
-            costPrice: import("@prisma/client/runtime/library").Decimal | null;
             sku: string | null;
+            name: string;
+            category: import(".prisma/client").$Enums.ServiceType | null;
             unit: string;
             stock: number;
             minStock: number;
             managedStock: boolean;
             sourceType: string;
+            customerId: string | null;
             location: string | null;
             supplier: string | null;
             supplierCategory: string | null;
+            costPrice: import("@prisma/client/runtime/library").Decimal | null;
             taxAmount: import("@prisma/client/runtime/library").Decimal | null;
             priceWithTax: import("@prisma/client/runtime/library").Decimal | null;
+            currency: string | null;
+            notes: string | null;
+            createdAt: Date;
+            updatedAt: Date;
         };
     } & {
         id: string;
+        sourceType: string | null;
+        customerId: string | null;
+        currency: string | null;
         createdAt: Date;
         type: import(".prisma/client").$Enums.InventoryMovementType;
-        customerId: string | null;
         workOrderId: string | null;
-        sourceType: string | null;
         quantity: number;
-        stockAfter: number;
-        reason: string | null;
         itemId: string;
+        paymentId: string | null;
+        stockAfter: number;
+        unitCost: import("@prisma/client/runtime/library").Decimal | null;
+        totalCost: import("@prisma/client/runtime/library").Decimal | null;
+        reason: string | null;
         installedDeviceId: string | null;
     }>;
     deleteItem(id: string): Promise<{
         id: string;
-        name: string;
-        createdAt: Date;
-        updatedAt: Date;
         reference: string;
-        notes: string | null;
-        customerId: string | null;
-        currency: string | null;
-        category: import(".prisma/client").$Enums.ServiceType | null;
-        costPrice: import("@prisma/client/runtime/library").Decimal | null;
         sku: string | null;
+        name: string;
+        category: import(".prisma/client").$Enums.ServiceType | null;
         unit: string;
         stock: number;
         minStock: number;
         managedStock: boolean;
         sourceType: string;
+        customerId: string | null;
         location: string | null;
         supplier: string | null;
         supplierCategory: string | null;
+        costPrice: import("@prisma/client/runtime/library").Decimal | null;
         taxAmount: import("@prisma/client/runtime/library").Decimal | null;
         priceWithTax: import("@prisma/client/runtime/library").Decimal | null;
+        currency: string | null;
+        notes: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
 }

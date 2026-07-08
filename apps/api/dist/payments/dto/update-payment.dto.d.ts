@@ -3,10 +3,13 @@ export declare class UpdatePaymentDto {
     quoteId?: string;
     workOrderId?: string;
     vehicleId?: string;
+    inventoryItemId?: string;
     transactionType?: "INCOME" | "EXPENSE";
     category?: string;
     concept?: string;
     amount?: number;
+    quantity?: number;
+    unitPrice?: number;
     currency?: string;
     method?: string;
     reference?: string;

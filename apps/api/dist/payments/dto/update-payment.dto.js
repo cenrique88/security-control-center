@@ -16,10 +16,13 @@ class UpdatePaymentDto {
     quoteId;
     workOrderId;
     vehicleId;
+    inventoryItemId;
     transactionType;
     category;
     concept;
     amount;
+    quantity;
+    unitPrice;
     currency;
     method;
     reference;
@@ -50,6 +53,11 @@ __decorate([
 ], UpdatePaymentDto.prototype, "vehicleId", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdatePaymentDto.prototype, "inventoryItemId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsIn)(["INCOME", "EXPENSE"]),
     __metadata("design:type", String)
 ], UpdatePaymentDto.prototype, "transactionType", void 0);
@@ -69,6 +77,18 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], UpdatePaymentDto.prototype, "amount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], UpdatePaymentDto.prototype, "quantity", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], UpdatePaymentDto.prototype, "unitPrice", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),

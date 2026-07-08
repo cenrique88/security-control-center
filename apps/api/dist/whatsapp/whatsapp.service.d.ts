@@ -100,18 +100,18 @@ export declare class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             meetingsCount: number;
             meetings: ({
                 customer: {
-                    email: string | null;
                     name: string;
+                    email: string | null;
                     phone: string | null;
                 };
             } & {
                 id: string;
+                customerId: string;
+                notes: string | null;
                 createdAt: Date;
                 updatedAt: Date;
                 type: import(".prisma/client").$Enums.MeetingType;
                 status: import(".prisma/client").$Enums.MeetingStatus;
-                notes: string | null;
-                customerId: string;
                 dateTime: Date;
                 contact: string | null;
                 objective: string;
@@ -149,18 +149,18 @@ export declare class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             meetingsCount: number;
             meetings: ({
                 customer: {
-                    email: string | null;
                     name: string;
+                    email: string | null;
                     phone: string | null;
                 };
             } & {
                 id: string;
+                customerId: string;
+                notes: string | null;
                 createdAt: Date;
                 updatedAt: Date;
                 type: import(".prisma/client").$Enums.MeetingType;
                 status: import(".prisma/client").$Enums.MeetingStatus;
-                notes: string | null;
-                customerId: string;
                 dateTime: Date;
                 contact: string | null;
                 objective: string;
@@ -198,18 +198,18 @@ export declare class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             meetingsCount: number;
             meetings: ({
                 customer: {
-                    email: string | null;
                     name: string;
+                    email: string | null;
                     phone: string | null;
                 };
             } & {
                 id: string;
+                customerId: string;
+                notes: string | null;
                 createdAt: Date;
                 updatedAt: Date;
                 type: import(".prisma/client").$Enums.MeetingType;
                 status: import(".prisma/client").$Enums.MeetingStatus;
-                notes: string | null;
-                customerId: string;
                 dateTime: Date;
                 contact: string | null;
                 objective: string;

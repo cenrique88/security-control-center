@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsOptional, IsString, Min } from "class-validator";
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Min } from "class-validator";
 
 enum InventoryMovementTypeDto {
   IN = "IN",
@@ -16,6 +16,31 @@ export class CreateInventoryMovementDto {
   @IsInt()
   @Min(0)
   quantity!: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  unitCost?: number;
+
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  createExpense?: boolean;
+
+  @IsOptional()
+  @IsString()
+  paymentCategory?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentReference?: string;
 
   @IsOptional()
   @IsString()

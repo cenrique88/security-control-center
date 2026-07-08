@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, Min } from "class-validator";
+import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, Min } from "class-validator";
 
 export class UpdatePaymentDto {
   @IsOptional()
@@ -18,6 +18,10 @@ export class UpdatePaymentDto {
   vehicleId?: string;
 
   @IsOptional()
+  @IsString()
+  inventoryItemId?: string;
+
+  @IsOptional()
   @IsIn(["INCOME", "EXPENSE"])
   transactionType?: "INCOME" | "EXPENSE";
 
@@ -33,6 +37,16 @@ export class UpdatePaymentDto {
   @IsNumber()
   @Min(0)
   amount?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  quantity?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  unitPrice?: number;
 
   @IsOptional()
   @IsString()

@@ -16,10 +16,18 @@ class CreatePaymentDto {
     quoteId;
     workOrderId;
     vehicleId;
+    inventoryItemId;
+    inventoryItemName;
+    inventorySku;
+    inventorySourceType;
+    inventoryUnit;
+    createInventoryEntry;
     transactionType;
     category;
     concept;
     amount;
+    quantity;
+    unitPrice;
     currency;
     method;
     reference;
@@ -49,6 +57,36 @@ __decorate([
 ], CreatePaymentDto.prototype, "vehicleId", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "inventoryItemId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "inventoryItemName", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "inventorySku", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "inventorySourceType", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreatePaymentDto.prototype, "inventoryUnit", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreatePaymentDto.prototype, "createInventoryEntry", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsIn)(["INCOME", "EXPENSE"]),
     __metadata("design:type", String)
 ], CreatePaymentDto.prototype, "transactionType", void 0);
@@ -66,6 +104,18 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], CreatePaymentDto.prototype, "amount", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], CreatePaymentDto.prototype, "quantity", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], CreatePaymentDto.prototype, "unitPrice", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),

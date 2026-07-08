@@ -296,6 +296,8 @@ const financeCategoryLabels = [...financeCategories.INCOME, ...financeCategories
   {},
 );
 
+const stockExpenseCategories = new Set(["MATERIAL_PURCHASE", "SUPPLIES", "IMPORTER_PAYMENT", "TOOLS"]);
+
 const emptyCustomerForm: CustomerPayload = {
   name: "",
   legalName: "",
@@ -396,6 +398,14 @@ const emptyPaymentForm: PaymentPayload = {
   category: "CLIENT_PAYMENT",
   concept: "",
   amount: 0,
+  inventoryItemId: "",
+  inventoryItemName: "",
+  inventorySku: "",
+  inventorySourceType: "MATERIAL",
+  inventoryUnit: "u",
+  createInventoryEntry: true,
+  quantity: 1,
+  unitPrice: 0,
   currency: "UYU",
   method: "",
   reference: "",
@@ -431,6 +441,12 @@ const emptyInventoryMovementForm: InventoryMovementPayload = {
   itemId: "",
   type: "OUT",
   quantity: 1,
+  unitCost: 0,
+  currency: "UYU",
+  createExpense: false,
+  paymentCategory: "MATERIAL_PURCHASE",
+  paymentMethod: "",
+  paymentReference: "",
   sourceType: "MATERIAL",
   customerId: "",
   reason: "",
@@ -1598,7 +1614,7 @@ export default function Home() {
     }
   }
 
-  async function loadPayments(activeToken = token, customerId = selectedCustomerId) {
+  async function loadPayments(activeToken = token, customerId: string | null = null) {
     if (!activeToken) {
       return;
     }
@@ -1625,8 +1641,8 @@ export default function Home() {
         token: activeToken,
       });
       setPayments(data);
-    } catch {
-      setPaymentError("No se pudieron cargar los movimientos");
+    } catch (error) {
+      setPaymentError(`No se pudieron cargar los movimientos: ${getErrorMessage(error)}`);
     } finally {
       setPaymentsLoading(false);
     }
@@ -2264,9 +2280,9 @@ export default function Home() {
         body: JSON.stringify(cleanPaymentPayload({ ...paymentForm, customerId })),
       });
       setPaymentForm({ ...emptyPaymentForm, customerId: selectedCustomerId ?? "" });
-      await Promise.all([loadPayments(token), loadCustomers(token), loadSummary(token)]);
-    } catch {
-      setPaymentError("No se pudo guardar el movimiento");
+      await Promise.all([loadPayments(token), loadInventory(token), loadCustomers(token), loadSummary(token)]);
+    } catch (error) {
+      setPaymentError(`No se pudo guardar el movimiento: ${getErrorMessage(error)}`);
     } finally {
       setPaymentsLoading(false);
     }
@@ -2355,8 +2371,10 @@ export default function Home() {
         itemId: currentForm.itemId,
         sourceType: currentForm.sourceType,
         customerId: currentForm.customerId,
+        currency: currentForm.currency,
+        paymentCategory: currentForm.paymentCategory,
       }));
-      await Promise.all([loadInventory(token), loadSummary(token)]);
+      await Promise.all([loadInventory(token), loadPayments(token), loadSummary(token)]);
     } catch (error) {
       setInventoryError(`No se pudo registrar el movimiento: ${getErrorMessage(error)}`);
     } finally {
@@ -3202,7 +3220,12 @@ export default function Home() {
   }
 
   if (!authChecked) {
-    return <main className="loadingScreen">Preparando SSCC...</main>;
+    return (
+      <main className="loadingScreen">
+        <span>Preparando SSCC...</span>
+        <a href="/login">Ingresar al login</a>
+      </main>
+    );
   }
 
   if (!user || authRedirecting) {
@@ -3611,6 +3634,7 @@ export default function Home() {
         ) : activeModule === "Gastos e Ingresos" ? (
           <PaymentsView
             customers={customers}
+            inventoryItems={inventoryItems}
             loading={paymentsLoading}
             paymentError={paymentError}
             paymentForm={paymentForm}
@@ -3625,7 +3649,7 @@ export default function Home() {
             onRefresh={() => loadPayments()}
             onSave={savePayment}
             onSearchChange={setPaymentSearch}
-            onSelectCustomer={selectCustomer}
+            onCustomerFilter={(customerId) => loadPayments(token, customerId)}
             onStatusChange={setPaymentStatus}
             onTypeChange={setPaymentType}
           />
@@ -6924,7 +6948,6 @@ function MeetingsView({
   onRefresh,
   onSave,
   onSearchChange,
-  onSelectCustomer,
   onStatusChange,
   onTypeChange,
   onUpdateStatus,
@@ -9626,6 +9649,7 @@ function QuotesView({
 
 function PaymentsView({
   customers,
+  inventoryItems,
   loading,
   paymentError,
   paymentForm,
@@ -9640,11 +9664,12 @@ function PaymentsView({
   onRefresh,
   onSave,
   onSearchChange,
-  onSelectCustomer,
+  onCustomerFilter,
   onStatusChange,
   onTypeChange,
 }: {
   customers: Customer[];
+  inventoryItems: InventoryItem[];
   loading: boolean;
   paymentError: string;
   paymentForm: PaymentPayload;
@@ -9659,12 +9684,109 @@ function PaymentsView({
   onRefresh: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
   onSearchChange: (value: string) => void;
-  onSelectCustomer: (customerId: string) => void;
+  onCustomerFilter: (customerId: string | null) => void;
   onStatusChange: (value: "ALL" | "PENDING" | "PAID" | "OVERDUE") => void;
   onTypeChange: (value: "ALL" | "INCOME" | "EXPENSE") => void;
 }) {
   const transactionType = paymentForm.transactionType ?? "INCOME";
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+  const [entityQuery, setEntityQuery] = useState("");
+  const [inventoryQuery, setInventoryQuery] = useState("");
+  const [filterEntityQuery, setFilterEntityQuery] = useState("");
+  const selectedPaymentCustomer = customers.find((customer) => customer.id === (paymentForm.customerId || selectedCustomerId || ""));
+  const isStockExpense = transactionType === "EXPENSE" && stockExpenseCategories.has(paymentForm.category || "");
+  const calculatedStockAmount =
+    isStockExpense && paymentForm.createInventoryEntry
+      ? (Number(paymentForm.quantity) || 0) * (Number(paymentForm.unitPrice) || 0)
+      : Number(paymentForm.amount) || 0;
+  const customerTotals = useMemo(() => {
+    const totals = new Map<string, { name: string; income: number; expense: number; balance: number }>();
+    payments.forEach((payment) => {
+      const current = totals.get(payment.customer.id) ?? {
+        name: payment.customer.name,
+        income: 0,
+        expense: 0,
+        balance: 0,
+      };
+      const amount = toMoneyNumber(payment.amount);
+      if (payment.transactionType === "EXPENSE") {
+        current.expense += amount;
+      } else {
+        current.income += amount;
+      }
+      current.balance = current.income - current.expense;
+      totals.set(payment.customer.id, current);
+    });
+    return Array.from(totals.values()).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
+  }, [payments]);
+
+  useEffect(() => {
+    setEntityQuery(selectedPaymentCustomer ? `${selectedPaymentCustomer.name} - ${customerTypeLabels[selectedPaymentCustomer.type ?? "NORMAL"]}` : "");
+  }, [selectedPaymentCustomer]);
+
+  useEffect(() => {
+    const selectedItem = inventoryItems.find((item) => item.id === paymentForm.inventoryItemId);
+    setInventoryQuery(selectedItem?.name ?? paymentForm.inventoryItemName ?? "");
+  }, [inventoryItems, paymentForm.inventoryItemId, paymentForm.inventoryItemName]);
+
+  function selectEntityByLabel(value: string) {
+    setEntityQuery(value);
+    const cleanValue = value.trim().toLowerCase();
+    const customer = customers.find((item) => {
+      const fullLabel = `${item.name} - ${customerTypeLabels[item.type ?? "NORMAL"]}`.toLowerCase();
+      return fullLabel === cleanValue || item.name.toLowerCase() === cleanValue;
+    });
+
+    onFormChange({ ...paymentForm, customerId: customer?.id ?? "" });
+  }
+
+  function selectInventoryByLabel(value: string) {
+    setInventoryQuery(value);
+    const cleanValue = value.trim().toLowerCase();
+    const item = inventoryItems.find((currentItem) => {
+      const fullLabel = [currentItem.name, currentItem.sku ? `SKU ${currentItem.sku}` : ""].filter(Boolean).join(" - ").toLowerCase();
+      return fullLabel === cleanValue || currentItem.name.toLowerCase() === cleanValue;
+    });
+
+    if (item) {
+      const itemPrice = toMoneyNumber(item.costPrice ?? item.priceWithTax ?? 0);
+      onFormChange({
+        ...paymentForm,
+        inventoryItemId: item.id,
+        inventoryItemName: item.name,
+        inventorySku: item.sku ?? "",
+        inventorySourceType: item.sourceType ?? paymentForm.inventorySourceType ?? "MATERIAL",
+        inventoryUnit: item.unit || "u",
+        unitPrice: itemPrice || Number(paymentForm.unitPrice) || 0,
+        concept: paymentForm.concept || item.name,
+        amount: (Number(paymentForm.quantity) || 1) * (itemPrice || Number(paymentForm.unitPrice) || 0),
+      });
+    } else {
+      onFormChange({
+        ...paymentForm,
+        inventoryItemId: "",
+        inventoryItemName: value,
+        concept: paymentForm.concept || value,
+      });
+    }
+  }
+
+  function filterByEntityLabel(value: string) {
+    setFilterEntityQuery(value);
+    const cleanValue = value.trim().toLowerCase();
+    if (!cleanValue) {
+      onCustomerFilter(null);
+      return;
+    }
+
+    const customer = customers.find((item) => {
+      const fullLabel = `${item.name} - ${customerTypeLabels[item.type ?? "NORMAL"]}`.toLowerCase();
+      return fullLabel === cleanValue || item.name.toLowerCase() === cleanValue;
+    });
+    if (customer) {
+      onCustomerFilter(customer.id);
+    }
+  }
 
   return (
     <section className="paymentsModule">
@@ -9709,26 +9831,35 @@ function PaymentsView({
           <div className="formGrid">
             <label>
               Entidad vinculada
-              <select
-                value={paymentForm.customerId || selectedCustomerId || ""}
-                onChange={(event) => {
-                  onSelectCustomer(event.target.value);
-                  onFormChange({ ...paymentForm, customerId: event.target.value });
-                }}
-              >
-                <option value="">Seleccionar cliente</option>
+              <input
+                list="payment-entities"
+                value={entityQuery}
+                onChange={(event) => selectEntityByLabel(event.target.value)}
+                placeholder="Escribir cliente, importador o uso personal"
+              />
+              <datalist id="payment-entities">
                 {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
+                  <option key={customer.id} value={`${customer.name} - ${customerTypeLabels[customer.type ?? "NORMAL"]}`}>
                     {customer.name} - {customerTypeLabels[customer.type ?? "NORMAL"]}
                   </option>
                 ))}
-              </select>
+              </datalist>
             </label>
             <label>
               Categoria
               <select
                 value={paymentForm.category || financeCategories[transactionType][0]?.value || ""}
-                onChange={(event) => onFormChange({ ...paymentForm, category: event.target.value })}
+                onChange={(event) => {
+                  const category = event.target.value;
+                  onFormChange({
+                    ...paymentForm,
+                    category,
+                    createInventoryEntry:
+                      transactionType === "EXPENSE" && stockExpenseCategories.has(category)
+                        ? paymentForm.createInventoryEntry ?? true
+                        : paymentForm.createInventoryEntry,
+                  });
+                }}
               >
                 {financeCategories[transactionType].map((category) => (
                   <option key={category.value} value={category.value}>
@@ -9743,8 +9874,9 @@ function PaymentsView({
                 type="number"
                 min="0"
                 step="0.01"
-                value={paymentForm.amount}
+                value={isStockExpense && paymentForm.createInventoryEntry ? calculatedStockAmount : paymentForm.amount}
                 onChange={(event) => onFormChange({ ...paymentForm, amount: Number(event.target.value) })}
+                readOnly={isStockExpense && paymentForm.createInventoryEntry}
               />
             </label>
             <label>
@@ -9814,6 +9946,95 @@ function PaymentsView({
             </label>
           </div>
 
+          {isStockExpense ? (
+            <section className="inventoryLinkedBox">
+              <div className="sectionHeader compactHeader">
+                <div>
+                  <p>Almacen automatico</p>
+                  <h3>Entrada por compra</h3>
+                </div>
+              </div>
+              <label className="checkRow">
+                <input
+                  type="checkbox"
+                  checked={paymentForm.createInventoryEntry ?? true}
+                  onChange={(event) => onFormChange({ ...paymentForm, createInventoryEntry: event.target.checked })}
+                />
+                Ingresar este egreso al almacen
+              </label>
+              <div className="formGrid">
+                <label className="wideField">
+                  Producto o insumo
+                  <input
+                    list="payment-inventory-items"
+                    value={inventoryQuery}
+                    onChange={(event) => selectInventoryByLabel(event.target.value)}
+                    placeholder="Buscar articulo existente o escribir uno nuevo"
+                  />
+                  <datalist id="payment-inventory-items">
+                    {inventoryItems.map((item) => (
+                      <option key={item.id} value={[item.name, item.sku ? `SKU ${item.sku}` : ""].filter(Boolean).join(" - ")}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </datalist>
+                </label>
+                <label>
+                  Cantidad
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={paymentForm.quantity ?? 1}
+                    onChange={(event) => {
+                      const quantity = Number(event.target.value) || 0;
+                      const unitPrice = Number(paymentForm.unitPrice) || 0;
+                      onFormChange({ ...paymentForm, quantity, amount: quantity * unitPrice });
+                    }}
+                  />
+                </label>
+                <label>
+                  Precio unitario
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={paymentForm.unitPrice ?? 0}
+                    onChange={(event) => {
+                      const unitPrice = Number(event.target.value) || 0;
+                      const quantity = Number(paymentForm.quantity) || 0;
+                      onFormChange({ ...paymentForm, unitPrice, amount: quantity * unitPrice });
+                    }}
+                  />
+                </label>
+                <label>
+                  Unidad
+                  <input
+                    value={paymentForm.inventoryUnit || "u"}
+                    onChange={(event) => onFormChange({ ...paymentForm, inventoryUnit: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Catalogo destino
+                  <select
+                    value={paymentForm.inventorySourceType || "MATERIAL"}
+                    onChange={(event) => onFormChange({ ...paymentForm, inventorySourceType: event.target.value })}
+                  >
+                    {inventoryEntryModes.map((mode) => (
+                      <option key={mode.value} value={mode.value}>
+                        {mode.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="paymentAutoTotal">
+                <span>Total a egresar e ingresar al stock</span>
+                <strong>{formatPrice(calculatedStockAmount, paymentForm.currency || "UYU")}</strong>
+              </div>
+            </section>
+          ) : null}
+
           {paymentError ? <p className="formError">{paymentError}</p> : null}
 
           <button type="submit" className="primaryButton" disabled={loading}>
@@ -9831,6 +10052,22 @@ function PaymentsView({
                 onChange={(event) => onSearchChange(event.target.value)}
                 placeholder="Buscar por concepto o cliente"
               />
+            </label>
+            <label className="searchBox compactSearchBox">
+              <Search size={18} />
+              <input
+                list="payment-filter-entities"
+                value={filterEntityQuery}
+                onChange={(event) => filterByEntityLabel(event.target.value)}
+                placeholder="Filtrar entidad"
+              />
+              <datalist id="payment-filter-entities">
+                {customers.map((customer) => (
+                  <option key={customer.id} value={`${customer.name} - ${customerTypeLabels[customer.type ?? "NORMAL"]}`}>
+                    {customer.name}
+                  </option>
+                ))}
+              </datalist>
             </label>
             <select
               value={paymentType}
@@ -9856,6 +10093,18 @@ function PaymentsView({
               Filtrar
             </button>
           </div>
+
+          {customerTotals.length ? (
+            <div className="paymentCustomerTotals" aria-label="Totales por entidad">
+              {customerTotals.slice(0, 6).map((total) => (
+                <article key={total.name}>
+                  <span>{total.name}</span>
+                  <small>Ingresos {formatPrice(total.income, "UYU")} · Egresos {formatPrice(total.expense, "UYU")}</small>
+                  <strong className={total.balance < 0 ? "negativeAmount" : "positiveAmount"}>{formatPrice(total.balance, "UYU")}</strong>
+                </article>
+              ))}
+            </div>
+          ) : null}
 
           <div className="paymentListTable" role="table" aria-label="Movimientos financieros">
             <div className="paymentListHeader" role="row">
@@ -9994,6 +10243,30 @@ function PaymentDetailModal({
                 <span key={item}>{item}</span>
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {payment.inventoryItem ? (
+          <section className="customerProfileSection">
+            <h3>Almacen vinculado</h3>
+            <dl className="meetingModalFacts">
+              <div>
+                <dt>Articulo</dt>
+                <dd>{payment.inventoryItem.name}</dd>
+              </div>
+              <div>
+                <dt>Cantidad</dt>
+                <dd>{payment.quantity ?? payment.inventoryMovements?.[0]?.quantity ?? 0} {payment.inventoryItem.unit}</dd>
+              </div>
+              <div>
+                <dt>Precio unitario</dt>
+                <dd>{formatPrice(payment.unitPrice, payment.currency || "UYU")}</dd>
+              </div>
+              <div>
+                <dt>Stock actual</dt>
+                <dd>{payment.inventoryItem.stock} {payment.inventoryItem.unit}</dd>
+              </div>
+            </dl>
           </section>
         ) : null}
 
@@ -11112,7 +11385,12 @@ function InventoryView({
                           type="button"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => {
-                            onMovementFormChange({ ...inventoryMovementForm, itemId: item.id });
+                            onMovementFormChange({
+                              ...inventoryMovementForm,
+                              itemId: item.id,
+                              unitCost: Number(inventoryMovementForm.unitCost) || toMoneyNumber(item.costPrice ?? item.priceWithTax ?? 0),
+                              currency: inventoryMovementForm.currency || item.currency || "UYU",
+                            });
                             setMovementItemQuery(item.name);
                             setMovementPickerOpen(false);
                           }}
@@ -11152,6 +11430,71 @@ function InventoryView({
                   onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, quantity: Number(event.target.value) })}
                 />
               </label>
+              {inventoryMovementForm.type === "IN" ? (
+                <>
+                  <label>
+                    Costo unitario
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={inventoryMovementForm.unitCost ?? 0}
+                      onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, unitCost: Number(event.target.value) })}
+                    />
+                  </label>
+                  <label>
+                    Moneda
+                    <select
+                      value={inventoryMovementForm.currency || "UYU"}
+                      onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, currency: event.target.value })}
+                    >
+                      <option value="UYU">UYU</option>
+                      <option value="USD">USD</option>
+                    </select>
+                  </label>
+                  <label className="checkRow wideField">
+                    <input
+                      type="checkbox"
+                      checked={inventoryMovementForm.createExpense ?? false}
+                      onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, createExpense: event.target.checked })}
+                    />
+                    Crear egreso automatico en Gastos e Ingresos
+                  </label>
+                  {inventoryMovementForm.createExpense ? (
+                    <>
+                      <label>
+                        Categoria del egreso
+                        <select
+                          value={inventoryMovementForm.paymentCategory || "MATERIAL_PURCHASE"}
+                          onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, paymentCategory: event.target.value })}
+                        >
+                          {financeCategories.EXPENSE.filter((category) => stockExpenseCategories.has(category.value)).map((category) => (
+                            <option key={category.value} value={category.value}>
+                              {category.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Metodo
+                        <input
+                          value={inventoryMovementForm.paymentMethod || ""}
+                          onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, paymentMethod: event.target.value })}
+                          placeholder="Transferencia, efectivo"
+                        />
+                      </label>
+                      <label className="wideField">
+                        Referencia del gasto
+                        <input
+                          value={inventoryMovementForm.paymentReference || ""}
+                          onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, paymentReference: event.target.value })}
+                          placeholder="Factura, boleta o comprobante"
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
               <label className="wideField">
                 Trabajo relacionado
                 <select
@@ -12399,15 +12742,30 @@ function cleanMeetingPayload(form: MeetingPayload): MeetingPayload {
 }
 
 function cleanPaymentPayload(form: PaymentPayload): PaymentPayload {
+  const isStockExpense = form.transactionType === "EXPENSE" && stockExpenseCategories.has(form.category || "");
+  const quantity = Number(form.quantity) || 0;
+  const unitPrice = Number(form.unitPrice) || 0;
+  const calculatedAmount = isStockExpense && form.createInventoryEntry && quantity > 0 && unitPrice > 0
+    ? quantity * unitPrice
+    : Number(form.amount) || 0;
+
   return {
     customerId: form.customerId,
     quoteId: form.quoteId || undefined,
     workOrderId: form.workOrderId || undefined,
     vehicleId: form.vehicleId || undefined,
+    inventoryItemId: form.inventoryItemId || undefined,
+    inventoryItemName: form.inventoryItemName?.trim() || undefined,
+    inventorySku: form.inventorySku?.trim() || undefined,
+    inventorySourceType: form.inventorySourceType?.trim() || undefined,
+    inventoryUnit: form.inventoryUnit?.trim() || undefined,
+    createInventoryEntry: form.createInventoryEntry,
     transactionType: form.transactionType ?? "INCOME",
     category: form.category?.trim() || (form.transactionType === "EXPENSE" ? "OTHER_EXPENSE" : "CLIENT_PAYMENT"),
     concept: form.concept.trim(),
-    amount: Number(form.amount) || 0,
+    amount: calculatedAmount,
+    quantity: quantity || undefined,
+    unitPrice: unitPrice || undefined,
     currency: form.currency || "UYU",
     method: form.method?.trim() || undefined,
     reference: form.reference?.trim() || undefined,
@@ -12454,6 +12812,12 @@ function cleanInventoryMovementPayload(form: InventoryMovementPayload): Inventor
     itemId: form.itemId,
     type: form.type,
     quantity: Number(form.quantity) || 0,
+    unitCost: Number(form.unitCost) || undefined,
+    currency: form.currency?.trim() || undefined,
+    createExpense: form.createExpense,
+    paymentCategory: form.paymentCategory?.trim() || undefined,
+    paymentMethod: form.paymentMethod?.trim() || undefined,
+    paymentReference: form.paymentReference?.trim() || undefined,
     sourceType: form.sourceType?.trim() || undefined,
     customerId: form.customerId || undefined,
     reason: form.reason?.trim() || undefined,

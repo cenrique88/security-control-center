@@ -196,22 +196,61 @@ export class InventoryService {
       const quantity = dto.quantity;
       const stockAfter =
         type === "IN" ? item.stock + quantity : type === "OUT" ? item.stock - quantity : quantity;
+      const unitCost = Number(dto.unitCost) || undefined;
+      const totalCost = unitCost && quantity ? unitCost * quantity : undefined;
+      const currency = this.cleanOptional(dto.currency) ?? "UYU";
 
       if (stockAfter < 0) {
         throw new BadRequestException("Stock cannot be negative");
       }
 
+      if (dto.createExpense && type === "IN" && !dto.customerId) {
+        throw new BadRequestException("Selecciona una entidad para crear el egreso contable");
+      }
+
       await tx.inventoryItem.update({
         where: { id: item.id },
-        data: { stock: stockAfter, managedStock: true },
+        data: {
+          stock: stockAfter,
+          managedStock: true,
+          costPrice: unitCost,
+          priceWithTax: unitCost,
+          currency,
+        },
       });
+
+      const payment =
+        dto.createExpense && type === "IN" && dto.customerId && totalCost
+          ? await tx.payment.create({
+              data: {
+                customerId: dto.customerId,
+                inventoryItemId: item.id,
+                transactionType: "EXPENSE",
+                category: this.cleanOptional(dto.paymentCategory) ?? this.paymentCategoryFromSource(dto.sourceType),
+                concept: this.cleanOptional(dto.reason) ?? "Compra para almacen",
+                amount: totalCost,
+                quantity,
+                unitPrice: unitCost,
+                currency,
+                method: this.cleanOptional(dto.paymentMethod),
+                reference: this.cleanOptional(dto.paymentReference),
+                notes: "Generado desde movimiento de almacen",
+                paidAt: new Date(),
+              },
+              select: { id: true },
+            })
+          : null;
 
       return tx.inventoryMovement.create({
         data: {
           itemId: item.id,
+          paymentId: payment?.id,
           type,
           quantity,
           stockAfter,
+          unitCost,
+          totalCost,
+          currency,
           sourceType: this.cleanNullable(dto.sourceType),
           customerId: this.cleanNullable(dto.customerId),
           reason: this.cleanNullable(dto.reason),
@@ -374,7 +413,26 @@ export class InventoryService {
           serial: true,
         },
       },
+      payment: {
+        select: {
+          id: true,
+          concept: true,
+          amount: true,
+          currency: true,
+          paidAt: true,
+        },
+      },
     } satisfies Prisma.InventoryMovementInclude;
+  }
+
+  private paymentCategoryFromSource(sourceType?: string) {
+    if (sourceType === "ASSET") {
+      return "TOOLS";
+    }
+    if (sourceType === "THIRD_PARTY_SUPPLY") {
+      return "SUPPLIES";
+    }
+    return "MATERIAL_PURCHASE";
   }
 
   private async nextReference(tx: Prisma.TransactionClient) {

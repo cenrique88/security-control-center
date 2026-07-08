@@ -565,10 +565,13 @@ export type Payment = {
   quoteId?: string | null;
   workOrderId?: string | null;
   vehicleId?: string | null;
+  inventoryItemId?: string | null;
   transactionType: "INCOME" | "EXPENSE";
   category: string;
   concept: string;
   amount: string | number;
+  quantity?: number | null;
+  unitPrice?: string | number | null;
   currency: string;
   method?: string | null;
   reference?: string | null;
@@ -600,6 +603,22 @@ export type Payment = {
     name: string;
     plate?: string | null;
   } | null;
+  inventoryItem?: {
+    id: string;
+    reference: string;
+    sku?: string | null;
+    name: string;
+    unit: string;
+    stock: number;
+    sourceType?: string | null;
+  } | null;
+  inventoryMovements?: Array<{
+    id: string;
+    type: InventoryMovementType;
+    quantity: number;
+    stockAfter: number;
+    createdAt: string;
+  }>;
 };
 
 export type PaymentPayload = {
@@ -607,10 +626,18 @@ export type PaymentPayload = {
   quoteId?: string;
   workOrderId?: string;
   vehicleId?: string;
+  inventoryItemId?: string;
+  inventoryItemName?: string;
+  inventorySku?: string;
+  inventorySourceType?: string;
+  inventoryUnit?: string;
+  createInventoryEntry?: boolean;
   transactionType?: "INCOME" | "EXPENSE";
   category?: string;
   concept: string;
   amount: number;
+  quantity?: number;
+  unitPrice?: number;
   currency?: string;
   method?: string;
   reference?: string;
@@ -779,9 +806,13 @@ export type InventoryMovementType = "IN" | "OUT" | "ADJUST";
 export type InventoryMovement = {
   id: string;
   itemId: string;
+  paymentId?: string | null;
   type: InventoryMovementType;
   quantity: number;
   stockAfter: number;
+  unitCost?: string | number | null;
+  totalCost?: string | number | null;
+  currency?: string | null;
   sourceType?: string | null;
   customerId?: string | null;
   reason?: string | null;
@@ -812,6 +843,13 @@ export type InventoryMovement = {
     model?: string | null;
     serial?: string | null;
     ipAddress?: string | null;
+  } | null;
+  payment?: {
+    id: string;
+    concept: string;
+    amount: string | number;
+    currency: string;
+    paidAt?: string | null;
   } | null;
 };
 
@@ -869,6 +907,12 @@ export type InventoryMovementPayload = {
   itemId: string;
   type: InventoryMovementType;
   quantity: number;
+  unitCost?: number;
+  currency?: string;
+  createExpense?: boolean;
+  paymentCategory?: string;
+  paymentMethod?: string;
+  paymentReference?: string;
   sourceType?: string;
   customerId?: string;
   reason?: string;

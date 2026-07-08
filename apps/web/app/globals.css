@@ -2451,6 +2451,67 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.inventoryLinkedBox,
+.paymentCustomerTotals {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(15, 34, 52, 0.72);
+}
+
+.inventoryLinkedBox {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.paymentAutoTotal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(67, 211, 198, 0.32);
+  border-radius: 8px;
+  background: rgba(20, 184, 166, 0.11);
+}
+
+.paymentAutoTotal span,
+.paymentCustomerTotals small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.paymentAutoTotal strong {
+  color: var(--text);
+  font-size: 22px;
+}
+
+.paymentCustomerTotals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  padding: 12px;
+  margin: 12px 14px 0;
+}
+
+.paymentCustomerTotals article {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(5, 13, 24, 0.38);
+}
+
+.paymentCustomerTotals span,
+.paymentCustomerTotals strong {
+  overflow-wrap: anywhere;
+}
+
+.compactSearchBox {
+  max-width: 340px;
+}
+
 .deviceCard p,
 .workOrderCard p {
   margin: 0;
