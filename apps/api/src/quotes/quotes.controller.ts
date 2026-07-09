@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { QuoteStatus, ServiceType } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CreateQuoteDto } from "./dto/create-quote.dto";
@@ -28,5 +28,10 @@ export class QuotesController {
   @Patch(":id")
   update(@Param("id") id: string, @Body() dto: UpdateQuoteDto) {
     return this.quotesService.update(id, dto);
+  }
+
+  @Delete(":id")
+  remove(@Param("id") id: string) {
+    return this.quotesService.remove(id);
   }
 }

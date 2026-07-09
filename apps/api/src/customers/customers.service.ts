@@ -96,6 +96,30 @@ export class CustomersService {
     });
   }
 
+  async remove(id: string) {
+    await this.ensureExists(id);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.inventoryMovement.updateMany({
+        where: { customerId: id },
+        data: { customerId: null },
+      });
+      await tx.inventoryItem.updateMany({
+        where: { customerId: id },
+        data: { customerId: null },
+      });
+
+      return tx.customer.delete({
+        where: { id },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+        },
+      });
+    });
+  }
+
   async listSites(customerId: string) {
     await this.ensureExists(customerId);
 

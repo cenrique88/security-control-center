@@ -215,6 +215,25 @@ let QuotesService = class QuotesService {
             });
         });
     }
+    async remove(id) {
+        const quote = await this.prisma.quote.findUnique({
+            where: { id },
+            select: { id: true },
+        });
+        if (!quote) {
+            throw new common_1.NotFoundException("Quote not found");
+        }
+        return this.prisma.$transaction(async (tx) => {
+            await tx.payment.updateMany({
+                where: { quoteId: id },
+                data: { quoteId: null },
+            });
+            return tx.quote.delete({
+                where: { id },
+                include: this.includeCustomer(),
+            });
+        });
+    }
     includeCustomer() {
         return {
             customer: {

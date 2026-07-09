@@ -25,6 +25,7 @@ import {
   Save,
   Search,
   ShieldCheck,
+  Trash2,
   Users,
   Video,
   Wrench,
@@ -198,14 +199,41 @@ type MessageRecipientOption = {
   detail?: string;
 };
 
-type InventorySortKey = "reference" | "date" | "brand" | "model" | "installed" | "status";
+type InventorySortKey = "reference" | "date" | "brand" | "model" | "stock" | "price" | "status";
 type InventoryColumnKey = InventorySortKey | "actions";
 type InventoryEntryMode = "MATERIAL" | "THIRD_PARTY_SUPPLY" | "ASSET";
+type InventoryViewMode = "stock" | "catalog" | "all" | "archived";
+
+type InvoiceImportPreview = {
+  providerName: string;
+  providerTaxId?: string;
+  buyerName?: string;
+  date?: string;
+  currency: string;
+  reference: string;
+  items: Array<{
+    description: string;
+    quantity: number;
+    unit: string;
+    unitPrice: number;
+    taxRate: number;
+    subtotal: number;
+  }>;
+  totals: {
+    subtotal: number;
+    tax: number;
+    total: number;
+  };
+  warnings?: string[];
+  extractedTextLength?: number;
+};
 
 type QuoteCatalogOption = {
   id: string;
   code: string;
   name: string;
+  customerId?: string | null;
+  supplier?: string | null;
   type: QuoteItemType;
   category: string;
   description?: string | null;
@@ -214,6 +242,8 @@ type QuoteCatalogOption = {
   unitCost: number;
   taxRate: number;
   currency?: string | null;
+  stock?: number;
+  managedStock?: boolean;
   source: "INVENTORY" | "PRICE_BOOK";
 };
 
@@ -222,7 +252,8 @@ const inventoryColumnDefaults: Record<InventoryColumnKey, number> = {
   date: 124,
   brand: 180,
   model: 620,
-  installed: 136,
+  stock: 136,
+  price: 150,
   status: 150,
   actions: 116,
 };
@@ -232,18 +263,20 @@ const inventoryColumnMinimums: Record<InventoryColumnKey, number> = {
   date: 92,
   brand: 130,
   model: 260,
-  installed: 108,
+  stock: 108,
+  price: 118,
   status: 118,
   actions: 92,
 };
 
-const inventoryColumnOrder: InventoryColumnKey[] = ["reference", "date", "brand", "model", "installed", "status", "actions"];
+const inventoryColumnOrder: InventoryColumnKey[] = ["reference", "date", "brand", "model", "stock", "price", "status", "actions"];
 const inventorySortableColumns: Array<{ key: InventorySortKey; label: string }> = [
   { key: "reference", label: "Ref." },
   { key: "date", label: "Fecha" },
   { key: "brand", label: "Importador" },
   { key: "model", label: "Modelo" },
-  { key: "installed", label: "Instalado" },
+  { key: "stock", label: "Stock real" },
+  { key: "price", label: "Precio" },
   { key: "status", label: "Estado" },
 ];
 
@@ -257,6 +290,7 @@ const inventorySourceLabels: Record<string, string> = {
   MATERIAL: "Materiales",
   THIRD_PARTY_SUPPLY: "Tercerizado",
   ASSET: "Activo",
+  ARCHIVED: "Archivado",
 };
 
 const financeTypeLabels = {
@@ -276,6 +310,7 @@ const financeCategories: Record<"INCOME" | "EXPENSE", Array<{ value: string; lab
   ],
   EXPENSE: [
     { value: "MATERIAL_PURCHASE", label: "Compra de materiales" },
+    { value: "STOCK_CONSUMPTION", label: "Consumo interno / salida de almacen" },
     { value: "SUPPLIES", label: "Insumos" },
     { value: "IMPORTER_PAYMENT", label: "Pago importador" },
     { value: "FUEL", label: "Combustible" },
@@ -296,7 +331,7 @@ const financeCategoryLabels = [...financeCategories.INCOME, ...financeCategories
   {},
 );
 
-const stockExpenseCategories = new Set(["MATERIAL_PURCHASE", "SUPPLIES", "IMPORTER_PAYMENT", "TOOLS"]);
+const stockExpenseCategories = new Set(["MATERIAL_PURCHASE", "STOCK_CONSUMPTION", "SUPPLIES", "IMPORTER_PAYMENT", "TOOLS"]);
 
 const emptyCustomerForm: CustomerPayload = {
   name: "",
@@ -452,6 +487,7 @@ const emptyInventoryMovementForm: InventoryMovementPayload = {
   reason: "",
   workOrderId: "",
   installedDeviceId: "",
+  items: [],
 };
 
 const fallbackGmailStatus: GmailStatus = {
@@ -659,7 +695,7 @@ export default function Home() {
   const [inventorySupplier, setInventorySupplier] = useState("ALL");
   const [inventoryCustomer, setInventoryCustomer] = useState("ALL");
   const [inventorySource, setInventorySource] = useState<InventoryEntryMode | "ALL">("ALL");
-  const [inventoryMode, setInventoryMode] = useState<"stock" | "catalog" | "all">("stock");
+  const [inventoryMode, setInventoryMode] = useState<InventoryViewMode>("stock");
   const [inventoryStockFilter, setInventoryStockFilter] = useState<"ALL" | "LOW">("ALL");
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerStatus, setCustomerStatus] = useState<CustomerStatus | "ALL">("ALL");
@@ -1651,7 +1687,7 @@ export default function Home() {
   async function loadInventory(
     activeToken = token,
     options?: {
-      mode?: "stock" | "catalog" | "all";
+      mode?: InventoryViewMode;
       category?: DeviceType | "ALL";
       supplier?: string;
       customerId?: string;
@@ -1689,7 +1725,7 @@ export default function Home() {
         params.set("sourceType", sourceType);
       }
       params.set("mode", mode);
-      if (inventoryStockFilter === "LOW") {
+      if (inventoryStockFilter === "LOW" && mode !== "archived") {
         params.set("lowStock", "true");
       }
 
@@ -1956,6 +1992,55 @@ export default function Home() {
       await Promise.all([loadCustomers(token), loadSummary(token)]);
     } catch (error) {
       setCustomerError(`No se pudo guardar el cliente: ${getErrorMessage(error)}`);
+    } finally {
+      setCustomersLoading(false);
+    }
+  }
+
+  async function deleteCustomer(customer: Customer) {
+    if (!token) {
+      return;
+    }
+
+    const label = customer.type === "THIRD_PARTY" ? "tercerizado" : customer.type === "IMPORTER" ? "importador" : "cliente";
+    const confirmed = window.confirm(
+      `Eliminar ${label} "${customer.name}"?\n\nEsta accion no se puede deshacer. Se borrara la ficha y su historial vinculado en el CRM. El stock de almacen asociado no se borra, solo queda desvinculado.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setCustomersLoading(true);
+    setCustomerError("");
+    try {
+      await apiRequest<{ id: string; name: string; type: CustomerType }>(`/api/customers/${customer.id}`, {
+        token,
+        method: "DELETE",
+      });
+
+      if (selectedCustomerId === customer.id) {
+        setSelectedCustomerId(null);
+        setSites([]);
+        setDevices([]);
+      }
+      if (editingCustomerId === customer.id) {
+        setEditingCustomerId(null);
+        setCustomerForm({ ...emptyCustomerForm, type: activeModule === "Tercerizados" ? "THIRD_PARTY" : customerDirectoryType });
+      }
+      setCustomerProfile(null);
+      setCustomerProfileError("");
+      await Promise.all([
+        loadCustomers(token),
+        loadSummary(token),
+        loadWorkOrders(token, null, "ALL"),
+        loadMeetings(token),
+        loadQuotes(token),
+        loadPayments(token),
+        loadInventory(token),
+      ]);
+      setStatus(`${customer.name} eliminado correctamente.`);
+    } catch (error) {
+      setCustomerError(`No se pudo eliminar: ${getErrorMessage(error)}`);
     } finally {
       setCustomersLoading(false);
     }
@@ -2353,26 +2438,50 @@ export default function Home() {
       return;
     }
 
-    if (!inventoryMovementForm.itemId || Number(inventoryMovementForm.quantity) < 0) {
+    const movementBatchItems = inventoryMovementForm.items ?? [];
+    const hasBatchItems = movementBatchItems.length > 0;
+    const hasSingleItem = Boolean(inventoryMovementForm.itemId);
+    if ((!hasBatchItems && !hasSingleItem) || Number(inventoryMovementForm.quantity) < 0) {
       setInventoryError("Selecciona un articulo y una cantidad valida");
+      return;
+    }
+
+    const linesToValidate = hasBatchItems
+      ? movementBatchItems
+      : [{ itemId: inventoryMovementForm.itemId, quantity: Number(inventoryMovementForm.quantity) || 0 }];
+    for (const line of linesToValidate) {
+      const item = inventoryItems.find((inventoryItem) => inventoryItem.id === line.itemId);
+      if (!item) {
+        setInventoryError("Hay un articulo seleccionado que ya no existe en almacen.");
+        return;
+      }
+      if (inventoryMovementForm.type === "OUT" && line.quantity > item.stock) {
+        setInventoryError(`No puedes sacar ${line.quantity} de ${item.name}; stock disponible: ${item.stock}.`);
+        return;
+      }
+    }
+
+    if (inventoryMovementForm.createExpense && !inventoryMovementForm.customerId) {
+      setInventoryError("Selecciona cliente, importador o uso para justificar el egreso contable.");
       return;
     }
 
     setInventoryLoading(true);
     setInventoryError("");
     try {
-      await apiRequest("/api/inventory/movements", {
+      await apiRequest(hasBatchItems ? "/api/inventory/movements/batch" : "/api/inventory/movements", {
         token,
         method: "POST",
-        body: JSON.stringify(cleanInventoryMovementPayload(inventoryMovementForm)),
+        body: JSON.stringify(hasBatchItems ? cleanInventoryMovementBatchPayload(inventoryMovementForm) : cleanInventoryMovementPayload(inventoryMovementForm)),
       });
       setInventoryMovementForm((currentForm) => ({
         ...emptyInventoryMovementForm,
-        itemId: currentForm.itemId,
+        type: currentForm.type,
         sourceType: currentForm.sourceType,
         customerId: currentForm.customerId,
         currency: currentForm.currency,
         paymentCategory: currentForm.paymentCategory,
+        createExpense: currentForm.type === "OUT" ? true : currentForm.createExpense,
       }));
       await Promise.all([loadInventory(token), loadPayments(token), loadSummary(token)]);
     } catch (error) {
@@ -2451,14 +2560,20 @@ export default function Home() {
       return;
     }
 
-    if (!window.confirm(`Eliminar ${item.name} del almacen?`)) {
+    const hasMovements = (item.movements?.length ?? 0) > 0;
+    const confirmed = window.confirm(
+      hasMovements
+        ? `Archivar ${item.name}?\n\nTiene movimientos historicos, por eso no se borrara definitivamente. Se ocultara del almacen y de presupuestos, dejando el historial intacto.`
+        : `Eliminar ${item.name} del almacen?`,
+    );
+    if (!confirmed) {
       return;
     }
 
     setInventoryLoading(true);
     setInventoryError("");
     try {
-      await apiRequest(`/api/inventory/${item.id}`, {
+      const deletedItem = await apiRequest<InventoryItem>(`/api/inventory/${item.id}`, {
         token,
         method: "DELETE",
       });
@@ -2466,13 +2581,14 @@ export default function Home() {
         cancelInventoryEdit();
       }
       await Promise.all([loadInventory(token), loadSummary(token)]);
+      setStatus(
+        deletedItem.sourceType === "ARCHIVED"
+          ? `${item.name} archivado y oculto del almacen operativo.`
+          : `${item.name} eliminado del almacen.`,
+      );
     } catch (error) {
       const message = getErrorMessage(error);
-      setInventoryError(
-        message.toLowerCase().includes("inventory item has movements")
-          ? "No se puede eliminar el articulo porque tiene movimientos. Elimina o revierte esos movimientos primero."
-          : `No se pudo eliminar el articulo: ${message}`,
-      );
+      setInventoryError(`No se pudo eliminar el articulo: ${message}`);
     } finally {
       setInventoryLoading(false);
     }
@@ -2622,6 +2738,38 @@ export default function Home() {
     }
   }
 
+  async function deleteQuote(quote: Quote) {
+    if (!token) {
+      return;
+    }
+
+    const approvedWarning =
+      quote.status === "APPROVED"
+        ? " Este presupuesto esta aprobado; la orden de trabajo o cobros ya creados quedaran independientes para mantener el historial."
+        : "";
+    const confirmed = window.confirm(
+      `Eliminar presupuesto "${quote.title}" (${quote.number})?${approvedWarning} El almacen no se modifica porque el presupuesto no descuenta stock.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setQuotesLoading(true);
+    setQuoteError("");
+    try {
+      await apiRequest<Quote>(`/api/quotes/${quote.id}`, {
+        token,
+        method: "DELETE",
+      });
+      await Promise.all([loadQuotes(token), loadCustomers(token), loadPayments(token), loadSummary(token)]);
+      setStatus("Presupuesto eliminado. El stock queda igual porque no habia movimiento de almacen asociado.");
+    } catch (error) {
+      setQuoteError(`No se pudo eliminar el presupuesto: ${getErrorMessage(error)}`);
+    } finally {
+      setQuotesLoading(false);
+    }
+  }
+
   async function markPaymentPaid(id: string) {
     if (!token) {
       return;
@@ -2638,6 +2786,34 @@ export default function Home() {
       await Promise.all([loadPayments(token), loadSummary(token)]);
     } catch {
       setPaymentError("No se pudo marcar el movimiento como aplicado");
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }
+
+  async function deletePayment(payment: Payment) {
+    if (!token) {
+      return;
+    }
+
+    const stockWarning = payment.inventoryMovements?.length
+      ? " Tambien se revertira el movimiento de almacen vinculado."
+      : "";
+    const confirmed = window.confirm(`Eliminar "${payment.concept}"?${stockWarning}`);
+    if (!confirmed) {
+      return;
+    }
+
+    setPaymentsLoading(true);
+    setPaymentError("");
+    try {
+      await apiRequest<Payment>(`/api/payments/${payment.id}`, {
+        token,
+        method: "DELETE",
+      });
+      await Promise.all([loadPayments(token), loadInventory(token), loadCustomers(token), loadSummary(token)]);
+    } catch (error) {
+      setPaymentError(`No se pudo eliminar el movimiento: ${getErrorMessage(error)}`);
     } finally {
       setPaymentsLoading(false);
     }
@@ -3452,6 +3628,7 @@ export default function Home() {
             onAddDocument={addCustomerDocument}
             onComposeMail={composeCustomerMail}
             onComposeWhatsApp={composeCustomerWhatsApp}
+            onDeleteCustomer={deleteCustomer}
             onDeleteDocument={deleteCustomerDocument}
             onOpenProfile={openCustomerProfile}
             onOpenDocument={openCustomerDocumentModal}
@@ -3502,6 +3679,7 @@ export default function Home() {
             onAddDocument={addCustomerDocument}
             onComposeMail={composeCustomerMail}
             onComposeWhatsApp={composeCustomerWhatsApp}
+            onDeleteCustomer={deleteCustomer}
             onDeleteDocument={deleteCustomerDocument}
             onOpenProfile={openCustomerProfile}
             onOpenDocument={openCustomerDocumentModal}
@@ -3623,6 +3801,7 @@ export default function Home() {
             onCancelEdit={cancelQuoteEdit}
             onComposeMail={composeQuoteMail}
             onComposeWhatsApp={composeQuoteWhatsApp}
+            onDeleteQuote={deleteQuote}
             onEditQuote={editQuote}
             onFormChange={setQuoteForm}
             onRefresh={() => loadQuotes()}
@@ -3645,6 +3824,7 @@ export default function Home() {
             payments={payments}
             selectedCustomerId={selectedCustomerId}
             onFormChange={setPaymentForm}
+            onDelete={deletePayment}
             onMarkPaid={markPaymentPaid}
             onRefresh={() => loadPayments()}
             onSave={savePayment}
@@ -3672,6 +3852,7 @@ export default function Home() {
             inventoryStockFilter={inventoryStockFilter}
             inventorySupplier={inventorySupplier}
             loading={inventoryLoading}
+            token={token}
             workOrders={workOrders}
             onCancelEdit={cancelInventoryEdit}
             onEditItem={editInventoryItem}
@@ -3681,7 +3862,11 @@ export default function Home() {
             onQuickMovement={quickInventoryMovement}
             onMovementFormChange={setInventoryMovementForm}
             onMovementSave={saveInventoryMovement}
-            onRefresh={() => loadInventory()}
+            onRefresh={() => {
+              loadInventory();
+              loadCustomers();
+              loadPayments();
+            }}
             onSave={saveInventoryItem}
             onSearchChange={setInventorySearch}
             onCategoryChange={setInventoryCategory}
@@ -3932,7 +4117,12 @@ function WorkOrderDocumentModal({
   onPrint: () => void;
   onWhatsApp: (workOrder: WorkOrder) => void;
 }) {
-  const movements = groupWorkOrderMaterials(workOrder.inventoryMovements ?? []);
+  const quoteSummary = parseWorkOrderQuoteNotes(workOrder.notes);
+  const inventoryMovements = groupWorkOrderMaterials(workOrder.inventoryMovements ?? []);
+  const movements = inventoryMovements.length ? inventoryMovements : approvedQuoteItemsToMaterials(quoteSummary?.items ?? []);
+  const workDoneText =
+    workOrder.reportTasks ||
+    (quoteSummary ? "Trabajo finalizado segun lo solicitado por el cliente." : workOrder.notes || "Trabajo finalizado segun lo solicitado por el cliente.");
   const documentNumber = formatWorkOrderNumber(workOrder);
   const reportPhotos = workOrder.reportPhotos ?? [];
   const beforePhotos = reportPhotos.filter((photo) => photo.stage === "BEFORE");
@@ -4028,7 +4218,7 @@ function WorkOrderDocumentModal({
 
         <section className="documentSection">
           <h2>Trabajo realizado</h2>
-          <p>{workOrder.notes || "Trabajo finalizado segun lo solicitado por el cliente."}</p>
+          <p>{workDoneText}</p>
         </section>
 
         <section className="documentSection documentMaterialsSection">
@@ -4353,6 +4543,7 @@ function CustomersView({
   onAddDocument,
   onComposeMail,
   onComposeWhatsApp,
+  onDeleteCustomer,
   onDeleteDocument,
   onOpenDocument,
   onOpenProfile,
@@ -4398,6 +4589,7 @@ function CustomersView({
   onAddDocument: (customerId: string, payload: CustomerDocumentPayload) => Promise<void>;
   onComposeMail: (customer: Customer) => void;
   onComposeWhatsApp: (customer: Customer) => void;
+  onDeleteCustomer: (customer: Customer) => void;
   onDeleteDocument: (customerId: string, documentId: string) => Promise<void>;
   onOpenDocument: (customer: Customer, document: CustomerDocument) => void;
   onOpenProfile: (customer: Customer) => void;
@@ -4773,17 +4965,30 @@ function CustomersView({
                     <td data-label="Sitios" className="centerColumn countCell">{customer._count.sites}</td>
                     <td data-label="Trabajos" className="centerColumn countCell">{customer._count.workOrders}</td>
                     <td data-label="Acciones">
-                      <button
-                        type="button"
-                        className="iconTextButton"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onEditCustomer(customer);
-                        }}
-                      >
-                        <Edit3 size={16} />
-                        Editar
-                      </button>
+                      <div className="rowActionButtons">
+                        <button
+                          type="button"
+                          className="iconTextButton"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onEditCustomer(customer);
+                          }}
+                        >
+                          <Edit3 size={16} />
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          className="iconTextButton"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onDeleteCustomer(customer);
+                          }}
+                        >
+                          <Trash2 size={16} />
+                          Eliminar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -4918,6 +5123,7 @@ function CustomersView({
           profile={customerProfile}
           onClose={onCloseProfile}
           onEdit={onEditCustomer}
+          onDelete={onDeleteCustomer}
           onAddDocument={onAddDocument}
           onComposeMail={onComposeMail}
           onComposeWhatsApp={onComposeWhatsApp}
@@ -4937,6 +5143,7 @@ function CustomerProfileModal({
   profile,
   onClose,
   onEdit,
+  onDelete,
   onAddDocument,
   onComposeMail,
   onComposeWhatsApp,
@@ -4950,6 +5157,7 @@ function CustomerProfileModal({
   profile: CustomerProfile | null;
   onClose: () => void;
   onEdit: (customer: Customer) => void;
+  onDelete: (customer: Customer) => void;
   onAddDocument: (customerId: string, payload: CustomerDocumentPayload) => Promise<void>;
   onComposeMail: (customer: Customer) => void;
   onComposeWhatsApp: (customer: Customer) => void;
@@ -5081,6 +5289,10 @@ function CustomerProfileModal({
                   <button type="button" className="secondaryButton" onClick={() => onEdit(customer)}>
                     <Edit3 size={16} />
                     Editar
+                  </button>
+                  <button type="button" className="secondaryButton" onClick={() => onDelete(customer)}>
+                    <Trash2 size={16} />
+                    Eliminar
                   </button>
                 </>
               ) : null}
@@ -5989,11 +6201,16 @@ function DispatcherView({
       const learnedTitle = manualPlaceName && !stop.customerName && !stop.isBaseStop ? manualPlaceName : stop.title;
       return {
         stopKey: key,
-          placeType: stopPlaceTypes[key] ?? stop.learnedPlaceType ?? (stop.isBaseStop ? "WAREHOUSE" : stop.customerName ? "CLIENT" : "OTHER"),
+        placeType:
+          stopPlaceTypes[key] ??
+          stop.learnedPlaceType ??
+          (stop.isBaseStop ? "WAREHOUSE" : stop.customerType === "IMPORTER" ? "IMPORTER" : stop.customerName ? "CLIENT" : "OTHER"),
         title: learnedTitle,
         address: stop.address || undefined,
         latitude: stop.latitude,
         longitude: stop.longitude,
+        customerId: stop.customerId,
+        siteId: stop.siteId,
         supplierName: stopSuppliers[key],
         futureClientName: stopFutureClients[key],
         kind: stopKinds[key] ?? (stop.isBaseStop ? "WAREHOUSE" : stop.customerName ? "CLIENT" : "NOT_CLIENT"),
@@ -6376,7 +6593,8 @@ function DispatcherView({
                 const key = stop.id;
                 const costs = stopCosts[key] ?? { parking: 0, tolls: 0 };
                 const isEditing = Boolean(editingDispatchStops[key]);
-                const defaultPlaceType = stop.learnedPlaceType ?? (stop.isBaseStop ? "WAREHOUSE" : stop.customerName ? "CLIENT" : "OTHER");
+                const defaultPlaceType =
+                  stop.learnedPlaceType ?? (stop.isBaseStop ? "WAREHOUSE" : stop.customerType === "IMPORTER" ? "IMPORTER" : stop.customerName ? "CLIENT" : "OTHER");
                 const placeType = stopPlaceTypes[key] ?? defaultPlaceType;
                 const visibleZone = stopZones[key] ?? stop.learnedZone;
                 const visibleDuration = stopDurations[key] ?? stop.durationMinutes;
@@ -6426,7 +6644,7 @@ function DispatcherView({
                         ) : null}
                         <div>
                           <dt>Tipo</dt>
-                          <dd>{stop.isBaseStop ? "Base operativa" : stop.customerName ? "Cliente" : "Parada GPS"}</dd>
+                          <dd>{stop.isBaseStop ? "Base operativa" : stop.customerType === "IMPORTER" ? "Importador" : stop.customerName ? "Cliente" : "Parada GPS"}</dd>
                         </div>
                         {placeType !== defaultPlaceType ? (
                           <div>
@@ -8488,6 +8706,7 @@ function QuotesView({
   onCancelEdit,
   onComposeMail,
   onComposeWhatsApp,
+  onDeleteQuote,
   onEditQuote,
   onFormChange,
   onRefresh,
@@ -8512,6 +8731,7 @@ function QuotesView({
   onCancelEdit: () => void;
   onComposeMail: (quote: Quote) => void;
   onComposeWhatsApp: (quote: Quote) => void;
+  onDeleteQuote: (quote: Quote) => void;
   onEditQuote: (quote: Quote) => void;
   onFormChange: (form: QuotePayload) => void;
   onRefresh: () => void;
@@ -8543,6 +8763,7 @@ function QuotesView({
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalogQuantity, setCatalogQuantity] = useState(1);
   const [selectedCatalogItem, setSelectedCatalogItem] = useState<QuoteCatalogOption | null>(null);
+  const [quoteImporterId, setQuoteImporterId] = useState("ALL");
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
   const [catalogUnitPrice, setCatalogUnitPrice] = useState<number>(0);
   const [laborDescription, setLaborDescription] = useState("");
@@ -8563,6 +8784,7 @@ function QuotesView({
   const travelCost = convertBetweenQuoteCurrencies(travelCostUyu, "UYU", quoteCurrency);
   const normalizedQuoteCustomerQuery = quoteCustomerQuery.trim().toLowerCase();
   const selectedQuote = quotes.find((quote) => quote.id === selectedQuoteId) ?? null;
+  const importerCustomers = customers.filter((customer) => customer.type === "IMPORTER");
   const quoteCustomerResults = customers
     .filter((customer) => {
       if (quoteForm.pricingMode === "THIRD_PARTY") {
@@ -8665,6 +8887,11 @@ function QuotesView({
     return Math.max(1, Math.floor(Number(value) || 1));
   }
 
+  function clampCatalogQuantity(value: string, max?: number) {
+    const quantity = toCatalogQuantity(value);
+    return typeof max === "number" ? Math.min(quantity, Math.max(1, max)) : quantity;
+  }
+
   function normalizeDecimalInput(value: string) {
     const clean = value.replace(",", ".").replace(/[^\d.]/g, "");
     const [integer = "", ...decimalParts] = clean.split(".");
@@ -8746,6 +8973,8 @@ function QuotesView({
             id: item.id,
             code: item.sku || item.reference,
             name: item.name,
+            customerId: item.customerId,
+            supplier: item.supplier,
             type: "EQUIPMENT" as QuoteItemType,
             category: item.supplierCategory || (item.category ? deviceTypeLabels[item.category] : "Almacén"),
             description: [item.supplier, item.supplierCategory, item.notes].filter(Boolean).join(" - "),
@@ -8754,10 +8983,20 @@ function QuotesView({
             unitCost: convertQuotePrice(Number(item.costPrice ?? 0) || 0, item.currency),
             taxRate: 22,
             currency: quoteCurrency,
+            stock: Number(item.stock) || 0,
+            managedStock: item.managedStock,
             source: "INVENTORY" as const,
           };
-        });
+        }).filter((item) => item.managedStock && (item.stock ?? 0) > 0);
   const catalogResults = catalogModeItems
+    .filter((item) => {
+      if (quoteForm.pricingMode !== "DIRECT" || quoteImporterId === "ALL") {
+        return true;
+      }
+
+      const importer = importerCustomers.find((customer) => customer.id === quoteImporterId);
+      return item.customerId === quoteImporterId || (!!importer?.name && item.supplier?.toLowerCase() === importer.name.toLowerCase());
+    })
     .filter((item) => {
       if (!normalizedCatalogQuery) {
         return true;
@@ -8768,6 +9007,36 @@ function QuotesView({
         .some((value) => String(value).toLowerCase().includes(normalizedCatalogQuery));
     })
     .slice(0, 10);
+  const selectedCatalogStock =
+    selectedCatalogItem?.source === "INVENTORY" && selectedCatalogItem.managedStock
+      ? Number(selectedCatalogItem.stock) || 0
+      : null;
+  const selectedCatalogUsed =
+    selectedCatalogItem?.source === "INVENTORY"
+      ? quoteItems
+          .filter(
+            (item) =>
+              item.description === selectedCatalogItem.name &&
+              item.category === selectedCatalogItem.category &&
+              item.unit === selectedCatalogItem.unit,
+          )
+          .reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
+      : 0;
+  const selectedCatalogAvailable =
+    selectedCatalogStock === null ? null : Math.max(0, selectedCatalogStock - selectedCatalogUsed);
+
+  useEffect(() => {
+    if (selectedCatalogAvailable === null) {
+      return;
+    }
+
+    if (selectedCatalogAvailable <= 0) {
+      setCatalogQuantity(1);
+      return;
+    }
+
+    setCatalogQuantity((current) => Math.min(current, selectedCatalogAvailable));
+  }, [selectedCatalogAvailable]);
 
   function selectCatalogItem(item: QuoteCatalogOption) {
     setSelectedCatalogItem(item);
@@ -8781,12 +9050,25 @@ function QuotesView({
       return;
     }
 
+    const requestedQuantity = toCatalogQuantity(String(catalogQuantity));
+    const allowedQuantity =
+      selectedCatalogAvailable === null ? requestedQuantity : Math.min(requestedQuantity, selectedCatalogAvailable);
+
+    if (selectedCatalogAvailable !== null && selectedCatalogAvailable <= 0) {
+      window.alert("No queda stock disponible de este articulo en almacen.");
+      return;
+    }
+
+    if (selectedCatalogAvailable !== null && requestedQuantity > selectedCatalogAvailable) {
+      window.alert(`Solo hay ${selectedCatalogAvailable} ${selectedCatalogItem.unit || "u"} disponible(s) en almacen.`);
+    }
+
     const nextItem: NonNullable<QuotePayload["items"]>[number] = {
       priceBookItemId: selectedCatalogItem.source === "PRICE_BOOK" ? selectedCatalogItem.id : undefined,
       type: selectedCatalogItem.type,
       category: selectedCatalogItem.category,
       description: selectedCatalogItem.name,
-      quantity: toCatalogQuantity(String(catalogQuantity)),
+      quantity: allowedQuantity,
       unit: selectedCatalogItem.unit || "unidad",
       unitPrice: Number(catalogUnitPrice) || 0,
       taxRate: Number(selectedCatalogItem.taxRate) || 22,
@@ -8797,6 +9079,7 @@ function QuotesView({
     setSelectedCatalogItem(null);
     setCatalogQuery("");
     setCatalogUnitPrice(0);
+    setQuoteImporterId("ALL");
     setCatalogQuantity(1);
   }
 
@@ -9093,6 +9376,27 @@ function QuotesView({
             {quoteForm.pricingMode === "DIRECT" || quoteForm.pricingMode === "THIRD_PARTY" ? (
               <div className="wideField quoteCatalogBuilder">
                 <span>{quoteForm.pricingMode === "THIRD_PARTY" ? "Catálogo tercerizado Segura" : "Catálogo de Almacén"}</span>
+                {quoteForm.pricingMode === "DIRECT" ? (
+                  <label className="quoteImporterFilter">
+                    Importador
+                    <select
+                      value={quoteImporterId}
+                      onChange={(event) => {
+                        setQuoteImporterId(event.target.value);
+                        setSelectedCatalogItem(null);
+                        setCatalogQuery("");
+                        setCatalogUnitPrice(0);
+                      }}
+                    >
+                      <option value="ALL">Todos los importadores</option>
+                      {importerCustomers.map((customer) => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <div className="quoteCatalogControls">
                   <div className="autocompleteField">
                     <input
@@ -9118,7 +9422,15 @@ function QuotesView({
                           >
                             <strong>{item.name}</strong>
                             <span>
-                              {[item.code, item.category, item.description, formatPrice(item.unitPrice, item.currency)].filter(Boolean).join(" - ")}
+                              {[
+                                item.code,
+                                item.category,
+                                item.description,
+                                item.source === "INVENTORY" ? `Disponible ${item.stock ?? 0} ${item.unit}` : null,
+                                formatPrice(item.unitPrice, item.currency),
+                              ]
+                                .filter(Boolean)
+                                .join(" - ")}
                             </span>
                           </button>
                         ))}
@@ -9131,9 +9443,17 @@ function QuotesView({
                     <input
                       type="number"
                       min="1"
+                      max={selectedCatalogAvailable ?? undefined}
                       step="1"
                       value={catalogQuantity}
-                      onChange={(event) => setCatalogQuantity(toCatalogQuantity(event.target.value))}
+                      onChange={(event) =>
+                        setCatalogQuantity(
+                          clampCatalogQuantity(
+                            event.target.value,
+                            selectedCatalogAvailable === null ? undefined : selectedCatalogAvailable,
+                          ),
+                        )
+                      }
                       aria-label="Cantidad"
                     />
                   </label>
@@ -9150,10 +9470,21 @@ function QuotesView({
                       />
                     </label>
                   ) : null}
-                  <button type="button" className="secondaryButton" onClick={addCatalogItem} disabled={!selectedCatalogItem}>
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    onClick={addCatalogItem}
+                    disabled={!selectedCatalogItem || (selectedCatalogAvailable !== null && selectedCatalogAvailable <= 0)}
+                  >
                     Agregar
                   </button>
                 </div>
+                {selectedCatalogItem?.source === "INVENTORY" ? (
+                  <p className="catalogStockHint">
+                    Disponible en almacen: {selectedCatalogAvailable ?? 0} {selectedCatalogItem.unit || "u"}
+                    {selectedCatalogUsed > 0 ? ` (${selectedCatalogUsed} ya agregado en este presupuesto)` : ""}
+                  </p>
+                ) : null}
                 {quoteForm.pricingMode === "DIRECT" ? (
                   <>
                     <span>Mano de obra Security Solutions</span>
@@ -9418,6 +9749,21 @@ function QuotesView({
                     <dd>{formatPrice(quote.total, quote.currency)}</dd>
                   </div>
                 </dl>
+                <div className="rowActionButtons quoteRowActions">
+                  <button
+                    type="button"
+                    className="iconButton dangerIconButton"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDeleteQuote(quote);
+                    }}
+                    disabled={loading}
+                    aria-label="Eliminar presupuesto"
+                    title="Eliminar presupuesto"
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                </div>
               </article>
             ))}
             {!quotes.length ? <p className="emptyPanel">No hay presupuestos para los filtros actuales.</p> : null}
@@ -9485,6 +9831,18 @@ function QuotesView({
                         >
                           <Save size={16} />
                           Aprobar
+                        </button>
+                        <button
+                          type="button"
+                          className="secondaryButton dangerButton printHidden"
+                          onClick={() => {
+                            onDeleteQuote(selectedQuote);
+                            setSelectedQuoteId(null);
+                          }}
+                          disabled={loading}
+                        >
+                          <Trash2 size={16} />
+                          Eliminar
                         </button>
                         <button type="button" className="iconButton printHidden" onClick={() => setSelectedQuoteId(null)} aria-label="Cerrar presupuesto">
                           <X size={18} />
@@ -9660,6 +10018,7 @@ function PaymentsView({
   payments,
   selectedCustomerId,
   onFormChange,
+  onDelete,
   onMarkPaid,
   onRefresh,
   onSave,
@@ -9680,6 +10039,7 @@ function PaymentsView({
   payments: Payment[];
   selectedCustomerId: string | null;
   onFormChange: (form: PaymentPayload) => void;
+  onDelete: (payment: Payment) => void;
   onMarkPaid: (id: string) => void;
   onRefresh: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
@@ -9700,10 +10060,14 @@ function PaymentsView({
       ? (Number(paymentForm.quantity) || 0) * (Number(paymentForm.unitPrice) || 0)
       : Number(paymentForm.amount) || 0;
   const customerTotals = useMemo(() => {
-    const totals = new Map<string, { name: string; income: number; expense: number; balance: number }>();
+    const totals = new Map<string, { id: string; name: string; currency: string; income: number; expense: number; balance: number }>();
     payments.forEach((payment) => {
-      const current = totals.get(payment.customer.id) ?? {
+      const currency = payment.currency || "UYU";
+      const key = `${payment.customer.id}-${currency}`;
+      const current = totals.get(key) ?? {
+        id: key,
         name: payment.customer.name,
+        currency,
         income: 0,
         expense: 0,
         balance: 0,
@@ -9715,7 +10079,7 @@ function PaymentsView({
         current.income += amount;
       }
       current.balance = current.income - current.expense;
-      totals.set(payment.customer.id, current);
+      totals.set(key, current);
     });
     return Array.from(totals.values()).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
   }, [payments]);
@@ -9729,15 +10093,44 @@ function PaymentsView({
     setInventoryQuery(selectedItem?.name ?? paymentForm.inventoryItemName ?? "");
   }, [inventoryItems, paymentForm.inventoryItemId, paymentForm.inventoryItemName]);
 
-  function selectEntityByLabel(value: string) {
-    setEntityQuery(value);
+  function findCustomerByTypedLabel(value: string) {
     const cleanValue = value.trim().toLowerCase();
-    const customer = customers.find((item) => {
+    if (!cleanValue) {
+      return null;
+    }
+
+    const exact = customers.find((item) => {
       const fullLabel = `${item.name} - ${customerTypeLabels[item.type ?? "NORMAL"]}`.toLowerCase();
       return fullLabel === cleanValue || item.name.toLowerCase() === cleanValue;
     });
+    if (exact) {
+      return exact;
+    }
+
+    const startsWithMatches = customers.filter((item) => item.name.toLowerCase().startsWith(cleanValue));
+    if (startsWithMatches.length === 1) {
+      return startsWithMatches[0];
+    }
+
+    const containsMatches = customers.filter((item) => item.name.toLowerCase().includes(cleanValue));
+    return containsMatches.length === 1 ? containsMatches[0] : null;
+  }
+
+  function selectEntityByLabel(value: string) {
+    setEntityQuery(value);
+    const customer = findCustomerByTypedLabel(value);
 
     onFormChange({ ...paymentForm, customerId: customer?.id ?? "" });
+  }
+
+  function commitEntitySelection(value: string) {
+    const customer = findCustomerByTypedLabel(value);
+    if (!customer) {
+      return;
+    }
+
+    setEntityQuery(`${customer.name} - ${customerTypeLabels[customer.type ?? "NORMAL"]}`);
+    onFormChange({ ...paymentForm, customerId: customer.id });
   }
 
   function selectInventoryByLabel(value: string) {
@@ -9773,19 +10166,29 @@ function PaymentsView({
 
   function filterByEntityLabel(value: string) {
     setFilterEntityQuery(value);
-    const cleanValue = value.trim().toLowerCase();
-    if (!cleanValue) {
+    if (!value.trim()) {
       onCustomerFilter(null);
       return;
     }
 
-    const customer = customers.find((item) => {
-      const fullLabel = `${item.name} - ${customerTypeLabels[item.type ?? "NORMAL"]}`.toLowerCase();
-      return fullLabel === cleanValue || item.name.toLowerCase() === cleanValue;
-    });
+    const customer = findCustomerByTypedLabel(value);
     if (customer) {
       onCustomerFilter(customer.id);
     }
+  }
+
+  function commitEntityFilter(value: string) {
+    const customer = findCustomerByTypedLabel(value);
+    if (!value.trim()) {
+      onCustomerFilter(null);
+      return;
+    }
+    if (!customer) {
+      return;
+    }
+
+    setFilterEntityQuery(`${customer.name} - ${customerTypeLabels[customer.type ?? "NORMAL"]}`);
+    onCustomerFilter(customer.id);
   }
 
   return (
@@ -9835,6 +10238,7 @@ function PaymentsView({
                 list="payment-entities"
                 value={entityQuery}
                 onChange={(event) => selectEntityByLabel(event.target.value)}
+                onBlur={(event) => commitEntitySelection(event.target.value)}
                 placeholder="Escribir cliente, importador o uso personal"
               />
               <datalist id="payment-entities">
@@ -10059,6 +10463,7 @@ function PaymentsView({
                 list="payment-filter-entities"
                 value={filterEntityQuery}
                 onChange={(event) => filterByEntityLabel(event.target.value)}
+                onBlur={(event) => commitEntityFilter(event.target.value)}
                 placeholder="Filtrar entidad"
               />
               <datalist id="payment-filter-entities">
@@ -10092,15 +10497,32 @@ function PaymentsView({
               <RefreshCw size={18} className={loading ? "spin" : ""} />
               Filtrar
             </button>
+            {filterEntityQuery ? (
+              <button
+                type="button"
+                className="secondaryButton compactClearButton"
+                onClick={() => {
+                  setFilterEntityQuery("");
+                  onCustomerFilter(null);
+                }}
+              >
+                <X size={16} />
+                Ver todos
+              </button>
+            ) : null}
           </div>
 
           {customerTotals.length ? (
             <div className="paymentCustomerTotals" aria-label="Totales por entidad">
-              {customerTotals.slice(0, 6).map((total) => (
-                <article key={total.name}>
+              {customerTotals.map((total) => (
+                <article key={total.id}>
                   <span>{total.name}</span>
-                  <small>Ingresos {formatPrice(total.income, "UYU")} · Egresos {formatPrice(total.expense, "UYU")}</small>
-                  <strong className={total.balance < 0 ? "negativeAmount" : "positiveAmount"}>{formatPrice(total.balance, "UYU")}</strong>
+                  <small>
+                    Ingresos {formatPrice(total.income, total.currency)} - Egresos {formatPrice(total.expense, total.currency)}
+                  </small>
+                  <strong className={total.balance < 0 ? "negativeAmount" : "positiveAmount"}>
+                    {formatPrice(total.balance, total.currency)}
+                  </strong>
                 </article>
               ))}
             </div>
@@ -10114,11 +10536,11 @@ function PaymentsView({
               <span>Vence</span>
               <span>Estado</span>
               <span>Importe</span>
+              <span aria-hidden="true">Acciones</span>
             </div>
             {payments.map((payment) => (
-              <button
+              <div
                 key={payment.id}
-                type="button"
                 className="paymentListRow"
                 onClick={() => setSelectedPayment(payment)}
                 role="row"
@@ -10137,7 +10559,22 @@ function PaymentsView({
                   {payment.transactionType === "EXPENSE" ? "-" : "+"}
                   {formatPrice(payment.amount, payment.currency || "UYU")}
                 </span>
-              </button>
+                <span className="rowActionButtons">
+                  <button
+                    type="button"
+                    className="iconButton dangerIconButton"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDelete(payment);
+                    }}
+                    disabled={loading}
+                    aria-label="Eliminar movimiento"
+                    title="Eliminar movimiento"
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                </span>
+              </div>
             ))}
             {!payments.length ? <p className="emptyPanel">No hay movimientos para los filtros actuales.</p> : null}
           </div>
@@ -10153,6 +10590,10 @@ function PaymentsView({
             onMarkPaid(id);
             setSelectedPayment((current) => (current?.id === id ? { ...current, paidAt: new Date().toISOString() } : current));
           }}
+          onDelete={(paymentToDelete) => {
+            onDelete(paymentToDelete);
+            setSelectedPayment(null);
+          }}
         />
       ) : null}
     </section>
@@ -10163,11 +10604,13 @@ function PaymentDetailModal({
   loading,
   payment,
   onClose,
+  onDelete,
   onMarkPaid,
 }: {
   loading: boolean;
   payment: Payment;
   onClose: () => void;
+  onDelete: (payment: Payment) => void;
   onMarkPaid: (id: string) => void;
 }) {
   const relatedInfo = [
@@ -10192,6 +10635,10 @@ function PaymentDetailModal({
             <button type="button" onClick={() => onMarkPaid(payment.id)} disabled={loading || Boolean(payment.paidAt)}>
               <Save size={18} />
               Marcar aplicado
+            </button>
+            <button type="button" className="dangerButton" onClick={() => onDelete(payment)} disabled={loading}>
+              <Trash2 size={18} />
+              Eliminar
             </button>
             <button type="button" className="iconOnlyButton" onClick={onClose} aria-label="Cerrar detalle">
               <X size={20} />
@@ -10955,6 +11402,7 @@ function InventoryView({
   inventoryStockFilter,
   inventorySupplier,
   loading,
+  token,
   workOrders,
   onCancelEdit,
   onCategoryChange,
@@ -10982,7 +11430,7 @@ function InventoryView({
   inventoryError: string;
   inventoryForm: InventoryItemPayload;
   inventoryItems: InventoryItem[];
-  inventoryMode: "stock" | "catalog" | "all";
+  inventoryMode: InventoryViewMode;
   inventoryMovementForm: InventoryMovementPayload;
   inventorySearch: string;
   inventoryCustomer: string;
@@ -10991,6 +11439,7 @@ function InventoryView({
   inventoryStockFilter: "ALL" | "LOW";
   inventorySupplier: string;
   loading: boolean;
+  token: string | null;
   workOrders: WorkOrder[];
   onCancelEdit: () => void;
   onCategoryChange: (value: DeviceType | "ALL") => void;
@@ -10999,7 +11448,7 @@ function InventoryView({
   onDeleteMovement: (movementId: string) => void;
   onEditItem: (item: InventoryItem) => void;
   onFormChange: (form: InventoryItemPayload) => void;
-  onModeChange: (value: "stock" | "catalog" | "all") => void;
+  onModeChange: (value: InventoryViewMode) => void;
   onMovementFormChange: (form: InventoryMovementPayload) => void;
   onMovementSave: (event: FormEvent<HTMLFormElement>) => void;
   onQuickMovement: (itemId: string, type: InventoryMovementType, quantity: number) => Promise<void>;
@@ -11013,8 +11462,15 @@ function InventoryView({
   const [movementItemQuery, setMovementItemQuery] = useState("");
   const [movementPickerOpen, setMovementPickerOpen] = useState(false);
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
+  const [inventoryEntityQuery, setInventoryEntityQuery] = useState("");
+  const [movementEntityQuery, setMovementEntityQuery] = useState("");
   const [stockForms, setStockForms] = useState<Record<string, { entry: number; exact: number }>>({});
   const [selectedInventoryItemId, setSelectedInventoryItemId] = useState<string | null>(null);
+  const [invoiceDataUrl, setInvoiceDataUrl] = useState("");
+  const [invoiceFileName, setInvoiceFileName] = useState("");
+  const [invoicePreview, setInvoicePreview] = useState<InvoiceImportPreview | null>(null);
+  const [invoiceBusy, setInvoiceBusy] = useState(false);
+  const [invoiceError, setInvoiceError] = useState("");
   const [inventoryColumnWidths, setInventoryColumnWidths] = useState<Record<InventoryColumnKey, number>>(() => {
     if (typeof window === "undefined") {
       return inventoryColumnDefaults;
@@ -11041,8 +11497,13 @@ function InventoryView({
     gridTemplateColumns: inventoryGridTemplate,
     minWidth: inventoryGridMinWidth,
   };
+  const importerCustomers = customers.filter((customer) => customer.type === "IMPORTER");
   const suppliers = Array.from(
-    new Set(["Microfal", ...(inventoryItems.map((item) => item.supplier).filter(Boolean) as string[])]),
+    new Set([
+      "Microfal",
+      ...importerCustomers.map((customer) => customer.name),
+      ...(inventoryItems.map((item) => item.supplier).filter(Boolean) as string[]),
+    ]),
   ).sort();
   const selectedInventoryItem = inventoryItems.find((item) => item.id === selectedInventoryItemId) ?? null;
   const sortedInventoryItems = useMemo(() => {
@@ -11058,6 +11519,44 @@ function InventoryView({
     });
   }, [inventoryItems, inventorySort]);
   const selectedMovementItem = inventoryItems.find((item) => item.id === inventoryMovementForm.itemId);
+  const movementQuantity = Number(inventoryMovementForm.quantity) || 0;
+  const movementUnitCost = Number(inventoryMovementForm.unitCost) || toMoneyNumber(selectedMovementItem?.costPrice ?? selectedMovementItem?.priceWithTax ?? 0);
+  const movementCurrency = inventoryMovementForm.currency || selectedMovementItem?.currency || "UYU";
+  const movementEstimatedCost = movementQuantity * movementUnitCost;
+  const movementCanCreateExpense = inventoryMovementForm.createExpense && inventoryMovementForm.type !== "ADJUST";
+  const movementBatchItems = inventoryMovementForm.items ?? [];
+  const movementBatchDetails: Array<{
+    itemId: string;
+    quantity: number;
+    unitCost: number;
+    currency: string;
+    sourceType?: string;
+    item: InventoryItem;
+  }> = movementBatchItems
+    .map((line) => {
+      const item = inventoryItems.find((inventoryItem) => inventoryItem.id === line.itemId);
+      return item
+        ? {
+            ...line,
+            item,
+            unitCost: Number(line.unitCost) || toMoneyNumber(item.costPrice ?? item.priceWithTax ?? 0),
+            currency: line.currency || item.currency || movementCurrency,
+          }
+        : null;
+    })
+    .filter(Boolean) as Array<{
+    itemId: string;
+    quantity: number;
+    unitCost: number;
+    currency: string;
+    sourceType?: string;
+    item: InventoryItem;
+  }>;
+  const movementBatchTotal = movementBatchDetails.reduce((total, line) => total + line.quantity * line.unitCost, 0);
+  const selectedMovementMaxQuantity =
+    inventoryMovementForm.type === "OUT" && selectedMovementItem ? Math.max(0, selectedMovementItem.stock) : undefined;
+  const boundedMovementQuantity =
+    selectedMovementMaxQuantity === undefined ? movementQuantity : Math.min(movementQuantity, selectedMovementMaxQuantity);
   const movementItemResults = useMemo(() => {
     const query = movementItemQuery.trim().toLowerCase();
     const matches = query
@@ -11076,6 +11575,16 @@ function InventoryView({
       setMovementItemQuery(selectedMovementItem.name);
     }
   }, [inventoryMovementForm.itemId, selectedMovementItem]);
+
+  useEffect(() => {
+    const customer = customers.find((item) => item.id === inventoryForm.customerId);
+    setInventoryEntityQuery(customer ? `${customer.name} - ${customerTypeLabels[customer.type ?? "NORMAL"]}` : "");
+  }, [customers, inventoryForm.customerId]);
+
+  useEffect(() => {
+    const customer = customers.find((item) => item.id === inventoryMovementForm.customerId);
+    setMovementEntityQuery(customer ? `${customer.name} - ${customerTypeLabels[customer.type ?? "NORMAL"]}` : "");
+  }, [customers, inventoryMovementForm.customerId]);
 
   useEffect(() => {
     window.localStorage.setItem("sscc.inventoryColumns", JSON.stringify(inventoryColumnWidths));
@@ -11117,6 +11626,122 @@ function InventoryView({
     });
   }
 
+  function findInventoryEntity(value: string) {
+    const cleanValue = value.trim().toLowerCase();
+    if (!cleanValue) {
+      return null;
+    }
+
+    const exact = customers.find((customer) => {
+      const fullLabel = `${customer.name} - ${customerTypeLabels[customer.type ?? "NORMAL"]}`.toLowerCase();
+      return fullLabel === cleanValue || customer.name.toLowerCase() === cleanValue || customer.reference.toLowerCase() === cleanValue;
+    });
+    if (exact) {
+      return exact;
+    }
+
+    const matches = customers.filter((customer) =>
+      [customer.name, customer.reference, customer.legalName, customer.email, customer.phone]
+        .filter(Boolean)
+        .some((valueToMatch) => String(valueToMatch).toLowerCase().includes(cleanValue)),
+    );
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  function applyInventoryEntity(value: string, target: "item" | "movement") {
+    const customer = findInventoryEntity(value);
+    if (!customer) {
+      if (!value.trim()) {
+        if (target === "item") {
+          onFormChange({ ...inventoryForm, customerId: "", supplier: "" });
+        } else {
+          onMovementFormChange({ ...inventoryMovementForm, customerId: "" });
+        }
+      }
+      return;
+    }
+
+    const label = `${customer.name} - ${customerTypeLabels[customer.type ?? "NORMAL"]}`;
+    if (target === "item") {
+      setInventoryEntityQuery(label);
+      onFormChange({
+        ...inventoryForm,
+        customerId: customer.id,
+        sourceType: customer.type === "IMPORTER" ? "MATERIAL" : inventoryForm.sourceType,
+        supplier: customer.type === "IMPORTER" ? customer.name : inventoryForm.supplier,
+        location: inventoryForm.location || customer.name,
+      });
+      return;
+    }
+
+    setMovementEntityQuery(label);
+    onMovementFormChange({
+      ...inventoryMovementForm,
+      customerId: customer.id,
+      sourceType: customer.type === "IMPORTER" ? "MATERIAL" : inventoryMovementForm.sourceType,
+      paymentCategory: customer.type === "IMPORTER" ? "IMPORTER_PAYMENT" : inventoryMovementForm.paymentCategory,
+    });
+  }
+
+  function addMovementBatchItem() {
+    if (!selectedMovementItem) {
+      return;
+    }
+
+    const quantity =
+      inventoryMovementForm.type === "OUT"
+        ? Math.min(Math.max(1, movementQuantity), selectedMovementItem.stock)
+        : Math.max(1, movementQuantity);
+    if (quantity <= 0) {
+      return;
+    }
+
+    const nextItems = [...movementBatchItems];
+    const existingIndex = nextItems.findIndex((item) => item.itemId === selectedMovementItem.id);
+    const nextLine = {
+      itemId: selectedMovementItem.id,
+      quantity,
+      unitCost: movementUnitCost,
+      currency: movementCurrency,
+      sourceType: selectedMovementItem.sourceType || inventoryMovementForm.sourceType,
+    };
+    if (existingIndex >= 0) {
+      nextItems[existingIndex] = nextLine;
+    } else {
+      nextItems.push(nextLine);
+    }
+
+    onMovementFormChange({
+      ...inventoryMovementForm,
+      items: nextItems,
+      itemId: "",
+      quantity: 1,
+      unitCost: 0,
+    });
+    setMovementItemQuery("");
+  }
+
+  function updateMovementBatchQuantity(itemId: string, quantity: number) {
+    onMovementFormChange({
+      ...inventoryMovementForm,
+      items: movementBatchItems.map((line) => {
+        if (line.itemId !== itemId) {
+          return line;
+        }
+        const item = inventoryItems.find((inventoryItem) => inventoryItem.id === itemId);
+        const max = inventoryMovementForm.type === "OUT" ? item?.stock ?? quantity : quantity;
+        return { ...line, quantity: Math.max(1, Math.min(Number(quantity) || 1, max)) };
+      }),
+    });
+  }
+
+  function removeMovementBatchItem(itemId: string) {
+    onMovementFormChange({
+      ...inventoryMovementForm,
+      items: movementBatchItems.filter((line) => line.itemId !== itemId),
+    });
+  }
+
   function toggleInventorySort(key: InventorySortKey) {
     setInventorySort((current) => ({
       key,
@@ -11145,8 +11770,94 @@ function InventoryView({
     window.addEventListener("mouseup", stopResize);
   }
 
+  function handleInvoiceFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    setInvoiceError("");
+    setInvoicePreview(null);
+    setInvoiceDataUrl("");
+    setInvoiceFileName(file?.name ?? "");
+
+    if (!file) {
+      return;
+    }
+
+    if (file.type && file.type !== "application/pdf") {
+      setInvoiceError("Selecciona una factura en PDF.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setInvoiceDataUrl(typeof reader.result === "string" ? reader.result : "");
+    };
+    reader.onerror = () => setInvoiceError("No se pudo leer el archivo.");
+    reader.readAsDataURL(file);
+  }
+
+  async function previewInvoice() {
+    if (!invoiceDataUrl) {
+      setInvoiceError("Selecciona una factura PDF.");
+      return;
+    }
+    if (!token) {
+      setInvoiceError("Inicia sesion para analizar facturas.");
+      return;
+    }
+
+    setInvoiceBusy(true);
+    setInvoiceError("");
+    try {
+      const preview = await apiRequest<InvoiceImportPreview>("/api/inventory/invoice/preview", {
+        token,
+        method: "POST",
+        body: JSON.stringify({ dataUrl: invoiceDataUrl, fileName: invoiceFileName }),
+      });
+      setInvoicePreview(preview);
+    } catch (error) {
+      setInvoiceError(error instanceof ApiError ? error.message : "No se pudo analizar la factura.");
+    } finally {
+      setInvoiceBusy(false);
+    }
+  }
+
+  async function importInvoice() {
+    if (!invoiceDataUrl || !invoicePreview) {
+      setInvoiceError("Primero analiza la factura.");
+      return;
+    }
+    if (!token) {
+      setInvoiceError("Inicia sesion para importar facturas.");
+      return;
+    }
+
+    setInvoiceBusy(true);
+    setInvoiceError("");
+    try {
+      await apiRequest("/api/inventory/invoice/import", {
+        token,
+        method: "POST",
+        body: JSON.stringify({ dataUrl: invoiceDataUrl, fileName: invoiceFileName }),
+      });
+      setInvoicePreview(null);
+      setInvoiceDataUrl("");
+      setInvoiceFileName("");
+      onRefresh();
+    } catch (error) {
+      setInvoiceError(error instanceof ApiError ? error.message : "No se pudo importar la factura.");
+    } finally {
+      setInvoiceBusy(false);
+    }
+  }
+
   return (
     <section className="workOrdersModule">
+      <datalist id="inventory-entities">
+        {customers.map((customer) => (
+          <option key={customer.id} value={`${customer.name} - ${customerTypeLabels[customer.type ?? "NORMAL"]}`}>
+            {customer.name} - {customerTypeLabels[customer.type ?? "NORMAL"]}
+          </option>
+        ))}
+      </datalist>
       <div className="summaryGrid customerStats" aria-label="Resumen de almacen">
         {inventoryStats.map((card) => (
           <article key={card.label}>
@@ -11155,6 +11866,80 @@ function InventoryView({
           </article>
         ))}
       </div>
+
+      <section className="invoiceImportPanel">
+        <div className="sectionHeader compactHeader">
+          <div>
+            <p>Factura inteligente</p>
+            <h2>Importar PDF al almacén</h2>
+          </div>
+          <div className="rowActionButtons">
+            <button type="button" className="secondaryButton" onClick={previewInvoice} disabled={invoiceBusy || !invoiceDataUrl}>
+              <FileText size={17} />
+              Analizar
+            </button>
+            <button type="button" className="primaryButton smallPrimary" onClick={importInvoice} disabled={invoiceBusy || !invoicePreview?.items.length}>
+              <Save size={17} />
+              Importar
+            </button>
+          </div>
+        </div>
+        <div className="invoiceImportGrid">
+          <label className="invoiceFilePicker">
+            <span>Factura PDF</span>
+            <input type="file" accept="application/pdf" onChange={handleInvoiceFileChange} />
+            <span className="invoiceFilePickerControl">
+              <span className="invoiceFilePickerButton">
+                <Paperclip size={17} />
+                Seleccionar PDF
+              </span>
+              <span className="invoiceFilePickerName">{invoiceFileName || "Ningun archivo seleccionado"}</span>
+            </span>
+          </label>
+          <div className="invoiceImportSummary">
+            <span>{invoiceFileName || "Sin archivo seleccionado"}</span>
+            <strong>{invoicePreview ? `${invoicePreview.items.length} item(s) detectados` : "Pendiente de analizar"}</strong>
+          </div>
+        </div>
+        {invoiceError ? <p className="formError">{invoiceError}</p> : null}
+        {invoicePreview ? (
+          <div className="invoicePreviewBox">
+            <div>
+              <span>Proveedor</span>
+              <strong>{invoicePreview.providerName}</strong>
+            </div>
+            <div>
+              <span>Factura</span>
+              <strong>{invoicePreview.reference}</strong>
+            </div>
+            <div>
+              <span>Total</span>
+              <strong>{formatPrice(invoicePreview.totals.total, invoicePreview.currency)}</strong>
+            </div>
+            {invoicePreview.warnings?.length ? (
+              <div className="invoiceWarnings">
+                {invoicePreview.warnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+                <span>
+                  Texto detectado: {invoicePreview.extractedTextLength ?? 0} caracteres. Si es una factura escaneada, sube el PDF original del proveedor
+                  o una factura electronica con texto.
+                </span>
+              </div>
+            ) : null}
+            <ul>
+              {invoicePreview.items.map((item) => (
+                <li key={`${item.description}-${item.quantity}-${item.subtotal}`}>
+                  <strong>{item.description}</strong>
+                  <span>
+                    {item.quantity} {item.unit} x {formatPrice(item.unitPrice, invoicePreview.currency)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </section>
 
       <div className="workOrdersLayout">
         <div className="inventoryForms">
@@ -11187,25 +11972,16 @@ function InventoryView({
             <div className="formGrid">
               <label>
                 Cliente / importador / uso
-                <select
-                  value={inventoryForm.customerId || ""}
+                <input
+                  list="inventory-entities"
+                  value={inventoryEntityQuery}
                   onChange={(event) => {
-                    const customer = customers.find((item) => item.id === event.target.value);
-                    onFormChange({
-                      ...inventoryForm,
-                      customerId: event.target.value,
-                      sourceType: event.target.value && inventoryForm.sourceType !== "ASSET" ? "THIRD_PARTY_SUPPLY" : inventoryForm.sourceType,
-                      location: event.target.value ? customer?.name || inventoryForm.location : inventoryForm.location,
-                    });
+                    setInventoryEntityQuery(event.target.value);
+                    applyInventoryEntity(event.target.value, "item");
                   }}
-                >
-                  <option value="">Sin cliente</option>
-                  {customers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.name} - {customerTypeLabels[customer.type ?? "NORMAL"]}
-                    </option>
-                  ))}
-                </select>
+                  onBlur={(event) => applyInventoryEntity(event.target.value, "item")}
+                  placeholder="Escribir cliente, importador o uso"
+                />
               </label>
               <label>
                 Importador / origen
@@ -11348,17 +12124,16 @@ function InventoryView({
               </label>
               <label>
                 Cliente / importador / uso
-                <select
-                  value={inventoryMovementForm.customerId || ""}
-                  onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, customerId: event.target.value })}
-                >
-                  <option value="">Sin cliente</option>
-                  {customers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.name} - {customerTypeLabels[customer.type ?? "NORMAL"]}
-                    </option>
-                  ))}
-                </select>
+                <input
+                  list="inventory-entities"
+                  value={movementEntityQuery}
+                  onChange={(event) => {
+                    setMovementEntityQuery(event.target.value);
+                    applyInventoryEntity(event.target.value, "movement");
+                  }}
+                  onBlur={(event) => applyInventoryEntity(event.target.value, "movement")}
+                  placeholder="Escribir cliente, importador o uso"
+                />
               </label>
               <label className="wideField">
                 Articulo
@@ -11385,12 +12160,18 @@ function InventoryView({
                           type="button"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => {
+                            const itemCustomer = customers.find((customer) => customer.id === item.customerId);
                             onMovementFormChange({
                               ...inventoryMovementForm,
                               itemId: item.id,
+                              customerId: item.customerId || inventoryMovementForm.customerId,
+                              sourceType: item.sourceType || inventoryMovementForm.sourceType,
                               unitCost: Number(inventoryMovementForm.unitCost) || toMoneyNumber(item.costPrice ?? item.priceWithTax ?? 0),
                               currency: inventoryMovementForm.currency || item.currency || "UYU",
                             });
+                            if (itemCustomer) {
+                              setMovementEntityQuery(`${itemCustomer.name} - ${customerTypeLabels[itemCustomer.type ?? "NORMAL"]}`);
+                            }
                             setMovementItemQuery(item.name);
                             setMovementPickerOpen(false);
                           }}
@@ -11413,7 +12194,17 @@ function InventoryView({
                 <select
                   value={inventoryMovementForm.type}
                   onChange={(event) =>
-                    onMovementFormChange({ ...inventoryMovementForm, type: event.target.value as InventoryMovementType })
+                    onMovementFormChange({
+                      ...inventoryMovementForm,
+                      type: event.target.value as InventoryMovementType,
+                      createExpense: event.target.value === "OUT" ? true : inventoryMovementForm.createExpense,
+                      paymentCategory:
+                        event.target.value === "OUT"
+                          ? "STOCK_CONSUMPTION"
+                          : event.target.value === "IN"
+                            ? "MATERIAL_PURCHASE"
+                            : inventoryMovementForm.paymentCategory,
+                    })
                   }
                 >
                   <option value="IN">Entrada</option>
@@ -11425,12 +12216,23 @@ function InventoryView({
                 Cantidad
                 <input
                   type="number"
-                  min="0"
-                  value={inventoryMovementForm.quantity}
-                  onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, quantity: Number(event.target.value) })}
+                  min="1"
+                  max={selectedMovementMaxQuantity}
+                  value={boundedMovementQuantity || ""}
+                  onChange={(event) => {
+                    const nextQuantity = Number(event.target.value) || 0;
+                    onMovementFormChange({
+                      ...inventoryMovementForm,
+                      quantity:
+                        selectedMovementMaxQuantity === undefined
+                          ? nextQuantity
+                          : Math.min(Math.max(0, nextQuantity), selectedMovementMaxQuantity),
+                    });
+                  }}
                 />
+                {selectedMovementItem && inventoryMovementForm.type === "OUT" ? <small>Disponible: {selectedMovementItem.stock} {selectedMovementItem.unit}</small> : null}
               </label>
-              {inventoryMovementForm.type === "IN" ? (
+              {inventoryMovementForm.type !== "ADJUST" ? (
                 <>
                   <label>
                     Costo unitario
@@ -11458,7 +12260,9 @@ function InventoryView({
                       checked={inventoryMovementForm.createExpense ?? false}
                       onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, createExpense: event.target.checked })}
                     />
-                    Crear egreso automatico en Gastos e Ingresos
+                    {inventoryMovementForm.type === "OUT"
+                      ? "Registrar egreso por consumo en Gastos e Ingresos"
+                      : "Crear egreso automatico en Gastos e Ingresos"}
                   </label>
                   {inventoryMovementForm.createExpense ? (
                     <>
@@ -11480,15 +12284,15 @@ function InventoryView({
                         <input
                           value={inventoryMovementForm.paymentMethod || ""}
                           onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, paymentMethod: event.target.value })}
-                          placeholder="Transferencia, efectivo"
+                          placeholder={inventoryMovementForm.type === "OUT" ? "Consumo interno, retiro" : "Transferencia, efectivo"}
                         />
                       </label>
                       <label className="wideField">
-                        Referencia del gasto
+                        Referencia / comprobante
                         <input
                           value={inventoryMovementForm.paymentReference || ""}
                           onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, paymentReference: event.target.value })}
-                          placeholder="Factura, boleta o comprobante"
+                          placeholder={inventoryMovementForm.type === "OUT" ? "Orden, tecnico, consumo, ajuste operativo" : "Factura, boleta o comprobante"}
                         />
                       </label>
                     </>
@@ -11535,13 +12339,79 @@ function InventoryView({
                 <textarea
                   value={inventoryMovementForm.reason}
                   onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, reason: event.target.value })}
-                  placeholder="Uso en instalacion, compra, recuento, devolucion"
+                  placeholder="Uso en instalacion, consumo interno, compra, recuento, devolucion"
                 />
               </label>
+              {selectedMovementItem ? (
+                <div className="movementCostPreview wideField">
+                  <div>
+                    <span>Articulo</span>
+                    <strong>{selectedMovementItem.name}</strong>
+                  </div>
+                  <div>
+                    <span>Stock actual</span>
+                    <strong>
+                      {selectedMovementItem.stock} {selectedMovementItem.unit}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Costo unitario</span>
+                    <strong>{formatPrice(movementUnitCost, movementCurrency)}</strong>
+                  </div>
+                  <div>
+                    <span>{movementCanCreateExpense ? "Egreso a registrar" : "Valor del movimiento"}</span>
+                    <strong>{formatPrice(movementEstimatedCost, movementCurrency)}</strong>
+                  </div>
+                </div>
+              ) : null}
+              {selectedMovementItem ? (
+                <button
+                  type="button"
+                  className="secondaryButton wideField"
+                  onClick={addMovementBatchItem}
+                  disabled={inventoryMovementForm.type === "OUT" && selectedMovementItem.stock <= 0}
+                >
+                  <Plus size={18} />
+                  Agregar articulo a esta salida
+                </button>
+              ) : null}
+              {movementBatchDetails.length ? (
+                <div className="movementBatchBox wideField">
+                  <div className="movementBatchHeader">
+                    <div>
+                      <span>Salida agrupada</span>
+                      <strong>{movementBatchDetails.length} articulo(s) para la misma causa</strong>
+                    </div>
+                    <strong>{formatPrice(movementBatchTotal, movementCurrency)}</strong>
+                  </div>
+                  {movementBatchDetails.map((line) => (
+                    <div key={line.itemId} className="movementBatchLine">
+                      <div>
+                        <strong>{line.item.name}</strong>
+                        <span>
+                          Stock {line.item.stock} {line.item.unit} - {formatPrice(line.unitCost, line.currency)}
+                        </span>
+                      </div>
+                      <input
+                        type="number"
+                        min="1"
+                        max={inventoryMovementForm.type === "OUT" ? line.item.stock : undefined}
+                        value={line.quantity}
+                        onChange={(event) => updateMovementBatchQuantity(line.itemId, Number(event.target.value))}
+                        aria-label={`Cantidad para ${line.item.name}`}
+                      />
+                      <strong>{formatPrice(line.quantity * line.unitCost, line.currency)}</strong>
+                      <button type="button" className="iconButton" onClick={() => removeMovementBatchItem(line.itemId)} aria-label="Quitar articulo">
+                        <X size={17} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <button className="primaryButton" type="submit" disabled={loading || !inventoryItems.length}>
               <RefreshCw size={18} />
-              Registrar movimiento
+              {movementBatchDetails.length ? "Registrar salida agrupada" : "Registrar movimiento"}
             </button>
           </form>
         </div>
@@ -11592,10 +12462,11 @@ function InventoryView({
                 </option>
               ))}
             </select>
-            <select value={inventoryMode} onChange={(event) => onModeChange(event.target.value as "stock" | "catalog" | "all")} aria-label="Vista de almacen">
+            <select value={inventoryMode} onChange={(event) => onModeChange(event.target.value as InventoryViewMode)} aria-label="Vista de almacen">
               <option value="stock">Stock real</option>
               <option value="catalog">Catalogo</option>
               <option value="all">Todo</option>
+              <option value="archived">Archivados</option>
             </select>
             <select value={inventoryStockFilter} onChange={(event) => onStockFilterChange(event.target.value as "ALL" | "LOW")}>
               <option value="ALL">Todo stock</option>
@@ -11614,7 +12485,8 @@ function InventoryView({
                 ["date", "Fecha"],
                 ["brand", "Importador"],
                 ["model", "Modelo"],
-                ["installed", "Instalado"],
+                ["stock", "Stock real"],
+                ["price", "Precio"],
                 ["status", "Estado"],
               ].map(([key, label]) => (
                 <button key={key} type="button" onClick={() => toggleInventorySort(key as InventorySortKey)}>
@@ -11639,8 +12511,9 @@ function InventoryView({
               const form = stockForm(item);
               const installedQuantity = item.installedQuantity ?? 0;
               const totalManagedQuantity = item.managedStock ? item.stock + installedQuantity : installedQuantity;
-              const statusLabel = !item.managedStock ? "Catalogo" : item.stock === 0 ? "Sin stock" : "Disponible";
-              const statusClass = !item.managedStock ? "scheduled" : item.stock === 0 ? "waiting_customer" : "completed";
+              const isArchivedItem = item.sourceType === "ARCHIVED";
+              const statusLabel = isArchivedItem ? "Archivado" : !item.managedStock ? "Catalogo" : item.stock === 0 ? "Sin stock" : "Disponible";
+              const statusClass = isArchivedItem ? "cancelled" : !item.managedStock ? "scheduled" : item.stock === 0 ? "waiting_customer" : "completed";
 
               return (
               <article
@@ -11653,7 +12526,12 @@ function InventoryView({
                 <span className="inventoryDate">{formatInventoryDate(item.updatedAt)}</span>
                 <span className="inventoryBrand">{item.supplier || "Sin importador"}</span>
                 <strong className="inventoryModel" title={item.name}>{item.name}</strong>
-                <span className="inventoryInstalled">{installedQuantity} {item.unit}</span>
+                <span className="inventoryInstalled">
+                  {item.managedStock ? `${item.stock} ${item.unit}` : "Sin ingresar"}
+                </span>
+                <span className="inventoryPrice">
+                  {formatPrice(item.priceWithTax ?? item.costPrice ?? 0, item.currency)}
+                </span>
                 <span className={`statusPill ${statusClass}`}>{statusLabel}</span>
                 <div className="workOrderActions">
                   <button type="button" className="secondaryButton" onClick={(event) => {
@@ -12056,11 +12934,9 @@ function WhatsAppView({
   onReply: (chat: WhatsAppChat) => void;
 }) {
   const [showOpenWaChecklist, setShowOpenWaChecklist] = useState(false);
-  const contactOptions = [
-    ...sync.chats.map((chat) => ({ id: chat.id, label: chat.name || chat.id })),
-    ...sync.groups.map((group) => ({ id: group.id, label: group.name || group.id })),
-  ];
+  const contactOptions = buildWhatsAppContactOptions(sync.chats, sync.groups);
   const chatSections = groupWhatsAppChats(sync.chats, sync.groups, customers);
+  const selectedContactInOptions = contactOptions.some((option) => option.id === dailySummaryForm.recipientPhone);
 
   return (
     <section className="whatsAppModule">
@@ -12176,9 +13052,12 @@ function WhatsAppView({
                   });
                 }}
               >
-                <option value={dailySummaryForm.recipientPhone || ""}>
-                  {dailySummaryForm.recipientName || dailySummaryForm.recipientPhone || "Manual"}
-                </option>
+                <option value="">Seleccionar contacto</option>
+                {!selectedContactInOptions && dailySummaryForm.recipientPhone ? (
+                  <option value={dailySummaryForm.recipientPhone}>
+                    {dailySummaryForm.recipientName || dailySummaryForm.recipientPhone}
+                  </option>
+                ) : null}
                 {contactOptions.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.label}
@@ -12255,8 +13134,8 @@ function WhatsAppView({
                   <em>{section.chats.length}</em>
                 </div>
                 <div className="whatsAppChatList">
-                  {section.chats.map((chat) => (
-                    <article key={chat.id} className={chat.unreadCount ? "unreadChat" : ""}>
+                  {section.chats.map((chat, index) => (
+                    <article key={`${section.title}-${chat.id}-${index}`} className={chat.unreadCount ? "unreadChat" : ""}>
                       <div>
                         <strong>{chat.name || chat.id}</strong>
                         <span>{chat.isGroup ? "Grupo" : "Chat"} - {formatWhatsAppTime(chat.timestamp)}</span>
@@ -12284,8 +13163,8 @@ function WhatsAppView({
             </div>
           </div>
           <div className="whatsAppGroupGrid">
-            {sync.groups.slice(0, 12).map((group) => (
-              <article key={group.id}>
+            {dedupeWhatsAppChats(sync.groups).slice(0, 12).map((group, index) => (
+              <article key={`${group.id}-${index}`}>
                 <MessageSquare size={19} />
                 <strong>{group.name || group.id}</strong>
               </article>
@@ -12826,6 +13705,29 @@ function cleanInventoryMovementPayload(form: InventoryMovementPayload): Inventor
   };
 }
 
+function cleanInventoryMovementBatchPayload(form: InventoryMovementPayload) {
+  return {
+    type: form.type,
+    items: (form.items ?? []).map((item) => ({
+      itemId: item.itemId,
+      quantity: Number(item.quantity) || 0,
+      unitCost: Number(item.unitCost) || undefined,
+      currency: item.currency?.trim() || form.currency?.trim() || undefined,
+      sourceType: item.sourceType?.trim() || form.sourceType?.trim() || undefined,
+    })),
+    createExpense: form.createExpense,
+    paymentCategory: form.paymentCategory?.trim() || undefined,
+    paymentMethod: form.paymentMethod?.trim() || undefined,
+    paymentReference: form.paymentReference?.trim() || undefined,
+    sourceType: form.sourceType?.trim() || undefined,
+    customerId: form.customerId || undefined,
+    reason: form.reason?.trim() || undefined,
+    workOrderId: form.workOrderId || undefined,
+    installedDeviceId: form.installedDeviceId || undefined,
+    currency: form.currency?.trim() || undefined,
+  };
+}
+
 function isOverdue(payment: Payment) {
   if (payment.paidAt || !payment.dueDate) {
     return false;
@@ -13172,7 +14074,10 @@ function buildGpsTimelineStops(
           : visit
             ? `${visit.customerName}${visit.siteName ? ` - ${visit.siteName}` : ""}`
             : learnedTitle || `Parada GPS ${stop.index + 1}`,
+        customerId: visit?.customerId,
         customerName: visit?.customerName,
+        customerType: visit?.customerType,
+        siteId: visit?.siteId,
         learnedPlaceId: learnedPlace?.id,
         learnedPlaceType: learnedPlace?.placeType,
         learnedZone: learnedPlace?.zone,
@@ -13814,11 +14719,14 @@ function groupWhatsAppChats(chats: WhatsAppChat[], groups: WhatsAppChat[], custo
     if (!sections.has(title)) {
       sections.set(title, { title, caption, chats: [] });
     }
-    sections.get(title)?.chats.push(chat);
+    const section = sections.get(title);
+    if (!section?.chats.some((existing) => existing.id === chat.id)) {
+      section?.chats.push(chat);
+    }
   };
   const customerPhones = new Set(customers.map((customer) => normalizeWhatsAppComparable(customer.phone)).filter(Boolean));
 
-  chats.forEach((chat) => {
+  dedupeWhatsAppChats(chats).forEach((chat) => {
     const label = getWhatsAppListLabel(chat);
     if (label) {
       addToSection(label, "Lista de WhatsApp", chat);
@@ -13836,7 +14744,7 @@ function groupWhatsAppChats(chats: WhatsAppChat[], groups: WhatsAppChat[], custo
     }
   });
 
-  groups.forEach((group) => {
+  dedupeWhatsAppChats(groups).forEach((group) => {
     const label = getWhatsAppListLabel(group);
     addToSection(label || "Grupos", label ? "Lista de WhatsApp" : "Grupos sincronizados", { ...group, isGroup: true });
   });
@@ -13850,6 +14758,27 @@ function groupWhatsAppChats(chats: WhatsAppChat[], groups: WhatsAppChat[], custo
     }
     return left.title.localeCompare(right.title);
   });
+}
+
+function buildWhatsAppContactOptions(chats: WhatsAppChat[], groups: WhatsAppChat[]) {
+  return dedupeWhatsAppChats([...chats, ...groups]).map((chat) => ({
+    id: chat.id,
+    label: chat.name || getWhatsAppListLabel(chat) || chat.id,
+  }));
+}
+
+function dedupeWhatsAppChats<T extends WhatsAppChat>(chats: T[]) {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  chats.forEach((chat) => {
+    const key = chat.id?.trim();
+    if (!key || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    result.push(chat);
+  });
+  return result;
 }
 
 function getWhatsAppListLabel(chat: WhatsAppChat) {
@@ -14179,9 +15108,11 @@ function toWhatsAppPhone(value?: string | null) {
 function buildWorkOrderShareText(workOrder: WorkOrder) {
   const documentNumber = formatWorkOrderNumber(workOrder);
   const site = workOrder.site ? `${workOrder.site.name} - ${workOrder.site.address}` : "Sin sitio especifico";
+  const quoteSummary = parseWorkOrderQuoteNotes(workOrder.notes);
   const groupedMaterials = groupWorkOrderMaterials(workOrder.inventoryMovements ?? []);
-  const materials = groupedMaterials.length
-    ? groupedMaterials
+  const materialsSource = groupedMaterials.length ? groupedMaterials : approvedQuoteItemsToMaterials(quoteSummary?.items ?? []);
+  const materials = materialsSource.length
+    ? materialsSource
         .map((movement) => `- ${movement.name} x${movement.quantity} ${movement.unit}`)
         .join("\n")
     : "- Sin materiales cargados";
@@ -14296,6 +15227,34 @@ function parseWorkOrderQuoteNotes(notes?: string | null): ParsedWorkOrderQuoteNo
     commercialTerms: readValue("Condiciones comerciales"),
     items,
   };
+}
+
+function approvedQuoteItemsToMaterials(items: string[]): GroupedWorkOrderMaterial[] {
+  const materials: GroupedWorkOrderMaterial[] = [];
+
+  items.forEach((item, index) => {
+    const cleanItem = item.trim();
+    if (!cleanItem || cleanItem.toLowerCase().includes("sin items cargados")) {
+      return;
+    }
+
+    const match = cleanItem.match(/^(.*?):\s*([\d.,]+)\s+([^\s]+)\s+x\s+(.+)$/);
+    const quantity = match ? Number(match[2].replace(",", ".")) || 1 : 1;
+    const unit = match?.[3] ?? "u";
+    const price = match?.[4]?.trim();
+
+    materials.push({
+      key: `quote-approved-${index}`,
+      ids: [],
+      name: match?.[1]?.trim() || cleanItem,
+      sku: "",
+      unit,
+      quantity,
+      deviceDetails: price ? [`Precio aprobado ${price}`] : [],
+    });
+  });
+
+  return materials;
 }
 
 async function buildQuoteTemplateAttachment(quote: Quote) {
@@ -14597,11 +15556,19 @@ function inventorySortValue(item: InventoryItem, key: InventorySortKey) {
     return device?.model ?? item.name;
   }
 
-  if (key === "installed") {
-    return item.installedQuantity ?? 0;
+  if (key === "stock") {
+    return item.managedStock ? item.stock : 0;
+  }
+
+  if (key === "price") {
+    return Number(item.priceWithTax ?? item.costPrice ?? 0) || 0;
   }
 
   if (key === "status") {
+    if (item.sourceType === "ARCHIVED") {
+      return "Archivado";
+    }
+
     return !item.managedStock ? "Catalogo" : item.stock > 0 ? "Disponible" : "Sin stock";
   }
 

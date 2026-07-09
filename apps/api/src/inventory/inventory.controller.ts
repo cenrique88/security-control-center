@@ -2,7 +2,8 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } f
 import { ServiceType } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CreateInventoryItemDto } from "./dto/create-inventory-item.dto";
-import { CreateInventoryMovementDto } from "./dto/create-inventory-movement.dto";
+import { CreateInventoryMovementBatchDto, CreateInventoryMovementDto } from "./dto/create-inventory-movement.dto";
+import { ImportInvoiceDto } from "./dto/import-invoice.dto";
 import { InventoryService } from "./inventory.service";
 
 @Controller("inventory")
@@ -18,7 +19,7 @@ export class InventoryController {
     @Query("supplier") supplier?: string,
     @Query("customerId") customerId?: string,
     @Query("sourceType") sourceType?: string,
-    @Query("mode") mode?: "catalog" | "stock" | "all",
+    @Query("mode") mode?: "catalog" | "stock" | "all" | "archived",
   ) {
     return this.inventoryService.list({ search, category, lowStock, supplier, customerId, sourceType, mode });
   }
@@ -26,6 +27,16 @@ export class InventoryController {
   @Get("summary")
   summary() {
     return this.inventoryService.summary();
+  }
+
+  @Post("invoice/preview")
+  previewInvoice(@Body() dto: ImportInvoiceDto) {
+    return this.inventoryService.previewInvoice(dto);
+  }
+
+  @Post("invoice/import")
+  importInvoice(@Body() dto: ImportInvoiceDto) {
+    return this.inventoryService.importInvoice(dto);
   }
 
   @Post()
@@ -41,6 +52,11 @@ export class InventoryController {
   @Post("movements")
   createMovement(@Body() dto: CreateInventoryMovementDto) {
     return this.inventoryService.createMovement(dto);
+  }
+
+  @Post("movements/batch")
+  createMovementBatch(@Body() dto: CreateInventoryMovementBatchDto) {
+    return this.inventoryService.createMovementBatch(dto);
   }
 
   @Delete("movements/:id")

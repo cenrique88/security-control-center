@@ -15,42 +15,42 @@ export declare class VehiclesService {
     list(filters: VehicleFilters): Promise<{
         id: string;
         name: string;
-        createdAt: Date;
-        updatedAt: Date;
-        active: boolean;
         plate: string | null;
         traccarDeviceId: string | null;
         fuelKmPerLiter: Prisma.Decimal | null;
+        active: boolean;
+        createdAt: Date;
+        updatedAt: Date;
     }[]>;
     create(dto: CreateVehicleDto): Promise<{
         id: string;
         name: string;
-        createdAt: Date;
-        updatedAt: Date;
-        active: boolean;
         plate: string | null;
         traccarDeviceId: string | null;
         fuelKmPerLiter: Prisma.Decimal | null;
+        active: boolean;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     update(id: string, dto: UpdateVehicleDto): Promise<{
         id: string;
         name: string;
-        createdAt: Date;
-        updatedAt: Date;
-        active: boolean;
         plate: string | null;
         traccarDeviceId: string | null;
         fuelKmPerLiter: Prisma.Decimal | null;
+        active: boolean;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     remove(id: string): Promise<{
         id: string;
         name: string;
-        createdAt: Date;
-        updatedAt: Date;
-        active: boolean;
         plate: string | null;
         traccarDeviceId: string | null;
         fuelKmPerLiter: Prisma.Decimal | null;
+        active: boolean;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     getTraccarSettings(): Promise<{
         token: string;
@@ -106,12 +106,12 @@ export declare class VehiclesService {
         vehicle: {
             id: string;
             name: string;
-            createdAt: Date;
-            updatedAt: Date;
-            active: boolean;
             plate: string | null;
             traccarDeviceId: string | null;
             fuelKmPerLiter: Prisma.Decimal | null;
+            active: boolean;
+            createdAt: Date;
+            updatedAt: Date;
         };
         date: string;
         configured: boolean;
@@ -138,6 +138,7 @@ export declare class VehiclesService {
             stopIndex: number;
             customerId: string;
             customerName: string;
+            customerType?: string;
             siteId?: string;
             siteName?: string;
             address?: string;

@@ -88,14 +88,22 @@ docker compose up -d postgres
 npm install
 ```
 
-4. Generar Prisma y aplicar migraciones:
+4. Instalar dependencias Python para lectura de facturas PDF/Excel:
+
+```bash
+npm run py:install
+```
+
+Estas dependencias se usan en el backend para importar facturas al almacen y generar movimientos contables sin cargar cantidades a mano.
+
+5. Generar Prisma y aplicar migraciones:
 
 ```bash
 npm run db:generate
 npm run db:migrate
 ```
 
-5. Ejecutar frontend y backend:
+6. Ejecutar frontend y backend:
 
 ```bash
 npm run dev

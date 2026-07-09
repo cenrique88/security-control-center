@@ -33,6 +33,9 @@ let QuotesController = class QuotesController {
     update(id, dto) {
         return this.quotesService.update(id, dto);
     }
+    remove(id) {
+        return this.quotesService.remove(id);
+    }
 };
 exports.QuotesController = QuotesController;
 __decorate([
@@ -60,6 +63,13 @@ __decorate([
     __metadata("design:paramtypes", [String, update_quote_dto_1.UpdateQuoteDto]),
     __metadata("design:returntype", void 0)
 ], QuotesController.prototype, "update", null);
+__decorate([
+    (0, common_1.Delete)(":id"),
+    __param(0, (0, common_1.Param)("id")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], QuotesController.prototype, "remove", null);
 exports.QuotesController = QuotesController = __decorate([
     (0, common_1.Controller)("quotes"),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

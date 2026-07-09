@@ -121,6 +121,10 @@ export class PaymentsService {
           data: {
             stock: stockAfter,
             managedStock: true,
+            sourceType: this.cleanOptional(dto.inventorySourceType) ?? this.sourceTypeFromCategory(category),
+            customerId: dto.customerId,
+            supplier: customer.name,
+            supplierCategory: this.cleanOptional(dto.category),
             costPrice: unitPrice,
             priceWithTax: unitPrice,
             currency: this.cleanOptional(dto.currency) ?? "UYU",
@@ -180,6 +184,51 @@ export class PaymentsService {
         paidAt: dto.paidAt === "" ? null : dto.paidAt ? new Date(dto.paidAt) : undefined,
       },
       include: this.includeCustomer(),
+    });
+  }
+
+  async remove(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findUnique({
+        where: { id },
+        include: {
+          inventoryMovements: {
+            include: {
+              item: {
+                select: { id: true, stock: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!payment) {
+        throw new NotFoundException("Payment not found");
+      }
+
+      for (const movement of payment.inventoryMovements) {
+        const stockAfterDelete =
+          movement.type === "OUT"
+            ? movement.item.stock + movement.quantity
+            : movement.type === "IN"
+              ? movement.item.stock - movement.quantity
+              : movement.item.stock;
+
+        if (stockAfterDelete < 0) {
+          throw new BadRequestException("No se puede eliminar porque dejaria stock negativo");
+        }
+
+        await tx.inventoryItem.update({
+          where: { id: movement.itemId },
+          data: { stock: stockAfterDelete, managedStock: true },
+        });
+        await tx.inventoryMovement.delete({ where: { id: movement.id } });
+      }
+
+      return tx.payment.delete({
+        where: { id },
+        include: this.includeCustomer(),
+      });
     });
   }
 

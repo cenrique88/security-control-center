@@ -711,6 +711,13 @@ button:disabled {
   font-weight: 700;
 }
 
+.rowActionButtons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .dangerButton {
   border-color: rgba(239, 68, 68, 0.35);
   color: #fca5a5;
@@ -1046,6 +1053,215 @@ button:disabled {
 .inventoryForms {
   display: grid;
   gap: 18px;
+  min-width: 0;
+}
+
+.invoiceImportPanel {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(8, 20, 32, 0.84);
+  padding: 18px;
+  margin-bottom: 18px;
+}
+
+.invoiceImportGrid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(220px, 0.8fr);
+  gap: 14px;
+  align-items: end;
+}
+
+.invoiceFilePicker {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.invoiceFilePicker input[type="file"] {
+  position: absolute;
+  inset: auto;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.invoiceFilePickerControl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 48px;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(2, 8, 14, 0.86);
+  color: #e5f2ff;
+  cursor: pointer;
+}
+
+.invoiceFilePicker:focus-within .invoiceFilePickerControl,
+.invoiceFilePickerControl:hover {
+  border-color: rgba(67, 211, 198, 0.65);
+  box-shadow: 0 0 0 1px rgba(67, 211, 198, 0.16);
+}
+
+.invoiceFilePickerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(67, 211, 198, 0.34);
+  border-radius: 8px;
+  background: rgba(20, 184, 166, 0.18);
+  color: #5eead4;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.invoiceFilePickerName {
+  min-width: 0;
+  color: #9fb1c5;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invoiceImportSummary,
+.invoicePreviewBox {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(15, 31, 47, 0.78);
+  padding: 14px;
+}
+
+.invoiceImportSummary span,
+.invoicePreviewBox span {
+  color: #9fb1c5;
+}
+
+.invoiceImportSummary strong,
+.invoicePreviewBox strong {
+  display: block;
+  color: #eef6ff;
+}
+
+.invoicePreviewBox {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.invoicePreviewBox ul {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.invoicePreviewBox li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  padding-top: 8px;
+}
+
+.invoiceWarnings {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(67, 211, 198, 0.24);
+  border-radius: 8px;
+  background: rgba(20, 184, 166, 0.08);
+  padding: 12px;
+}
+
+.invoiceWarnings p {
+  margin: 0 0 8px;
+  color: #43d3c6;
+  font-weight: 800;
+}
+
+.invoiceWarnings span {
+  display: block;
+  color: #9fb1c5;
+  line-height: 1.45;
+}
+
+.movementCostPreview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(67, 211, 198, 0.22);
+  border-radius: 8px;
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.movementCostPreview div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.movementCostPreview span {
+  color: #9fb1c5;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.movementCostPreview strong {
+  color: #eef6ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.movementBatchBox {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(67, 211, 198, 0.22);
+  border-radius: 8px;
+  background: rgba(15, 31, 47, 0.72);
+  padding: 12px;
+}
+
+.movementBatchHeader,
+.movementBatchLine {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.movementBatchHeader span,
+.movementBatchLine span {
+  display: block;
+  color: #9fb1c5;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.movementBatchHeader strong,
+.movementBatchLine strong {
+  color: #eef6ff;
+}
+
+.movementBatchLine {
+  grid-template-columns: minmax(0, 1fr) 92px auto 44px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  padding-top: 10px;
+}
+
+.movementBatchLine input {
   min-width: 0;
 }
 
@@ -2360,7 +2576,7 @@ button:disabled {
 .paymentListHeader,
 .paymentListRow {
   display: grid;
-  grid-template-columns: minmax(220px, 1.25fr) minmax(160px, 0.8fr) minmax(160px, 0.8fr) minmax(100px, 0.5fr) minmax(130px, 0.6fr) minmax(140px, 0.65fr);
+  grid-template-columns: minmax(220px, 1.25fr) minmax(160px, 0.8fr) minmax(160px, 0.8fr) minmax(100px, 0.5fr) minmax(130px, 0.6fr) minmax(140px, 0.65fr) minmax(70px, auto);
   align-items: center;
   gap: 16px;
 }
@@ -2383,6 +2599,10 @@ button:disabled {
   color: var(--text);
   text-align: left;
   cursor: pointer;
+}
+
+.paymentListRow .rowActionButtons {
+  justify-content: flex-end;
 }
 
 .paymentListRow:hover,
@@ -2506,6 +2726,13 @@ button:disabled {
 .paymentCustomerTotals span,
 .paymentCustomerTotals strong {
   overflow-wrap: anywhere;
+}
+
+.quoteImporterFilter {
+  display: grid;
+  gap: 7px;
+  margin: 4px 0 2px;
+  max-width: 360px;
 }
 
 .compactSearchBox {
@@ -3247,7 +3474,8 @@ button:disabled {
 .inventoryDirectoryList .inventoryDate,
 .inventoryDirectoryList .inventoryBrand,
 .inventoryDirectoryList .inventoryModel,
-.inventoryDirectoryList .inventoryInstalled {
+.inventoryDirectoryList .inventoryInstalled,
+.inventoryDirectoryList .inventoryPrice {
   min-width: 0;
   padding: 0 16px 0 4px;
   overflow: hidden;
@@ -3263,7 +3491,8 @@ button:disabled {
 
 .inventoryDirectoryList .inventoryDate,
 .inventoryDirectoryList .inventoryBrand,
-.inventoryDirectoryList .inventoryInstalled {
+.inventoryDirectoryList .inventoryInstalled,
+.inventoryDirectoryList .inventoryPrice {
   color: var(--muted);
   font-size: 14px;
   font-weight: 800;
@@ -4661,7 +4890,7 @@ button:disabled {
 
 .quoteList .quoteCard {
   display: grid;
-  grid-template-columns: minmax(190px, 0.7fr) minmax(260px, 1fr) minmax(520px, 1.65fr);
+  grid-template-columns: minmax(190px, 0.7fr) minmax(260px, 1fr) minmax(520px, 1.65fr) auto;
   gap: 16px;
   align-items: center;
   min-height: 76px;
@@ -4712,6 +4941,10 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.quoteRowActions {
+  justify-content: flex-end;
 }
 
 .quoteDetailModal {
@@ -5338,6 +5571,13 @@ button:disabled {
   min-width: 0;
   min-height: 46px;
   align-self: end;
+}
+
+.catalogStockHint {
+  margin: -2px 0 4px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .quoteLaborControls {

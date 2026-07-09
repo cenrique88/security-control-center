@@ -18,6 +18,7 @@ const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const create_inventory_item_dto_1 = require("./dto/create-inventory-item.dto");
 const create_inventory_movement_dto_1 = require("./dto/create-inventory-movement.dto");
+const import_invoice_dto_1 = require("./dto/import-invoice.dto");
 const inventory_service_1 = require("./inventory.service");
 let InventoryController = class InventoryController {
     inventoryService;
@@ -30,6 +31,12 @@ let InventoryController = class InventoryController {
     summary() {
         return this.inventoryService.summary();
     }
+    previewInvoice(dto) {
+        return this.inventoryService.previewInvoice(dto);
+    }
+    importInvoice(dto) {
+        return this.inventoryService.importInvoice(dto);
+    }
     createItem(dto) {
         return this.inventoryService.createItem(dto);
     }
@@ -38,6 +45,9 @@ let InventoryController = class InventoryController {
     }
     createMovement(dto) {
         return this.inventoryService.createMovement(dto);
+    }
+    createMovementBatch(dto) {
+        return this.inventoryService.createMovementBatch(dto);
     }
     deleteMovement(id) {
         return this.inventoryService.deleteMovement(id);
@@ -67,6 +77,20 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], InventoryController.prototype, "summary", null);
 __decorate([
+    (0, common_1.Post)("invoice/preview"),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [import_invoice_dto_1.ImportInvoiceDto]),
+    __metadata("design:returntype", void 0)
+], InventoryController.prototype, "previewInvoice", null);
+__decorate([
+    (0, common_1.Post)("invoice/import"),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [import_invoice_dto_1.ImportInvoiceDto]),
+    __metadata("design:returntype", void 0)
+], InventoryController.prototype, "importInvoice", null);
+__decorate([
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -88,6 +112,13 @@ __decorate([
     __metadata("design:paramtypes", [create_inventory_movement_dto_1.CreateInventoryMovementDto]),
     __metadata("design:returntype", void 0)
 ], InventoryController.prototype, "createMovement", null);
+__decorate([
+    (0, common_1.Post)("movements/batch"),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [create_inventory_movement_dto_1.CreateInventoryMovementBatchDto]),
+    __metadata("design:returntype", void 0)
+], InventoryController.prototype, "createMovementBatch", null);
 __decorate([
     (0, common_1.Delete)("movements/:id"),
     __param(0, (0, common_1.Param)("id")),

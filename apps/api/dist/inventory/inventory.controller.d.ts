@@ -1,11 +1,12 @@
 import { ServiceType } from "@prisma/client";
 import { CreateInventoryItemDto } from "./dto/create-inventory-item.dto";
-import { CreateInventoryMovementDto } from "./dto/create-inventory-movement.dto";
+import { CreateInventoryMovementBatchDto, CreateInventoryMovementDto } from "./dto/create-inventory-movement.dto";
+import { ImportInvoiceDto } from "./dto/import-invoice.dto";
 import { InventoryService } from "./inventory.service";
 export declare class InventoryController {
     private readonly inventoryService;
     constructor(inventoryService: InventoryService);
-    list(search?: string, category?: ServiceType, lowStock?: string, supplier?: string, customerId?: string, sourceType?: string, mode?: "catalog" | "stock" | "all"): Promise<{
+    list(search?: string, category?: ServiceType, lowStock?: string, supplier?: string, customerId?: string, sourceType?: string, mode?: "catalog" | "stock" | "all" | "archived"): Promise<{
         installedQuantity: number;
         customer: {
             id: string;
@@ -98,6 +99,136 @@ export declare class InventoryController {
         movements: number;
         installed: number;
         availableStock: number;
+    }>;
+    previewInvoice(dto: ImportInvoiceDto): Promise<{
+        providerName: string;
+        providerTaxId?: string;
+        providerAddress?: string;
+        buyerName?: string;
+        date?: string;
+        currency: string;
+        invoiceType?: string;
+        series?: string;
+        number?: string;
+        reference: string;
+        items: {
+            description: string;
+            quantity: number;
+            unit: string;
+            unitPrice: number;
+            taxRate: number;
+            subtotal: number;
+        }[];
+        totals: {
+            subtotal: number;
+            tax: number;
+            total: number;
+        };
+        rawText: string;
+        warnings?: string[];
+        extractedTextLength?: number;
+    }>;
+    importInvoice(dto: ImportInvoiceDto): Promise<{
+        importer: {
+            id: string;
+            name: string;
+            type: import(".prisma/client").$Enums.CustomerType;
+        };
+        paymentId: string;
+        movements: ({
+            customer: {
+                id: string;
+                name: string;
+            } | null;
+            workOrder: {
+                id: string;
+                customer: {
+                    id: string;
+                    name: string;
+                };
+                title: string;
+            } | null;
+            installedDevice: {
+                id: string;
+                brand: string | null;
+                model: string | null;
+                serial: string | null;
+            } | null;
+            payment: {
+                id: string;
+                currency: string;
+                concept: string;
+                amount: import("@prisma/client/runtime/library").Decimal;
+                paidAt: Date | null;
+            } | null;
+            item: {
+                id: string;
+                reference: string;
+                sku: string | null;
+                name: string;
+                category: import(".prisma/client").$Enums.ServiceType | null;
+                unit: string;
+                stock: number;
+                minStock: number;
+                managedStock: boolean;
+                sourceType: string;
+                customerId: string | null;
+                location: string | null;
+                supplier: string | null;
+                supplierCategory: string | null;
+                costPrice: import("@prisma/client/runtime/library").Decimal | null;
+                taxAmount: import("@prisma/client/runtime/library").Decimal | null;
+                priceWithTax: import("@prisma/client/runtime/library").Decimal | null;
+                currency: string | null;
+                notes: string | null;
+                createdAt: Date;
+                updatedAt: Date;
+            };
+        } & {
+            id: string;
+            sourceType: string | null;
+            customerId: string | null;
+            currency: string | null;
+            createdAt: Date;
+            type: import(".prisma/client").$Enums.InventoryMovementType;
+            workOrderId: string | null;
+            quantity: number;
+            itemId: string;
+            paymentId: string | null;
+            stockAfter: number;
+            unitCost: import("@prisma/client/runtime/library").Decimal | null;
+            totalCost: import("@prisma/client/runtime/library").Decimal | null;
+            reason: string | null;
+            installedDeviceId: string | null;
+        })[];
+        invoice: {
+            providerName: string;
+            providerTaxId?: string;
+            providerAddress?: string;
+            buyerName?: string;
+            date?: string;
+            currency: string;
+            invoiceType?: string;
+            series?: string;
+            number?: string;
+            reference: string;
+            items: {
+                description: string;
+                quantity: number;
+                unit: string;
+                unitPrice: number;
+                taxRate: number;
+                subtotal: number;
+            }[];
+            totals: {
+                subtotal: number;
+                tax: number;
+                total: number;
+            };
+            rawText: string;
+            warnings?: string[];
+            extractedTextLength?: number;
+        };
     }>;
     createItem(dto: CreateInventoryItemDto): Promise<{
         customer: {
@@ -336,6 +467,75 @@ export declare class InventoryController {
         totalCost: import("@prisma/client/runtime/library").Decimal | null;
         reason: string | null;
         installedDeviceId: string | null;
+    }>;
+    createMovementBatch(dto: CreateInventoryMovementBatchDto): Promise<{
+        paymentId: string | null;
+        movements: ({
+            customer: {
+                id: string;
+                name: string;
+            } | null;
+            workOrder: {
+                id: string;
+                customer: {
+                    id: string;
+                    name: string;
+                };
+                title: string;
+            } | null;
+            installedDevice: {
+                id: string;
+                brand: string | null;
+                model: string | null;
+                serial: string | null;
+            } | null;
+            payment: {
+                id: string;
+                currency: string;
+                concept: string;
+                amount: import("@prisma/client/runtime/library").Decimal;
+                paidAt: Date | null;
+            } | null;
+            item: {
+                id: string;
+                reference: string;
+                sku: string | null;
+                name: string;
+                category: import(".prisma/client").$Enums.ServiceType | null;
+                unit: string;
+                stock: number;
+                minStock: number;
+                managedStock: boolean;
+                sourceType: string;
+                customerId: string | null;
+                location: string | null;
+                supplier: string | null;
+                supplierCategory: string | null;
+                costPrice: import("@prisma/client/runtime/library").Decimal | null;
+                taxAmount: import("@prisma/client/runtime/library").Decimal | null;
+                priceWithTax: import("@prisma/client/runtime/library").Decimal | null;
+                currency: string | null;
+                notes: string | null;
+                createdAt: Date;
+                updatedAt: Date;
+            };
+        } & {
+            id: string;
+            sourceType: string | null;
+            customerId: string | null;
+            currency: string | null;
+            createdAt: Date;
+            type: import(".prisma/client").$Enums.InventoryMovementType;
+            workOrderId: string | null;
+            quantity: number;
+            itemId: string;
+            paymentId: string | null;
+            stockAfter: number;
+            unitCost: import("@prisma/client/runtime/library").Decimal | null;
+            totalCost: import("@prisma/client/runtime/library").Decimal | null;
+            reason: string | null;
+            installedDeviceId: string | null;
+        })[];
     }>;
     deleteMovement(id: string): Promise<{
         customer: {

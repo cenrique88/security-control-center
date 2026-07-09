@@ -31,6 +31,11 @@ export class CustomersController {
     return this.customersService.update(id, dto);
   }
 
+  @Delete(":id")
+  remove(@Param("id") id: string) {
+    return this.customersService.remove(id);
+  }
+
   @Get(":id/profile")
   profile(@Param("id") id: string) {
     return this.customersService.profile(id);

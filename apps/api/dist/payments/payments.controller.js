@@ -32,6 +32,9 @@ let PaymentsController = class PaymentsController {
     update(id, dto) {
         return this.paymentsService.update(id, dto);
     }
+    remove(id) {
+        return this.paymentsService.remove(id);
+    }
 };
 exports.PaymentsController = PaymentsController;
 __decorate([
@@ -60,6 +63,13 @@ __decorate([
     __metadata("design:paramtypes", [String, update_payment_dto_1.UpdatePaymentDto]),
     __metadata("design:returntype", void 0)
 ], PaymentsController.prototype, "update", null);
+__decorate([
+    (0, common_1.Delete)(":id"),
+    __param(0, (0, common_1.Param)("id")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], PaymentsController.prototype, "remove", null);
 exports.PaymentsController = PaymentsController = __decorate([
     (0, common_1.Controller)("payments"),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

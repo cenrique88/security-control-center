@@ -437,6 +437,7 @@ export class VehiclesService {
       stopIndex: number;
       customerId: string;
       customerName: string;
+      customerType?: string;
       siteId?: string;
       siteName?: string;
       address?: string;
@@ -464,6 +465,7 @@ export class VehiclesService {
             stopIndex: stop.index,
             customerId: customer.id,
             customerName: customer.name,
+            customerType: customer.type,
             address: customer.address ?? undefined,
             arrival: stop.arrival,
             departure: stop.departure,
@@ -492,6 +494,7 @@ export class VehiclesService {
             stopIndex: stop.index,
             customerId: customer.id,
             customerName: customer.name,
+            customerType: customer.type,
             siteId: site.id,
             siteName: site.name,
             address: site.address,

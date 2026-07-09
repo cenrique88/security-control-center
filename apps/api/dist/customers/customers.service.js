@@ -89,6 +89,27 @@ let CustomersService = class CustomersService {
             },
         });
     }
+    async remove(id) {
+        await this.ensureExists(id);
+        return this.prisma.$transaction(async (tx) => {
+            await tx.inventoryMovement.updateMany({
+                where: { customerId: id },
+                data: { customerId: null },
+            });
+            await tx.inventoryItem.updateMany({
+                where: { customerId: id },
+                data: { customerId: null },
+            });
+            return tx.customer.delete({
+                where: { id },
+                select: {
+                    id: true,
+                    name: true,
+                    type: true,
+                },
+            });
+        });
+    }
     async listSites(customerId) {
         await this.ensureExists(customerId);
         return this.prisma.site.findMany({

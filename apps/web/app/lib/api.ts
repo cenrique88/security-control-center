@@ -754,6 +754,7 @@ export type VehicleVisit = {
   stopIndex: number;
   customerId: string;
   customerName: string;
+  customerType?: CustomerType;
   siteId?: string;
   siteName?: string;
   address?: string;
@@ -918,6 +919,13 @@ export type InventoryMovementPayload = {
   reason?: string;
   workOrderId?: string;
   installedDeviceId?: string;
+  items?: Array<{
+    itemId: string;
+    quantity: number;
+    unitCost?: number;
+    currency?: string;
+    sourceType?: string;
+  }>;
 };
 
 export type GmailStatus = {

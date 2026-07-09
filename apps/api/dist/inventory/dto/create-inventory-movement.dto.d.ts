@@ -19,4 +19,18 @@ export declare class CreateInventoryMovementDto {
     workOrderId?: string;
     installedDeviceId?: string;
 }
+export declare class CreateInventoryMovementBatchDto {
+    items: CreateInventoryMovementDto[];
+    type: InventoryMovementTypeDto;
+    createExpense?: boolean;
+    paymentCategory?: string;
+    paymentMethod?: string;
+    paymentReference?: string;
+    sourceType?: string;
+    customerId?: string;
+    reason?: string;
+    workOrderId?: string;
+    installedDeviceId?: string;
+    currency?: string;
+}
 export {};

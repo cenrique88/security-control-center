@@ -9,7 +9,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CreateInventoryMovementDto = void 0;
+exports.CreateInventoryMovementBatchDto = exports.CreateInventoryMovementDto = void 0;
+const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 var InventoryMovementTypeDto;
 (function (InventoryMovementTypeDto) {
@@ -103,4 +104,80 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateInventoryMovementDto.prototype, "installedDeviceId", void 0);
+class CreateInventoryMovementBatchDto {
+    items;
+    type;
+    createExpense;
+    paymentCategory;
+    paymentMethod;
+    paymentReference;
+    sourceType;
+    customerId;
+    reason;
+    workOrderId;
+    installedDeviceId;
+    currency;
+}
+exports.CreateInventoryMovementBatchDto = CreateInventoryMovementBatchDto;
+__decorate([
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMinSize)(1),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => CreateInventoryMovementDto),
+    __metadata("design:type", Array)
+], CreateInventoryMovementBatchDto.prototype, "items", void 0);
+__decorate([
+    (0, class_validator_1.IsEnum)(InventoryMovementTypeDto),
+    __metadata("design:type", String)
+], CreateInventoryMovementBatchDto.prototype, "type", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateInventoryMovementBatchDto.prototype, "createExpense", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementBatchDto.prototype, "paymentCategory", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementBatchDto.prototype, "paymentMethod", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementBatchDto.prototype, "paymentReference", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementBatchDto.prototype, "sourceType", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementBatchDto.prototype, "customerId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementBatchDto.prototype, "reason", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementBatchDto.prototype, "workOrderId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementBatchDto.prototype, "installedDeviceId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateInventoryMovementBatchDto.prototype, "currency", void 0);
 //# sourceMappingURL=create-inventory-movement.dto.js.map

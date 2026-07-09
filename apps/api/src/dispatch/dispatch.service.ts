@@ -53,47 +53,119 @@ export class DispatchService {
   }
 
   async suppliers() {
-    const rows = await this.prisma.inventoryItem.findMany({
-      where: {
-        supplier: {
-          not: null,
+    const [inventorySuppliers, importerCustomers] = await Promise.all([
+      this.prisma.inventoryItem.findMany({
+        where: {
+          supplier: {
+            not: null,
+          },
         },
-      },
-      select: {
-        supplier: true,
-      },
-      distinct: ["supplier"],
-      orderBy: {
-        supplier: "asc",
-      },
-    });
+        select: {
+          supplier: true,
+        },
+        distinct: ["supplier"],
+        orderBy: {
+          supplier: "asc",
+        },
+      }),
+      this.prisma.customer.findMany({
+        where: {
+          type: "IMPORTER",
+        },
+        select: {
+          name: true,
+        },
+        orderBy: {
+          name: "asc",
+        },
+      }),
+    ]);
 
-    return rows.map((row) => row.supplier).filter(Boolean);
+    return Array.from(
+      new Set([
+        ...importerCustomers.map((customer) => customer.name),
+        ...inventorySuppliers.map((row) => row.supplier).filter((supplier): supplier is string => Boolean(supplier)),
+      ]),
+    ).sort((left, right) => left.localeCompare(right, "es", { sensitivity: "base" }));
   }
 
   async places() {
-    return this.prisma.dispatchStop.findMany({
-      where: {
-        latitude: {
-          not: null,
-        },
-        longitude: {
-          not: null,
-        },
-        OR: [
-          {
-            source: "TRACCAR",
+    const [savedStops, customers] = await Promise.all([
+      this.prisma.dispatchStop.findMany({
+        where: {
+          latitude: {
+            not: null,
           },
-          {
-            source: "CRM",
+          longitude: {
+            not: null,
           },
-        ],
-      },
-      orderBy: {
-        updatedAt: "desc",
-      },
-      take: 500,
-    });
+          OR: [
+            {
+              source: "TRACCAR",
+            },
+            {
+              source: "CRM",
+            },
+          ],
+        },
+        orderBy: {
+          updatedAt: "desc",
+        },
+        take: 500,
+      }),
+      this.prisma.customer.findMany({
+        where: {
+          latitude: {
+            not: null,
+          },
+          longitude: {
+            not: null,
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          latitude: true,
+          longitude: true,
+          type: true,
+          updatedAt: true,
+        },
+        orderBy: {
+          name: "asc",
+        },
+      }),
+    ]);
+
+    const customerPlaces = customers.map((customer) => ({
+      id: `customer-${customer.id}`,
+      date: new Date(0),
+      vehicleId: null,
+      vehicleKey: "directory",
+      stopKey: `customer-${customer.id}`,
+      placeType: customer.type === "IMPORTER" ? "IMPORTER" : "CLIENT",
+      title: customer.name,
+      address: customer.address,
+      latitude: customer.latitude,
+      longitude: customer.longitude,
+      customerId: customer.id,
+      siteId: null,
+      workOrderId: null,
+      supplierName: customer.type === "IMPORTER" ? customer.name : null,
+      futureClientName: null,
+      kind: customer.type === "IMPORTER" ? "IMPORTER" : "CLIENT",
+      zone: null,
+      scheduledAt: null,
+      durationMinutes: 0,
+      parkingCost: 0,
+      tollCost: 0,
+      notes: customer.type === "IMPORTER" ? "Importador registrado en clientes" : "Cliente registrado",
+      source: "CRM",
+      createdAt: customer.updatedAt,
+      updatedAt: customer.updatedAt,
+    }));
+
+    return [...savedStops, ...customerPlaces].slice(0, 1000);
   }
 
   private toStopData(stop: SaveDispatchStopsDto["stops"][number]) {
