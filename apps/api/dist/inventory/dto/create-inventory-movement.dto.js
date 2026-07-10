@@ -25,6 +25,7 @@ class CreateInventoryMovementDto {
     unitCost;
     currency;
     createExpense;
+    zeroCostRecovery;
     paymentCategory;
     paymentMethod;
     paymentReference;
@@ -64,6 +65,11 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], CreateInventoryMovementDto.prototype, "createExpense", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateInventoryMovementDto.prototype, "zeroCostRecovery", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
@@ -108,6 +114,7 @@ class CreateInventoryMovementBatchDto {
     items;
     type;
     createExpense;
+    zeroCostRecovery;
     paymentCategory;
     paymentMethod;
     paymentReference;
@@ -135,6 +142,11 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], CreateInventoryMovementBatchDto.prototype, "createExpense", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateInventoryMovementBatchDto.prototype, "zeroCostRecovery", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),

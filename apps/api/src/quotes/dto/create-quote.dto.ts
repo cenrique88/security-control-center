@@ -41,6 +41,10 @@ export class CreateQuoteItemDto {
   @IsString()
   priceBookItemId?: string;
 
+  @IsOptional()
+  @IsString()
+  inventoryItemId?: string;
+
   @IsEnum(QuoteItemTypeDto)
   type!: QuoteItemTypeDto;
 

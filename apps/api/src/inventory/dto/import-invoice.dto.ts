@@ -11,4 +11,8 @@ export class ImportInvoiceDto {
   @IsOptional()
   @IsBoolean()
   createStockEntries?: boolean;
+
+  @IsOptional()
+  @IsString()
+  importMode?: "STOCK" | "EXPENSE";
 }

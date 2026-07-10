@@ -42,6 +42,7 @@ export declare class UpdateQuoteDto {
     subtotal?: number;
     tax?: number;
     acceptedAt?: string;
+    scheduledAt?: string;
     internalNotes?: string;
     commercialTerms?: string;
     executionTime?: string;

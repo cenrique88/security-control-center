@@ -7,5 +7,6 @@ import { VehiclesService } from "./vehicles.service";
   imports: [FuelModule],
   controllers: [VehiclesController],
   providers: [VehiclesService],
+  exports: [VehiclesService],
 })
 export class VehiclesModule {}

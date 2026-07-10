@@ -59,6 +59,7 @@ export declare class InventoryController {
             customerId: string | null;
             currency: string | null;
             createdAt: Date;
+            quoteId: string | null;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             workOrderId: string | null;
             quantity: number;
@@ -127,8 +128,59 @@ export declare class InventoryController {
         rawText: string;
         warnings?: string[];
         extractedTextLength?: number;
+        duplicate?: {
+            exists: boolean;
+            paymentId?: string;
+            importedAt?: string;
+            message: string;
+            products: string[];
+        };
     }>;
     importInvoice(dto: ImportInvoiceDto): Promise<{
+        importer: {
+            id: string;
+            name: string;
+            type: import(".prisma/client").$Enums.CustomerType;
+        };
+        paymentId: string;
+        movements: never[];
+        invoice: {
+            providerName: string;
+            providerTaxId?: string;
+            providerAddress?: string;
+            buyerName?: string;
+            date?: string;
+            currency: string;
+            invoiceType?: string;
+            series?: string;
+            number?: string;
+            reference: string;
+            items: {
+                description: string;
+                quantity: number;
+                unit: string;
+                unitPrice: number;
+                taxRate: number;
+                subtotal: number;
+            }[];
+            totals: {
+                subtotal: number;
+                tax: number;
+                total: number;
+            };
+            rawText: string;
+            warnings?: string[];
+            extractedTextLength?: number;
+            duplicate?: {
+                exists: boolean;
+                paymentId?: string;
+                importedAt?: string;
+                message: string;
+                products: string[];
+            };
+        };
+        importMode: string;
+    } | {
         importer: {
             id: string;
             name: string;
@@ -190,6 +242,7 @@ export declare class InventoryController {
             customerId: string | null;
             currency: string | null;
             createdAt: Date;
+            quoteId: string | null;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             workOrderId: string | null;
             quantity: number;
@@ -228,7 +281,15 @@ export declare class InventoryController {
             rawText: string;
             warnings?: string[];
             extractedTextLength?: number;
+            duplicate?: {
+                exists: boolean;
+                paymentId?: string;
+                importedAt?: string;
+                message: string;
+                products: string[];
+            };
         };
+        importMode?: undefined;
     }>;
     createItem(dto: CreateInventoryItemDto): Promise<{
         customer: {
@@ -282,6 +343,7 @@ export declare class InventoryController {
             customerId: string | null;
             currency: string | null;
             createdAt: Date;
+            quoteId: string | null;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             workOrderId: string | null;
             quantity: number;
@@ -368,6 +430,7 @@ export declare class InventoryController {
             customerId: string | null;
             currency: string | null;
             createdAt: Date;
+            quoteId: string | null;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             workOrderId: string | null;
             quantity: number;
@@ -457,6 +520,7 @@ export declare class InventoryController {
         customerId: string | null;
         currency: string | null;
         createdAt: Date;
+        quoteId: string | null;
         type: import(".prisma/client").$Enums.InventoryMovementType;
         workOrderId: string | null;
         quantity: number;
@@ -525,6 +589,7 @@ export declare class InventoryController {
             customerId: string | null;
             currency: string | null;
             createdAt: Date;
+            quoteId: string | null;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             workOrderId: string | null;
             quantity: number;
@@ -592,6 +657,7 @@ export declare class InventoryController {
         customerId: string | null;
         currency: string | null;
         createdAt: Date;
+        quoteId: string | null;
         type: import(".prisma/client").$Enums.InventoryMovementType;
         workOrderId: string | null;
         quantity: number;

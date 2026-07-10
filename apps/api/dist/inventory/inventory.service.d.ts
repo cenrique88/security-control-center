@@ -40,6 +40,13 @@ type ParsedInvoice = {
     rawText: string;
     warnings?: string[];
     extractedTextLength?: number;
+    duplicate?: {
+        exists: boolean;
+        paymentId?: string;
+        importedAt?: string;
+        message: string;
+        products: string[];
+    };
 };
 export declare class InventoryService {
     private readonly prisma;
@@ -97,6 +104,7 @@ export declare class InventoryService {
             customerId: string | null;
             currency: string | null;
             createdAt: Date;
+            quoteId: string | null;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             workOrderId: string | null;
             quantity: number;
@@ -182,6 +190,7 @@ export declare class InventoryService {
             customerId: string | null;
             currency: string | null;
             createdAt: Date;
+            quoteId: string | null;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             workOrderId: string | null;
             quantity: number;
@@ -268,6 +277,7 @@ export declare class InventoryService {
             customerId: string | null;
             currency: string | null;
             createdAt: Date;
+            quoteId: string | null;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             workOrderId: string | null;
             quantity: number;
@@ -357,6 +367,7 @@ export declare class InventoryService {
         customerId: string | null;
         currency: string | null;
         createdAt: Date;
+        quoteId: string | null;
         type: import(".prisma/client").$Enums.InventoryMovementType;
         workOrderId: string | null;
         quantity: number;
@@ -425,6 +436,7 @@ export declare class InventoryService {
             customerId: string | null;
             currency: string | null;
             createdAt: Date;
+            quoteId: string | null;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             workOrderId: string | null;
             quantity: number;
@@ -492,6 +504,7 @@ export declare class InventoryService {
         customerId: string | null;
         currency: string | null;
         createdAt: Date;
+        quoteId: string | null;
         type: import(".prisma/client").$Enums.InventoryMovementType;
         workOrderId: string | null;
         quantity: number;
@@ -536,6 +549,16 @@ export declare class InventoryService {
     }>;
     previewInvoice(dto: ImportInvoiceDto): Promise<ParsedInvoice>;
     importInvoice(dto: ImportInvoiceDto): Promise<{
+        importer: {
+            id: string;
+            name: string;
+            type: import(".prisma/client").$Enums.CustomerType;
+        };
+        paymentId: string;
+        movements: never[];
+        invoice: ParsedInvoice;
+        importMode: string;
+    } | {
         importer: {
             id: string;
             name: string;
@@ -597,6 +620,7 @@ export declare class InventoryService {
             customerId: string | null;
             currency: string | null;
             createdAt: Date;
+            quoteId: string | null;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             workOrderId: string | null;
             quantity: number;
@@ -609,7 +633,10 @@ export declare class InventoryService {
             installedDeviceId: string | null;
         })[];
         invoice: ParsedInvoice;
+        importMode?: undefined;
     }>;
+    private withInvoiceDuplicateStatus;
+    private findDuplicateInvoice;
     private installedQuantityByItem;
     private extractInvoiceText;
     private runPython;
@@ -617,6 +644,9 @@ export declare class InventoryService {
     private parseInvoiceItems;
     private findProviderName;
     private findOrCreateImporter;
+    private resolveInventoryFinanceCustomer;
+    private resolveMovementFinanceCustomer;
+    private resolveInternalOperationsCustomer;
     private findOrCreateInvoiceItem;
     private nextCustomerReference;
     private parseInvoiceDate;
@@ -624,6 +654,7 @@ export declare class InventoryService {
     private firstMatch;
     private parseLocalNumber;
     private roundMoney;
+    private resolveMovementUnitCost;
     private movementInclude;
     private paymentCategoryFromSource;
     private nextReference;

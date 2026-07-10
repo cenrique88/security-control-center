@@ -56,6 +56,10 @@ export class UpdateWorkOrderDto {
 
   @IsOptional()
   @IsString()
+  reportType?: string;
+
+  @IsOptional()
+  @IsString()
   reportBeforeNotes?: string;
 
   @IsOptional()

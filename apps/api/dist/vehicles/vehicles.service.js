@@ -269,6 +269,93 @@ let VehiclesService = class VehiclesService {
             message: `Geozonas sincronizadas: ${created} nuevas, ${updated} actualizadas, ${skipped} sin coordenadas.`,
         };
     }
+    async syncCustomerGeofenceById(customerId) {
+        const settings = await this.prisma.traccarSettings.findUnique({ where: { id: "default" } });
+        if (!settings?.baseUrl || (!settings.token && (!settings.username || !settings.password))) {
+            return { configured: false, status: "skipped", reason: "Configura Traccar antes de sincronizar geozonas." };
+        }
+        const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+        if (!customer) {
+            throw new common_1.NotFoundException("Customer not found");
+        }
+        const coords = this.resolveCoordinates(customer.latitude, customer.longitude, customer.address);
+        if (!coords) {
+            return { configured: true, status: "skipped", reason: "Sin coordenadas" };
+        }
+        const result = await this.upsertTraccarGeofence(settings, {
+            currentId: customer.traccarGeofenceId,
+            name: `CRM Cliente - ${customer.name}`,
+            description: customer.address ?? "",
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            radius: settings.matchRadiusMeters || 120,
+        });
+        if (result.status !== "created" && result.status !== "updated") {
+            return { configured: true, ...result };
+        }
+        await this.prisma.customer.update({
+            where: { id: customer.id },
+            data: {
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+                traccarGeofenceId: result.geofenceId,
+            },
+        });
+        const vehicles = await this.prisma.vehicle.findMany({
+            where: { active: true, traccarDeviceId: { not: null } },
+            select: { traccarDeviceId: true },
+        });
+        const linked = await this.linkGeofenceToVehicles(settings, result.geofenceId, vehicles.map((vehicle) => vehicle.traccarDeviceId).filter(Boolean));
+        return { configured: true, ...result, linked };
+    }
+    async syncSiteGeofenceById(siteId) {
+        const settings = await this.prisma.traccarSettings.findUnique({ where: { id: "default" } });
+        if (!settings?.baseUrl || (!settings.token && (!settings.username || !settings.password))) {
+            return { configured: false, status: "skipped", reason: "Configura Traccar antes de sincronizar geozonas." };
+        }
+        const site = await this.prisma.site.findUnique({
+            where: { id: siteId },
+            include: {
+                customer: {
+                    select: {
+                        name: true,
+                    },
+                },
+            },
+        });
+        if (!site) {
+            throw new common_1.NotFoundException("Site not found");
+        }
+        const coords = this.resolveCoordinates(site.latitude, site.longitude, site.address);
+        if (!coords) {
+            return { configured: true, status: "skipped", reason: "Sin coordenadas" };
+        }
+        const result = await this.upsertTraccarGeofence(settings, {
+            currentId: site.traccarGeofenceId,
+            name: `CRM Sitio - ${site.customer.name} - ${site.name}`,
+            description: site.address,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            radius: settings.matchRadiusMeters || 120,
+        });
+        if (result.status !== "created" && result.status !== "updated") {
+            return { configured: true, ...result };
+        }
+        await this.prisma.site.update({
+            where: { id: site.id },
+            data: {
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+                traccarGeofenceId: result.geofenceId,
+            },
+        });
+        const vehicles = await this.prisma.vehicle.findMany({
+            where: { active: true, traccarDeviceId: { not: null } },
+            select: { traccarDeviceId: true },
+        });
+        const linked = await this.linkGeofenceToVehicles(settings, result.geofenceId, vehicles.map((vehicle) => vehicle.traccarDeviceId).filter(Boolean));
+        return { configured: true, ...result, linked };
+    }
     async fetchTraccarPositions(settings, deviceId, from, to) {
         const baseUrl = settings.baseUrl?.replace(/\/+$/, "");
         if (!baseUrl) {

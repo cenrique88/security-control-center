@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SaveDispatchStopsDto = exports.SaveDispatchStopDto = void 0;
+exports.SaveDispatchStopsDto = exports.SaveDispatchStopDto = exports.DispatchPlaceTypeDto = void 0;
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
 var DispatchPlaceTypeDto;
@@ -21,7 +21,7 @@ var DispatchPlaceTypeDto;
     DispatchPlaceTypeDto["LUNCH"] = "LUNCH";
     DispatchPlaceTypeDto["TRANSFER"] = "TRANSFER";
     DispatchPlaceTypeDto["OTHER"] = "OTHER";
-})(DispatchPlaceTypeDto || (DispatchPlaceTypeDto = {}));
+})(DispatchPlaceTypeDto || (exports.DispatchPlaceTypeDto = DispatchPlaceTypeDto = {}));
 class SaveDispatchStopDto {
     stopKey;
     placeType;

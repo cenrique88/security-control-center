@@ -10,6 +10,7 @@ export declare class CreateInventoryMovementDto {
     unitCost?: number;
     currency?: string;
     createExpense?: boolean;
+    zeroCostRecovery?: boolean;
     paymentCategory?: string;
     paymentMethod?: string;
     paymentReference?: string;
@@ -23,6 +24,7 @@ export declare class CreateInventoryMovementBatchDto {
     items: CreateInventoryMovementDto[];
     type: InventoryMovementTypeDto;
     createExpense?: boolean;
+    zeroCostRecovery?: boolean;
     paymentCategory?: string;
     paymentMethod?: string;
     paymentReference?: string;

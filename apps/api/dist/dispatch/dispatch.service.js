@@ -12,10 +12,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DispatchService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
+const vehicles_service_1 = require("../vehicles/vehicles.service");
+const save_dispatch_stops_dto_1 = require("./dto/save-dispatch-stops.dto");
 let DispatchService = class DispatchService {
     prisma;
-    constructor(prisma) {
+    vehiclesService;
+    constructor(prisma, vehiclesService) {
         this.prisma = prisma;
+        this.vehiclesService = vehiclesService;
     }
     async list(date, vehicleId) {
         const day = this.parseDay(date);
@@ -55,6 +59,40 @@ let DispatchService = class DispatchService {
             }
             return saved;
         });
+    }
+    async syncTraccar(date, vehicleId) {
+        if (!vehicleId) {
+            throw new common_1.BadRequestException("Selecciona un vehiculo para sincronizar Traccar.");
+        }
+        const summary = await this.vehiclesService.traccarDailySummary(vehicleId, date);
+        if (!summary.configured) {
+            return {
+                configured: false,
+                saved: [],
+                message: summary.message || "Configura Traccar y vincula el ID del dispositivo.",
+                summary,
+            };
+        }
+        const stops = this.buildTraccarDispatchStops(summary);
+        if (!stops.length) {
+            return {
+                configured: true,
+                saved: [],
+                message: "Traccar no devolvio paradas para sincronizar en esta fecha.",
+                summary,
+            };
+        }
+        const saved = await this.save({
+            date,
+            vehicleId,
+            stops,
+        });
+        return {
+            configured: true,
+            saved,
+            message: `Despachador sincronizado con Traccar: ${saved.length} paradas guardadas.`,
+            summary,
+        };
     }
     async suppliers() {
         const [inventorySuppliers, importerCustomers] = await Promise.all([
@@ -165,6 +203,41 @@ let DispatchService = class DispatchService {
         }));
         return [...savedStops, ...customerPlaces].slice(0, 1000);
     }
+    buildTraccarDispatchStops(summary) {
+        const visitsByStop = new Map(summary.visits.map((visit) => [visit.stopIndex, visit]));
+        const stops = summary.stops
+            .filter((stop) => stop.durationMinutes >= 5)
+            .map((stop) => {
+            const visit = visitsByStop.get(stop.index);
+            const placeType = visit?.customerType === "IMPORTER"
+                ? save_dispatch_stops_dto_1.DispatchPlaceTypeDto.IMPORTER
+                : visit
+                    ? save_dispatch_stops_dto_1.DispatchPlaceTypeDto.CLIENT
+                    : save_dispatch_stops_dto_1.DispatchPlaceTypeDto.OTHER;
+            const title = visit
+                ? `${visit.customerName}${visit.siteName ? ` - ${visit.siteName}` : ""}`
+                : `Parada GPS ${stop.index + 1}`;
+            return {
+                stopKey: `gps-${stop.index}`,
+                placeType,
+                title,
+                address: visit?.address || stop.address,
+                latitude: stop.latitude,
+                longitude: stop.longitude,
+                customerId: visit?.customerId,
+                siteId: visit?.siteId,
+                supplierName: visit?.customerType === "IMPORTER" ? visit.customerName : undefined,
+                kind: visit ? "CLIENT" : "NOT_CLIENT",
+                scheduledAt: stop.arrival,
+                durationMinutes: stop.durationMinutes,
+                parkingCost: 0,
+                tollCost: 0,
+                notes: visit?.match ? `Coincidencia ${visit.match}${visit.distanceMeters !== undefined ? ` a ${visit.distanceMeters} m` : ""}` : undefined,
+                source: "TRACCAR",
+            };
+        });
+        return stops;
+    }
     toStopData(stop) {
         return {
             placeType: (stop.placeType ?? "CLIENT"),
@@ -200,6 +273,7 @@ let DispatchService = class DispatchService {
 exports.DispatchService = DispatchService;
 exports.DispatchService = DispatchService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        vehicles_service_1.VehiclesService])
 ], DispatchService);
 //# sourceMappingURL=dispatch.service.js.map

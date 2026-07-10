@@ -1,5 +1,6 @@
 import { CustomerType, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { VehiclesService } from "../vehicles/vehicles.service";
 import { CreateCustomerDocumentDto } from "./dto/create-customer-document.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
 import { CreateSiteDto } from "./dto/create-site.dto";
@@ -11,22 +12,25 @@ type CustomerFilters = {
 };
 export declare class CustomersService {
     private readonly prisma;
-    constructor(prisma: PrismaService);
+    private readonly vehiclesService;
+    constructor(prisma: PrismaService, vehiclesService: VehiclesService);
     list(filters: CustomerFilters): Promise<({
         _count: {
+            payments: number;
             workOrders: number;
             sites: number;
             quotes: number;
-            payments: number;
             meetings: number;
         };
     } & {
         id: string;
-        reference: string;
+        email: string | null;
         name: string;
+        createdAt: Date;
+        updatedAt: Date;
+        reference: string;
         legalName: string | null;
         taxId: string | null;
-        email: string | null;
         phone: string | null;
         address: string | null;
         latitude: Prisma.Decimal | null;
@@ -36,24 +40,24 @@ export declare class CustomersService {
         type: import(".prisma/client").$Enums.CustomerType;
         status: import(".prisma/client").$Enums.CustomerStatus;
         notes: string | null;
-        createdAt: Date;
-        updatedAt: Date;
     })[]>;
     create(dto: CreateCustomerDto): Promise<{
         _count: {
+            payments: number;
             workOrders: number;
             sites: number;
             quotes: number;
-            payments: number;
             meetings: number;
         };
     } & {
         id: string;
-        reference: string;
+        email: string | null;
         name: string;
+        createdAt: Date;
+        updatedAt: Date;
+        reference: string;
         legalName: string | null;
         taxId: string | null;
-        email: string | null;
         phone: string | null;
         address: string | null;
         latitude: Prisma.Decimal | null;
@@ -63,24 +67,24 @@ export declare class CustomersService {
         type: import(".prisma/client").$Enums.CustomerType;
         status: import(".prisma/client").$Enums.CustomerStatus;
         notes: string | null;
-        createdAt: Date;
-        updatedAt: Date;
     }>;
     update(id: string, dto: UpdateCustomerDto): Promise<{
         _count: {
+            payments: number;
             workOrders: number;
             sites: number;
             quotes: number;
-            payments: number;
             meetings: number;
         };
     } & {
         id: string;
-        reference: string;
+        email: string | null;
         name: string;
+        createdAt: Date;
+        updatedAt: Date;
+        reference: string;
         legalName: string | null;
         taxId: string | null;
-        email: string | null;
         phone: string | null;
         address: string | null;
         latitude: Prisma.Decimal | null;
@@ -90,8 +94,6 @@ export declare class CustomersService {
         type: import(".prisma/client").$Enums.CustomerType;
         status: import(".prisma/client").$Enums.CustomerStatus;
         notes: string | null;
-        createdAt: Date;
-        updatedAt: Date;
     }>;
     remove(id: string): Promise<{
         id: string;
@@ -106,25 +108,53 @@ export declare class CustomersService {
     } & {
         id: string;
         name: string;
+        createdAt: Date;
+        updatedAt: Date;
         address: string;
         latitude: Prisma.Decimal | null;
         longitude: Prisma.Decimal | null;
         traccarGeofenceId: number | null;
         notes: string | null;
-        createdAt: Date;
-        updatedAt: Date;
         customerId: string;
     })[]>;
     profile(id: string): Promise<{
         customer: {
+            payments: {
+                id: string;
+                createdAt: Date;
+                updatedAt: Date;
+                reference: string | null;
+                notes: string | null;
+                customerId: string;
+                method: string | null;
+                quoteId: string | null;
+                currency: string;
+                transactionType: string;
+                category: string;
+                concept: string;
+                amount: Prisma.Decimal;
+                quantity: number | null;
+                unitPrice: Prisma.Decimal | null;
+                dueDate: Date | null;
+                paidAt: Date | null;
+                workOrderId: string | null;
+                vehicleId: string | null;
+                inventoryItemId: string | null;
+            }[];
+            _count: {
+                payments: number;
+                workOrders: number;
+                sites: number;
+                quotes: number;
+                meetings: number;
+            };
             workOrders: ({
+                site: {
+                    id: string;
+                    name: string;
+                    address: string;
+                } | null;
                 inventoryMovements: ({
-                    item: {
-                        id: string;
-                        name: string;
-                        sku: string | null;
-                        unit: string;
-                    };
                     installedDevice: {
                         id: string;
                         brand: string | null;
@@ -132,11 +162,18 @@ export declare class CustomersService {
                         serial: string | null;
                         ipAddress: string | null;
                     } | null;
+                    item: {
+                        id: string;
+                        name: string;
+                        sku: string | null;
+                        unit: string;
+                    };
                 } & {
                     id: string;
-                    type: import(".prisma/client").$Enums.InventoryMovementType;
                     createdAt: Date;
+                    type: import(".prisma/client").$Enums.InventoryMovementType;
                     customerId: string | null;
+                    quoteId: string | null;
                     currency: string | null;
                     quantity: number;
                     workOrderId: string | null;
@@ -149,29 +186,26 @@ export declare class CustomersService {
                     paymentId: string | null;
                     installedDeviceId: string | null;
                 })[];
-                site: {
-                    id: string;
-                    name: string;
-                    address: string;
-                } | null;
             } & {
                 id: string;
+                createdAt: Date;
+                updatedAt: Date;
                 type: import(".prisma/client").$Enums.ServiceType;
                 status: import(".prisma/client").$Enums.WorkOrderStatus;
                 notes: string | null;
-                createdAt: Date;
-                updatedAt: Date;
+                customerId: string;
                 title: string;
                 scheduledAt: Date | null;
                 completedAt: Date | null;
+                reportType: string | null;
                 reportBeforeNotes: string | null;
                 reportAfterNotes: string | null;
                 reportTasks: string | null;
                 reportTests: string | null;
                 reportRecommendations: string | null;
                 reportPhotos: Prisma.JsonValue | null;
+                quoteId: string | null;
                 siteId: string | null;
-                customerId: string;
             })[];
             sites: ({
                 _count: {
@@ -181,23 +215,23 @@ export declare class CustomersService {
             } & {
                 id: string;
                 name: string;
+                createdAt: Date;
+                updatedAt: Date;
                 address: string;
                 latitude: Prisma.Decimal | null;
                 longitude: Prisma.Decimal | null;
                 traccarGeofenceId: number | null;
                 notes: string | null;
-                createdAt: Date;
-                updatedAt: Date;
                 customerId: string;
             })[];
             quotes: {
                 number: string;
                 id: string;
-                status: import(".prisma/client").$Enums.QuoteStatus;
                 createdAt: Date;
                 updatedAt: Date;
-                title: string;
+                status: import(".prisma/client").$Enums.QuoteStatus;
                 customerId: string;
+                title: string;
                 service: import(".prisma/client").$Enums.ServiceType;
                 pricingMode: import(".prisma/client").$Enums.QuotePricingMode;
                 currency: string;
@@ -229,28 +263,6 @@ export declare class CustomersService {
                 createdBy: string | null;
                 meetingId: string | null;
             }[];
-            payments: {
-                id: string;
-                reference: string | null;
-                notes: string | null;
-                createdAt: Date;
-                updatedAt: Date;
-                customerId: string;
-                currency: string;
-                transactionType: string;
-                category: string;
-                concept: string;
-                amount: Prisma.Decimal;
-                quantity: number | null;
-                unitPrice: Prisma.Decimal | null;
-                method: string | null;
-                dueDate: Date | null;
-                paidAt: Date | null;
-                quoteId: string | null;
-                workOrderId: string | null;
-                vehicleId: string | null;
-                inventoryItemId: string | null;
-            }[];
             documents: {
                 id: string;
                 name: string;
@@ -272,11 +284,11 @@ export declare class CustomersService {
                 }[];
             } & {
                 id: string;
+                createdAt: Date;
+                updatedAt: Date;
                 type: import(".prisma/client").$Enums.MeetingType;
                 status: import(".prisma/client").$Enums.MeetingStatus;
                 notes: string | null;
-                createdAt: Date;
-                updatedAt: Date;
                 customerId: string;
                 dateTime: Date;
                 contact: string | null;
@@ -293,20 +305,15 @@ export declare class CustomersService {
                 reminderMinutesBefore: number;
                 reminderSentAt: Date | null;
             })[];
-            _count: {
-                workOrders: number;
-                sites: number;
-                quotes: number;
-                payments: number;
-                meetings: number;
-            };
         } & {
             id: string;
-            reference: string;
+            email: string | null;
             name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            reference: string;
             legalName: string | null;
             taxId: string | null;
-            email: string | null;
             phone: string | null;
             address: string | null;
             latitude: Prisma.Decimal | null;
@@ -316,8 +323,6 @@ export declare class CustomersService {
             type: import(".prisma/client").$Enums.CustomerType;
             status: import(".prisma/client").$Enums.CustomerStatus;
             notes: string | null;
-            createdAt: Date;
-            updatedAt: Date;
         };
         sites: ({
             _count: {
@@ -327,23 +332,22 @@ export declare class CustomersService {
         } & {
             id: string;
             name: string;
+            createdAt: Date;
+            updatedAt: Date;
             address: string;
             latitude: Prisma.Decimal | null;
             longitude: Prisma.Decimal | null;
             traccarGeofenceId: number | null;
             notes: string | null;
-            createdAt: Date;
-            updatedAt: Date;
             customerId: string;
         })[];
         workOrders: ({
+            site: {
+                id: string;
+                name: string;
+                address: string;
+            } | null;
             inventoryMovements: ({
-                item: {
-                    id: string;
-                    name: string;
-                    sku: string | null;
-                    unit: string;
-                };
                 installedDevice: {
                     id: string;
                     brand: string | null;
@@ -351,11 +355,18 @@ export declare class CustomersService {
                     serial: string | null;
                     ipAddress: string | null;
                 } | null;
+                item: {
+                    id: string;
+                    name: string;
+                    sku: string | null;
+                    unit: string;
+                };
             } & {
                 id: string;
-                type: import(".prisma/client").$Enums.InventoryMovementType;
                 createdAt: Date;
+                type: import(".prisma/client").$Enums.InventoryMovementType;
                 customerId: string | null;
+                quoteId: string | null;
                 currency: string | null;
                 quantity: number;
                 workOrderId: string | null;
@@ -368,43 +379,28 @@ export declare class CustomersService {
                 paymentId: string | null;
                 installedDeviceId: string | null;
             })[];
-            site: {
-                id: string;
-                name: string;
-                address: string;
-            } | null;
         } & {
             id: string;
+            createdAt: Date;
+            updatedAt: Date;
             type: import(".prisma/client").$Enums.ServiceType;
             status: import(".prisma/client").$Enums.WorkOrderStatus;
             notes: string | null;
-            createdAt: Date;
-            updatedAt: Date;
+            customerId: string;
             title: string;
             scheduledAt: Date | null;
             completedAt: Date | null;
+            reportType: string | null;
             reportBeforeNotes: string | null;
             reportAfterNotes: string | null;
             reportTasks: string | null;
             reportTests: string | null;
             reportRecommendations: string | null;
             reportPhotos: Prisma.JsonValue | null;
+            quoteId: string | null;
             siteId: string | null;
-            customerId: string;
         })[];
         equipment: ({
-            inventoryMovements: {
-                id: string;
-                createdAt: Date;
-                workOrder: {
-                    id: string;
-                    status: import(".prisma/client").$Enums.WorkOrderStatus;
-                    title: string;
-                    scheduledAt: Date | null;
-                    completedAt: Date | null;
-                } | null;
-                workOrderId: string | null;
-            }[];
             site: {
                 customer: {
                     id: string;
@@ -414,12 +410,24 @@ export declare class CustomersService {
                 name: string;
                 address: string;
             };
+            inventoryMovements: {
+                workOrder: {
+                    id: string;
+                    status: import(".prisma/client").$Enums.WorkOrderStatus;
+                    title: string;
+                    scheduledAt: Date | null;
+                    completedAt: Date | null;
+                } | null;
+                id: string;
+                createdAt: Date;
+                workOrderId: string | null;
+            }[];
         } & {
             id: string;
-            type: import(".prisma/client").$Enums.ServiceType;
-            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
+            type: import(".prisma/client").$Enums.ServiceType;
+            notes: string | null;
             siteId: string;
             brand: string | null;
             model: string | null;
@@ -430,11 +438,11 @@ export declare class CustomersService {
         quotes: {
             number: string;
             id: string;
-            status: import(".prisma/client").$Enums.QuoteStatus;
             createdAt: Date;
             updatedAt: Date;
-            title: string;
+            status: import(".prisma/client").$Enums.QuoteStatus;
             customerId: string;
+            title: string;
             service: import(".prisma/client").$Enums.ServiceType;
             pricingMode: import(".prisma/client").$Enums.QuotePricingMode;
             currency: string;
@@ -468,11 +476,13 @@ export declare class CustomersService {
         }[];
         payments: {
             id: string;
-            reference: string | null;
-            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
+            reference: string | null;
+            notes: string | null;
             customerId: string;
+            method: string | null;
+            quoteId: string | null;
             currency: string;
             transactionType: string;
             category: string;
@@ -480,10 +490,8 @@ export declare class CustomersService {
             amount: Prisma.Decimal;
             quantity: number | null;
             unitPrice: Prisma.Decimal | null;
-            method: string | null;
             dueDate: Date | null;
             paidAt: Date | null;
-            quoteId: string | null;
             workOrderId: string | null;
             vehicleId: string | null;
             inventoryItemId: string | null;
@@ -500,11 +508,11 @@ export declare class CustomersService {
             }[];
         } & {
             id: string;
+            createdAt: Date;
+            updatedAt: Date;
             type: import(".prisma/client").$Enums.MeetingType;
             status: import(".prisma/client").$Enums.MeetingStatus;
             notes: string | null;
-            createdAt: Date;
-            updatedAt: Date;
             customerId: string;
             dateTime: Date;
             contact: string | null;
@@ -557,16 +565,22 @@ export declare class CustomersService {
     } & {
         id: string;
         name: string;
+        createdAt: Date;
+        updatedAt: Date;
         address: string;
         latitude: Prisma.Decimal | null;
         longitude: Prisma.Decimal | null;
         traccarGeofenceId: number | null;
         notes: string | null;
-        createdAt: Date;
-        updatedAt: Date;
         customerId: string;
     }>;
     private ensureExists;
+    private customerListInclude;
+    private siteListInclude;
+    private findListCustomer;
+    private findListSite;
+    private trySyncCustomerGeofence;
+    private trySyncSiteGeofence;
     private toCreateData;
     private nextCustomerReference;
     private toUpdateData;

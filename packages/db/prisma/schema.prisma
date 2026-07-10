@@ -173,6 +173,7 @@ model Site {
 model WorkOrder {
   id          String          @id @default(cuid())
   customerId  String
+  quoteId     String?         @unique
   siteId      String?
   title       String
   type        ServiceType
@@ -180,6 +181,7 @@ model WorkOrder {
   scheduledAt DateTime?
   completedAt DateTime?
   notes       String?
+  reportType  String?
   reportBeforeNotes String?
   reportAfterNotes  String?
   reportTasks       String?
@@ -189,6 +191,7 @@ model WorkOrder {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   customer    Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  quote       Quote?          @relation(fields: [quoteId], references: [id], onDelete: SetNull)
   site        Site?           @relation(fields: [siteId], references: [id], onDelete: SetNull)
   inventoryMovements InventoryMovement[]
   payments    Payment[]
@@ -235,6 +238,7 @@ model InventoryItem {
   customer         Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
   movements        InventoryMovement[]
   payments         Payment[]
+  quoteItems       QuoteItem[]
 
   @@index([sourceType])
   @@index([customerId])
@@ -322,6 +326,7 @@ model InventoryMovement {
   id              String                @id @default(cuid())
   itemId          String
   paymentId       String?
+  quoteId         String?
   type            InventoryMovementType
   quantity        Int
   stockAfter      Int
@@ -336,11 +341,13 @@ model InventoryMovement {
   createdAt       DateTime              @default(now())
   item            InventoryItem         @relation(fields: [itemId], references: [id], onDelete: Cascade)
   payment         Payment?              @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  quote           Quote?                @relation(fields: [quoteId], references: [id], onDelete: SetNull)
   customer        Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
   workOrder       WorkOrder?            @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
   installedDevice InstalledDevice?      @relation(fields: [installedDeviceId], references: [id], onDelete: SetNull)
 
   @@index([paymentId])
+  @@index([quoteId])
   @@index([sourceType])
   @@index([customerId])
 }
@@ -388,6 +395,8 @@ model Quote {
   items                QuoteItem[]
   history              QuoteHistory[]
   payments             Payment[]
+  workOrder            WorkOrder?
+  inventoryMovements   InventoryMovement[]
 
   @@index([customerId])
   @@index([meetingId])
@@ -399,6 +408,7 @@ model QuoteItem {
   id              String         @id @default(cuid())
   quoteId         String
   priceBookItemId String?
+  inventoryItemId String?
   type            QuoteItemType
   category        String
   description     String
@@ -415,9 +425,11 @@ model QuoteItem {
   updatedAt       DateTime       @updatedAt
   quote           Quote          @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   priceBookItem   PriceBookItem? @relation(fields: [priceBookItemId], references: [id], onDelete: SetNull)
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
 
   @@index([quoteId])
   @@index([priceBookItemId])
+  @@index([inventoryItemId])
 }
 
 model QuoteHistory {

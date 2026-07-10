@@ -17,6 +17,7 @@ import {
   Menu,
   MessageSquare,
   Package,
+  PackagePlus,
   Paperclip,
   PhoneCall,
   Plus,
@@ -50,6 +51,7 @@ import {
   DispatchPlaceType,
   DispatchStopPayload,
   DispatchStopRecord,
+  DispatchTraccarSync,
   DevicePayload,
   DeviceType,
   GmailSync,
@@ -226,6 +228,13 @@ type InvoiceImportPreview = {
   };
   warnings?: string[];
   extractedTextLength?: number;
+  duplicate?: {
+    exists: boolean;
+    paymentId?: string;
+    importedAt?: string;
+    message: string;
+    products: string[];
+  };
 };
 
 type QuoteCatalogOption = {
@@ -318,6 +327,7 @@ const financeCategories: Record<"INCOME" | "EXPENSE", Array<{ value: string; lab
     { value: "PARKING", label: "Estacionamiento / tarifado" },
     { value: "LABOR", label: "Mano de obra" },
     { value: "THIRD_PARTY_COST", label: "Costo tercerizado" },
+    { value: "WORK_ORDER_MATERIAL_COST", label: "Costo interno de orden (no caja)" },
     { value: "TOOLS", label: "Herramientas" },
     { value: "VEHICLE_EXPENSE", label: "Vehiculos" },
     { value: "PERSONAL_USE", label: "Uso personal" },
@@ -375,6 +385,7 @@ const emptyWorkOrderForm: WorkOrderPayload = {
   status: "SCHEDULED",
   scheduledAt: "",
   notes: "",
+  reportType: "REPAIR",
   reportBeforeNotes: "",
   reportAfterNotes: "",
   reportTasks: "",
@@ -469,6 +480,11 @@ const emptyInventoryForm: InventoryItemPayload = {
   customerId: "",
   location: "",
   supplier: "",
+  supplierCategory: "",
+  costPrice: 0,
+  taxAmount: 0,
+  priceWithTax: 0,
+  currency: "USD",
   notes: "",
 };
 
@@ -479,6 +495,7 @@ const emptyInventoryMovementForm: InventoryMovementPayload = {
   unitCost: 0,
   currency: "UYU",
   createExpense: false,
+  zeroCostRecovery: false,
   paymentCategory: "MATERIAL_PURCHASE",
   paymentMethod: "",
   paymentReference: "",
@@ -688,6 +705,7 @@ export default function Home() {
   const [paymentSearch, setPaymentSearch] = useState("");
   const [paymentStatus, setPaymentStatus] = useState<"ALL" | "PENDING" | "PAID" | "OVERDUE">("ALL");
   const [paymentType, setPaymentType] = useState<"ALL" | "INCOME" | "EXPENSE">("ALL");
+  const [paymentPeriod, setPaymentPeriod] = useState<"ALL" | "CURRENT_MONTH">("ALL");
   const [vehicleSearch, setVehicleSearch] = useState("");
   const [vehicleStatus, setVehicleStatus] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
   const [inventorySearch, setInventorySearch] = useState("");
@@ -780,7 +798,15 @@ export default function Home() {
     };
   }, [notificationsOpen]);
 
-  const summaryCards = useMemo(
+  const summaryCards = useMemo<
+    Array<{
+      label: string;
+      value: number | string;
+      detail?: string;
+      tone?: "positive" | "negative";
+      paymentFilter?: "ALL" | "INCOME" | "EXPENSE";
+    }>
+  >(
     () => [
       { label: "Clientes", value: summary.totalCustomers ?? summary.activeCustomers },
       { label: "Clientes activos", value: summary.activeCustomers },
@@ -798,11 +824,48 @@ export default function Home() {
       { label: "Ingresos pendientes", value: summary.pendingPayments },
       { label: "Sin stock", value: summary.inventory?.outOfStock ?? 0 },
       { label: "A cobrar", value: formatCurrency(summary.pendingPaymentAmount ?? 0) },
+      {
+        label: "Ingresos mes",
+        value: formatPrice(summary.finance?.monthIncomeUyu ?? 0, "UYU"),
+        detail: formatPrice(summary.finance?.monthIncomeUsd ?? 0, "USD"),
+        tone: "positive",
+        paymentFilter: "INCOME",
+      },
+      {
+        label: "Gastos mes",
+        value: formatPrice(summary.finance?.monthExpensesUyu ?? 0, "UYU"),
+        detail: formatPrice(summary.finance?.monthExpensesUsd ?? 0, "USD"),
+        tone: "negative",
+        paymentFilter: "EXPENSE",
+      },
+      {
+        label: "Ganancia neta",
+        value: formatPrice(summary.finance?.monthProfitUyu ?? 0, "UYU"),
+        detail: `${formatPrice(summary.finance?.monthProfitUsd ?? 0, "USD")} - TC ${formatNumber(summary.finance?.exchangeRateUsdUyu ?? 40, 2)}`,
+        tone: (summary.finance?.monthProfitUyu ?? 0) < 0 ? "negative" : "positive",
+        paymentFilter: "ALL",
+      },
       { label: "Gmail no leidos", value: summary.integrations?.gmail.unread ?? 0 },
       { label: "WhatsApp no leidos", value: summary.integrations?.whatsApp.unread ?? 0 },
     ],
     [summary],
   );
+
+  function openFinanceDetail(type: "ALL" | "INCOME" | "EXPENSE") {
+    setPaymentType(type);
+    setPaymentPeriod("CURRENT_MONTH");
+    setPaymentStatus("ALL");
+    setPaymentSearch("");
+    setSelectedCustomerId(null);
+    setActiveModule("Gastos e Ingresos");
+    setStatus(
+      type === "EXPENSE"
+        ? "Mostrando detalle de gastos reales"
+        : type === "INCOME"
+          ? "Mostrando detalle de ingresos reales"
+          : "Mostrando ingresos y gastos para comparar",
+    );
+  }
 
   const notifications = useMemo<AppNotification[]>(() => {
     const items: AppNotification[] = [];
@@ -1096,24 +1159,6 @@ export default function Home() {
     [quotes],
   );
 
-  const paymentStats = useMemo(
-    () => {
-      const income = payments
-        .filter((payment) => (payment.transactionType ?? "INCOME") === "INCOME")
-        .reduce((sum, payment) => sum + toMoneyNumber(payment.amount), 0);
-      const expense = payments
-        .filter((payment) => payment.transactionType === "EXPENSE")
-        .reduce((sum, payment) => sum + toMoneyNumber(payment.amount), 0);
-      return [
-        { label: "Ingresos", value: formatCurrency(income) },
-        { label: "Egresos", value: formatCurrency(expense) },
-        { label: "Balance", value: formatCurrency(income - expense) },
-        { label: "Pendientes", value: payments.filter((payment) => !payment.paidAt).length },
-      ];
-    },
-    [payments],
-  );
-
   const vehicleStats = useMemo(
     () => [
       { label: "Vehiculos", value: vehicles.length },
@@ -1252,7 +1297,7 @@ export default function Home() {
         ]);
         break;
       case "Gastos e Ingresos":
-        void loadPayments(token);
+        void Promise.all([loadPayments(token), loadVehicles(token)]);
         break;
       case "Almacen":
         void loadInventory(token);
@@ -1671,6 +1716,10 @@ export default function Home() {
       if (paymentType !== "ALL") {
         params.set("type", paymentType);
       }
+      if (paymentPeriod !== "ALL") {
+        params.set("period", paymentPeriod);
+      }
+      params.set("includeInternalCosts", "true");
 
       const query = params.toString();
       const data = await apiRequest<Payment[]>(`/api/payments${query ? `?${query}` : ""}`, {
@@ -2132,6 +2181,7 @@ export default function Home() {
       scheduledAt: workOrder.scheduledAt ? toDateTimeLocalValue(new Date(workOrder.scheduledAt)) : "",
       completedAt: workOrder.completedAt ?? "",
       notes: workOrder.notes ?? "",
+      reportType: workOrder.reportType ?? "REPAIR",
       reportBeforeNotes: workOrder.reportBeforeNotes ?? "",
       reportAfterNotes: workOrder.reportAfterNotes ?? "",
       reportTasks: workOrder.reportTasks ?? "",
@@ -2164,10 +2214,9 @@ export default function Home() {
     setWorkOrderError("");
     try {
       const payload = cleanWorkOrderPayload({ ...workOrderForm, customerId });
+      payload.reportPhotos = await compressWorkOrderReportPhotos(payload.reportPhotos ?? []);
       if (payload.status === "COMPLETED") {
         payload.completedAt = payload.completedAt || new Date().toISOString();
-      } else if (editingWorkOrderId) {
-        payload.completedAt = "";
       }
 
       await apiRequest<WorkOrder>(editingWorkOrderId ? `/api/work-orders/${editingWorkOrderId}` : "/api/work-orders", {
@@ -2178,8 +2227,10 @@ export default function Home() {
       setEditingWorkOrderId(null);
       setWorkOrderForm({ ...emptyWorkOrderForm, customerId: selectedCustomerId ?? "" });
       await Promise.all([loadWorkOrders(token), loadAgenda(token), loadCustomers(token), loadSummary(token)]);
-    } catch {
-      setWorkOrderError(editingWorkOrderId ? "No se pudo actualizar el trabajo" : "No se pudo guardar el trabajo");
+    } catch (error) {
+      setWorkOrderError(
+        `${editingWorkOrderId ? "No se pudo actualizar" : "No se pudo guardar"} el trabajo: ${getErrorMessage(error)}`,
+      );
     } finally {
       setWorkOrdersLoading(false);
     }
@@ -2242,6 +2293,7 @@ export default function Home() {
       paymentTerms: quote.paymentTerms ?? "",
       items: (quote.items ?? []).map((item) => ({
         priceBookItemId: item.priceBookItemId ?? undefined,
+        inventoryItemId: item.inventoryItemId ?? undefined,
         type: item.type,
         category: item.category,
         description: item.description,
@@ -2438,7 +2490,15 @@ export default function Home() {
       return;
     }
 
-    const movementBatchItems = inventoryMovementForm.items ?? [];
+    const movementBatchItems = (inventoryMovementForm.items ?? []).map((line) => {
+      const item = inventoryItems.find((inventoryItem) => inventoryItem.id === line.itemId);
+      const requestedQuantity = Math.max(1, Number(line.quantity) || 1);
+      const quantity =
+        inventoryMovementForm.type === "OUT" && item
+          ? Math.min(requestedQuantity, Math.max(0, Number(item.stock) || 0))
+          : requestedQuantity;
+      return { ...line, quantity };
+    });
     const hasBatchItems = movementBatchItems.length > 0;
     const hasSingleItem = Boolean(inventoryMovementForm.itemId);
     if ((!hasBatchItems && !hasSingleItem) || Number(inventoryMovementForm.quantity) < 0) {
@@ -2461,7 +2521,9 @@ export default function Home() {
       }
     }
 
-    if (inventoryMovementForm.createExpense && !inventoryMovementForm.customerId) {
+    const isInternalStockConsumption =
+      inventoryMovementForm.type === "OUT" && (inventoryMovementForm.paymentCategory || "STOCK_CONSUMPTION") === "STOCK_CONSUMPTION";
+    if (inventoryMovementForm.createExpense && !inventoryMovementForm.customerId && !isInternalStockConsumption) {
       setInventoryError("Selecciona cliente, importador o uso para justificar el egreso contable.");
       return;
     }
@@ -2472,7 +2534,11 @@ export default function Home() {
       await apiRequest(hasBatchItems ? "/api/inventory/movements/batch" : "/api/inventory/movements", {
         token,
         method: "POST",
-        body: JSON.stringify(hasBatchItems ? cleanInventoryMovementBatchPayload(inventoryMovementForm) : cleanInventoryMovementPayload(inventoryMovementForm)),
+        body: JSON.stringify(
+          hasBatchItems
+            ? cleanInventoryMovementBatchPayload({ ...inventoryMovementForm, items: movementBatchItems })
+            : cleanInventoryMovementPayload(inventoryMovementForm),
+        ),
       });
       setInventoryMovementForm((currentForm) => ({
         ...emptyInventoryMovementForm,
@@ -2693,6 +2759,36 @@ export default function Home() {
     }
   }
 
+  async function returnWorkOrderMaterial(workOrderId: string, itemId: string, quantity: number) {
+    if (!token) {
+      return;
+    }
+
+    if (!workOrderId || !itemId || quantity <= 0) {
+      setWorkOrderError("Selecciona un material de la orden para devolver al almacen");
+      return;
+    }
+
+    setWorkOrdersLoading(true);
+    setWorkOrderError("");
+    try {
+      await apiRequest(`/api/work-orders/${workOrderId}/materials/return`, {
+        token,
+        method: "POST",
+        body: JSON.stringify({ itemId, quantity }),
+      });
+      await Promise.all([
+        loadWorkOrders(token),
+        loadInventory(token, { mode: "all", category: "ALL", supplier: "ALL", search: "" }),
+        loadSummary(token),
+      ]);
+    } catch (error) {
+      setWorkOrderError(`No se pudo devolver el material al almacen: ${getErrorMessage(error)}`);
+    } finally {
+      setWorkOrdersLoading(false);
+    }
+  }
+
   async function acceptQuote(id: string, scheduledAt?: string) {
     if (!token) {
       return;
@@ -2715,22 +2811,10 @@ export default function Home() {
       await apiRequest<Quote>(`/api/quotes/${id}`, {
         token,
         method: "PATCH",
-        body: JSON.stringify({ status: "APPROVED", acceptedAt: new Date().toISOString() }),
-      });
-      await apiRequest<WorkOrder>("/api/work-orders", {
-        token,
-        method: "POST",
-        body: JSON.stringify({
-          customerId: quote.customerId,
-          title: quote.title,
-          type: quote.service,
-          status: "SCHEDULED",
-          scheduledAt,
-          notes: buildQuoteWorkOrderNotes(quote),
-        } satisfies WorkOrderPayload),
+        body: JSON.stringify({ status: "APPROVED", acceptedAt: new Date().toISOString(), scheduledAt }),
       });
       await Promise.all([loadQuotes(token), loadCustomers(token), loadWorkOrders(token), loadAgenda(token), loadSummary(token)]);
-      setStatus("Presupuesto aprobado. Orden de trabajo creada y enviada a agenda.");
+      setStatus("Presupuesto aprobado. Orden de trabajo creada, materiales descontados y enviada a agenda.");
     } catch (error) {
       setQuoteError(`No se pudo aceptar el presupuesto: ${getErrorMessage(error)}`);
     } finally {
@@ -2775,13 +2859,22 @@ export default function Home() {
       return;
     }
 
+    const payment = payments.find((item) => item.id === id);
+    const method = payment?.method?.trim()
+      ? payment.method.trim()
+      : window.prompt("Metodo de pago para confirmar este movimiento", "Transferencia")?.trim();
+    if (!method) {
+      setPaymentError("Para confirmar el pago primero indica el metodo de pago.");
+      return;
+    }
+
     setPaymentsLoading(true);
     setPaymentError("");
     try {
       await apiRequest<Payment>(`/api/payments/${id}`, {
         token,
         method: "PATCH",
-        body: JSON.stringify({ paidAt: new Date().toISOString() }),
+        body: JSON.stringify({ method, paidAt: new Date().toISOString() }),
       });
       await Promise.all([loadPayments(token), loadSummary(token)]);
     } catch {
@@ -2884,6 +2977,27 @@ export default function Home() {
       await Promise.all([loadWorkOrders(token), loadAgenda(token), loadSummary(token)]);
     } catch {
       setWorkOrderError("No se pudo actualizar el estado del trabajo");
+    } finally {
+      setWorkOrdersLoading(false);
+    }
+  }
+
+  async function reconcileWorkOrderCosts(id: string) {
+    if (!token) {
+      return;
+    }
+
+    setWorkOrdersLoading(true);
+    setWorkOrderError("");
+    try {
+      await apiRequest<WorkOrder>(`/api/work-orders/${id}/reconcile-costs`, {
+        token,
+        method: "POST",
+      });
+      await Promise.all([loadWorkOrders(token), loadPayments(token), loadInventory(token), loadSummary(token)]);
+      setStatus("Costos de la orden reconciliados con almacen y gastos.");
+    } catch (error) {
+      setWorkOrderError(`No se pudieron reconciliar los costos: ${getErrorMessage(error)}`);
     } finally {
       setWorkOrdersLoading(false);
     }
@@ -3590,6 +3704,7 @@ export default function Home() {
             loading={loading}
             summary={summary}
             summaryCards={summaryCards}
+            onFinanceDetail={openFinanceDetail}
             onRefresh={() => loadSummary()}
           />
         ) : activeModule === "Clientes" ? (
@@ -3710,6 +3825,7 @@ export default function Home() {
             workStatus={workStatus}
             focusedWorkOrderId={focusedWorkOrderId}
             onAddMaterial={addWorkOrderMaterial}
+            onReturnMaterial={returnWorkOrderMaterial}
             onCancelEdit={cancelWorkOrderEdit}
             onEditWorkOrder={editWorkOrder}
             onFormChange={setWorkOrderForm}
@@ -3721,6 +3837,7 @@ export default function Home() {
             onComposeMail={composeWorkOrderMail}
             onComposeWhatsApp={composeWorkOrderWhatsApp}
             onOpenDocument={setWorkOrderDocument}
+            onReconcileCosts={reconcileWorkOrderCosts}
             onStatusChange={setWorkStatus}
             onUpdateStatus={updateWorkOrderStatus}
           />
@@ -3818,10 +3935,12 @@ export default function Home() {
             paymentError={paymentError}
             paymentForm={paymentForm}
             paymentSearch={paymentSearch}
-            paymentStats={paymentStats}
             paymentStatus={paymentStatus}
             paymentType={paymentType}
+            paymentPeriod={paymentPeriod}
             payments={payments}
+            quotes={quotes}
+            vehicles={vehicles}
             selectedCustomerId={selectedCustomerId}
             onFormChange={setPaymentForm}
             onDelete={deletePayment}
@@ -3832,6 +3951,7 @@ export default function Home() {
             onCustomerFilter={(customerId) => loadPayments(token, customerId)}
             onStatusChange={setPaymentStatus}
             onTypeChange={setPaymentType}
+            onPeriodChange={setPaymentPeriod}
           />
         ) : activeModule === "Almacen" ? (
           <InventoryView
@@ -4117,18 +4237,19 @@ function WorkOrderDocumentModal({
   onPrint: () => void;
   onWhatsApp: (workOrder: WorkOrder) => void;
 }) {
-  const quoteSummary = parseWorkOrderQuoteNotes(workOrder.notes);
+  const quoteSummary = workOrderQuoteToSummary(workOrder.quote) ?? parseWorkOrderQuoteNotes(workOrder.notes);
   const inventoryMovements = groupWorkOrderMaterials(workOrder.inventoryMovements ?? []);
   const movements = inventoryMovements.length ? inventoryMovements : approvedQuoteItemsToMaterials(quoteSummary?.items ?? []);
   const workDoneText =
     workOrder.reportTasks ||
     (quoteSummary ? "Trabajo finalizado segun lo solicitado por el cliente." : workOrder.notes || "Trabajo finalizado segun lo solicitado por el cliente.");
   const documentNumber = formatWorkOrderNumber(workOrder);
+  const isNewInstallationReport = workOrder.reportType === "NEW_INSTALLATION";
   const reportPhotos = workOrder.reportPhotos ?? [];
-  const beforePhotos = reportPhotos.filter((photo) => photo.stage === "BEFORE");
+  const beforePhotos = isNewInstallationReport ? [] : reportPhotos.filter((photo) => photo.stage === "BEFORE");
   const afterPhotos = reportPhotos.filter((photo) => photo.stage === "AFTER");
   const hasTechnicalReport = Boolean(
-    workOrder.reportBeforeNotes ||
+    (!isNewInstallationReport && workOrder.reportBeforeNotes) ||
       workOrder.reportAfterNotes ||
       workOrder.reportTasks ||
       workOrder.reportTests ||
@@ -4256,9 +4377,9 @@ function WorkOrderDocumentModal({
 
         {hasTechnicalReport ? (
           <section className="documentSection documentTechnicalReport">
-            <h2>Informe tecnico</h2>
+            <h2>{isNewInstallationReport ? "Informe tecnico de instalacion" : "Informe tecnico"}</h2>
             <div className="documentInfoGrid">
-              {workOrder.reportBeforeNotes ? (
+              {!isNewInstallationReport && workOrder.reportBeforeNotes ? (
                 <article>
                   <span>Antes</span>
                   <p>{workOrder.reportBeforeNotes}</p>
@@ -4266,13 +4387,13 @@ function WorkOrderDocumentModal({
               ) : null}
               {workOrder.reportTasks ? (
                 <article>
-                  <span>Trabajo realizado</span>
+                  <span>{isNewInstallationReport ? "Instalacion y configuracion" : "Trabajo realizado"}</span>
                   <p>{workOrder.reportTasks}</p>
                 </article>
               ) : null}
               {workOrder.reportAfterNotes ? (
                 <article>
-                  <span>Despues</span>
+                  <span>{isNewInstallationReport ? "Resultado final" : "Despues"}</span>
                   <p>{workOrder.reportAfterNotes}</p>
                 </article>
               ) : null}
@@ -4290,8 +4411,8 @@ function WorkOrderDocumentModal({
               ) : null}
             </div>
             <div className="documentReportPhotos">
-              <ReportPhotoPreview title="Antes" photos={beforePhotos} />
-              <ReportPhotoPreview title="Despues" photos={afterPhotos} />
+              {!isNewInstallationReport ? <ReportPhotoPreview title="Antes" photos={beforePhotos} /> : null}
+              <ReportPhotoPreview title={isNewInstallationReport ? "Fotos terminadas" : "Despues"} photos={afterPhotos} />
             </div>
           </section>
         ) : null}
@@ -4448,23 +4569,52 @@ function DashboardView({
   loading,
   summary,
   summaryCards,
+  onFinanceDetail,
   onRefresh,
 }: {
   loading: boolean;
   summary: DashboardSummary;
-  summaryCards: Array<{ label: string; value: number | string; detail?: string }>;
+  summaryCards: Array<{
+    label: string;
+    value: number | string;
+    detail?: string;
+    tone?: "positive" | "negative";
+    paymentFilter?: "ALL" | "INCOME" | "EXPENSE";
+  }>;
+  onFinanceDetail: (type: "ALL" | "INCOME" | "EXPENSE") => void;
   onRefresh: () => void;
 }) {
   return (
     <>
       <section className="summaryGrid" aria-label="Indicadores principales">
-        {summaryCards.map((card) => (
-          <article key={card.label}>
-            <span>{card.label}</span>
-            <strong>{card.value}</strong>
-            {card.detail ? <small>{card.detail}</small> : null}
-          </article>
-        ))}
+        {summaryCards.map((card) => {
+          const className = [card.tone ? `summaryCard-${card.tone}` : "", card.paymentFilter ? "summaryCard-action" : ""]
+            .filter(Boolean)
+            .join(" ");
+          const content = (
+            <>
+              <span>{card.label}</span>
+              <strong>{card.value}</strong>
+              {card.detail ? <small>{card.detail}</small> : null}
+            </>
+          );
+
+          return card.paymentFilter ? (
+            <button
+              key={card.label}
+              type="button"
+              className={className}
+              onClick={() => onFinanceDetail(card.paymentFilter ?? "ALL")}
+              title={`Ver detalle de ${card.label.toLowerCase()}`}
+            >
+              {content}
+            </button>
+          ) : (
+            <article key={card.label} className={className || undefined}>
+              {content}
+            </article>
+          );
+        })}
       </section>
 
       <section className="monitor">
@@ -4495,7 +4645,11 @@ function DashboardView({
 function formatDashboardValue(item: { label: string; value: number | string }) {
   if (
     typeof item.value === "number" &&
-    (item.label.toLowerCase().includes("monto") || item.label.toLowerCase().includes("pipeline"))
+    (item.label.toLowerCase().includes("monto") ||
+      item.label.toLowerCase().includes("pipeline") ||
+      item.label.toLowerCase().includes("ingresos") ||
+      item.label.toLowerCase().includes("gastos") ||
+      item.label.toLowerCase().includes("ganancia"))
   ) {
     return formatCurrency(item.value);
   }
@@ -5733,6 +5887,7 @@ function DispatcherView({
   const [learnedDispatchPlaces, setLearnedDispatchPlaces] = useState<DispatchStopRecord[]>([]);
   const [dispatchSuppliers, setDispatchSuppliers] = useState<string[]>([]);
   const [savingDispatchRoute, setSavingDispatchRoute] = useState(false);
+  const [syncingDispatchTraccar, setSyncingDispatchTraccar] = useState(false);
   const [editingDispatchStops, setEditingDispatchStops] = useState<Record<string, boolean>>({});
   const [savingDispatchStopKey, setSavingDispatchStopKey] = useState<string | null>(null);
   const [savingStopId, setSavingStopId] = useState<string | null>(null);
@@ -6257,6 +6412,33 @@ function DispatcherView({
     }
   }
 
+  async function syncDispatchTraccar() {
+    if (!token || !selectedVehicle?.id) {
+      setDispatchMessage("Selecciona un vehiculo para sincronizar Traccar.");
+      return;
+    }
+
+    setSyncingDispatchTraccar(true);
+    setDispatchMessage("");
+    try {
+      const params = new URLSearchParams({ date: agendaDate, vehicleId: selectedVehicle.id });
+      const result = await apiRequest<DispatchTraccarSync>(`/api/dispatch/traccar/sync?${params.toString()}`, {
+        token,
+        method: "POST",
+      });
+
+      setDailySummary(result.summary);
+      setSavedDispatchStops(result.saved);
+      setLearnedDispatchPlaces((current) => mergeDispatchPlaceMemory(current, result.saved));
+      setSummaryRefreshKey((current) => current + 1);
+      setDispatchMessage(result.message);
+    } catch (error) {
+      setDispatchMessage(`No se pudo sincronizar Traccar: ${getErrorMessage(error)}`);
+    } finally {
+      setSyncingDispatchTraccar(false);
+    }
+  }
+
   async function saveSingleDispatchStop(payload: DispatchStopPayload) {
     if (!token) {
       return;
@@ -6353,6 +6535,14 @@ function DispatcherView({
           >
             <RefreshCw size={18} className={loading ? "spin" : ""} />
             Organizar dia
+          </button>
+          <button
+            type="button"
+            onClick={syncDispatchTraccar}
+            disabled={syncingDispatchTraccar || !selectedVehicle?.traccarDeviceId}
+          >
+            <MapPin size={18} />
+            {syncingDispatchTraccar ? "Sincronizando" : "Sincronizar Traccar"}
           </button>
           <button
             type="button"
@@ -7744,6 +7934,8 @@ function WorkOrdersView({
   onComposeMail,
   onComposeWhatsApp,
   onOpenDocument,
+  onReconcileCosts,
+  onReturnMaterial,
   onStatusChange,
   onUpdateStatus,
 }: {
@@ -7761,6 +7953,7 @@ function WorkOrdersView({
   workStatus: WorkOrderStatus | "ALL";
   focusedWorkOrderId: string | null;
   onAddMaterial: (workOrderId: string, itemId: string, quantity: number, installAsDevice: boolean) => Promise<void>;
+  onReturnMaterial: (workOrderId: string, itemId: string, quantity: number) => Promise<void>;
   onCancelEdit: () => void;
   onEditWorkOrder: (workOrder: WorkOrder) => void;
   onFormChange: (form: WorkOrderPayload) => void;
@@ -7772,6 +7965,7 @@ function WorkOrdersView({
   onComposeMail: (workOrder: WorkOrder) => void;
   onComposeWhatsApp: (workOrder: WorkOrder) => void;
   onOpenDocument: (workOrder: WorkOrder) => void;
+  onReconcileCosts: (id: string) => Promise<void>;
   onStatusChange: (value: WorkOrderStatus | "ALL") => void;
   onUpdateStatus: (id: string, status: WorkOrderStatus) => void;
 }) {
@@ -7803,6 +7997,20 @@ function WorkOrdersView({
       .slice(0, 6);
   }
 
+  async function returnMaterialQuantity(workOrderId: string, movement: GroupedWorkOrderMaterial) {
+    const value = window.prompt(`Cantidad de ${movement.name} para devolver al almacen`, String(movement.quantity));
+    if (value === null) {
+      return;
+    }
+
+    const quantity = Math.min(movement.quantity, Math.max(1, Math.trunc(Number(value.replace(",", ".")) || 0)));
+    if (quantity <= 0 || !movement.itemId) {
+      return;
+    }
+
+    await onReturnMaterial(workOrderId, movement.itemId, quantity);
+  }
+
   function addReportPhotos(event: ChangeEvent<HTMLInputElement>, stage: WorkOrderReportPhoto["stage"]) {
     const files = Array.from(event.target.files ?? []);
     if (!files.length) {
@@ -7814,23 +8022,7 @@ function WorkOrdersView({
       window.alert("Solo se agregan imagenes de hasta 5 MB.");
     }
 
-    Promise.all(
-      validFiles.map(
-        (file) =>
-          new Promise<WorkOrderReportPhoto>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              resolve({
-                id: `${Date.now()}-${file.name}`,
-                stage,
-                name: file.name,
-                dataUrl: typeof reader.result === "string" ? reader.result : "",
-              });
-            };
-            reader.readAsDataURL(file);
-          }),
-      ),
-    ).then((photos) => {
+    Promise.all(validFiles.map((file) => readCompressedReportPhoto(file, stage))).then((photos) => {
       onFormChange({
         ...workOrderForm,
         reportPhotos: [...(workOrderForm.reportPhotos ?? []), ...photos.filter((photo) => photo.dataUrl)],
@@ -7846,7 +8038,9 @@ function WorkOrdersView({
     });
   }
 
-  const reportBeforePhotos = (workOrderForm.reportPhotos ?? []).filter((photo) => photo.stage === "BEFORE");
+  const workOrderReportType = workOrderForm.reportType || "REPAIR";
+  const isNewInstallationReport = workOrderReportType === "NEW_INSTALLATION";
+  const reportBeforePhotos = isNewInstallationReport ? [] : (workOrderForm.reportPhotos ?? []).filter((photo) => photo.stage === "BEFORE");
   const reportAfterPhotos = (workOrderForm.reportPhotos ?? []).filter((photo) => photo.stage === "AFTER");
 
   return (
@@ -7966,35 +8160,71 @@ function WorkOrdersView({
             <div className="sectionHeader compactHeader">
               <div>
                 <p>Informe tecnico</p>
-                <h3>Antes y despues</h3>
+                <h3>{isNewInstallationReport ? "Instalacion nueva" : "Antes y despues"}</h3>
               </div>
               <span>
-                {reportBeforePhotos.length} antes / {reportAfterPhotos.length} despues
+                {isNewInstallationReport ? `${reportAfterPhotos.length} terminadas` : `${reportBeforePhotos.length} antes / ${reportAfterPhotos.length} despues`}
               </span>
             </div>
+            <div className="quoteModeSelector inventoryModeSelector reportTypeSelector" aria-label="Tipo de informe tecnico">
+              {[
+                { value: "REPAIR", title: "Reparacion", detail: "Incluye antes, despues, pruebas y recomendaciones" },
+                { value: "NEW_INSTALLATION", title: "Instalacion nueva", detail: "Fotos terminadas y configuraciones tecnicas" },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={workOrderReportType === option.value ? "active" : ""}
+                  onClick={() =>
+                    onFormChange({
+                      ...workOrderForm,
+                      reportType: option.value as WorkOrderPayload["reportType"],
+                      reportBeforeNotes: option.value === "NEW_INSTALLATION" ? "" : workOrderForm.reportBeforeNotes,
+                      reportPhotos:
+                        option.value === "NEW_INSTALLATION"
+                          ? (workOrderForm.reportPhotos ?? []).filter((photo) => photo.stage !== "BEFORE")
+                          : workOrderForm.reportPhotos,
+                    })
+                  }
+                >
+                  <strong>{option.title}</strong>
+                  <span>{option.detail}</span>
+                </button>
+              ))}
+            </div>
             <div className="reportFieldGrid">
+              {!isNewInstallationReport ? (
+                <label className="wideField">
+                  Antes
+                  <textarea
+                    value={workOrderForm.reportBeforeNotes ?? ""}
+                    onChange={(event) => onFormChange({ ...workOrderForm, reportBeforeNotes: event.target.value })}
+                    placeholder="Como estaba el sistema, fallas encontradas, riesgos o condiciones del lugar"
+                  />
+                </label>
+              ) : null}
               <label className="wideField">
-                Antes
-                <textarea
-                  value={workOrderForm.reportBeforeNotes ?? ""}
-                  onChange={(event) => onFormChange({ ...workOrderForm, reportBeforeNotes: event.target.value })}
-                  placeholder="Como estaba el sistema, fallas encontradas, riesgos o condiciones del lugar"
-                />
-              </label>
-              <label className="wideField">
-                Trabajo realizado
+                {isNewInstallationReport ? "Instalacion y configuracion" : "Trabajo realizado"}
                 <textarea
                   value={workOrderForm.reportTasks ?? ""}
                   onChange={(event) => onFormChange({ ...workOrderForm, reportTasks: event.target.value })}
-                  placeholder="Tareas realizadas, equipos instalados, ajustes, configuraciones"
+                  placeholder={
+                    isNewInstallationReport
+                      ? "Equipos instalados, ubicaciones, usuarios creados, redes, grabador, app, accesos y configuraciones"
+                      : "Tareas realizadas, equipos instalados, ajustes, configuraciones"
+                  }
                 />
               </label>
               <label className="wideField">
-                Despues
+                {isNewInstallationReport ? "Resultado final" : "Despues"}
                 <textarea
                   value={workOrderForm.reportAfterNotes ?? ""}
                   onChange={(event) => onFormChange({ ...workOrderForm, reportAfterNotes: event.target.value })}
-                  placeholder="Como quedo el trabajo terminado y que diferencia se aprecia"
+                  placeholder={
+                    isNewInstallationReport
+                      ? "Como quedo la instalacion terminada, cobertura, funcionamiento y entrega al cliente"
+                      : "Como quedo el trabajo terminado y que diferencia se aprecia"
+                  }
                 />
               </label>
               <label className="wideField">
@@ -8015,14 +8245,16 @@ function WorkOrdersView({
               </label>
             </div>
             <div className="workOrderReportPhotoGrid">
+              {!isNewInstallationReport ? (
+                <ReportPhotoPicker
+                  title="Fotos antes"
+                  photos={reportBeforePhotos}
+                  onAdd={(event) => addReportPhotos(event, "BEFORE")}
+                  onRemove={removeReportPhoto}
+                />
+              ) : null}
               <ReportPhotoPicker
-                title="Fotos antes"
-                photos={reportBeforePhotos}
-                onAdd={(event) => addReportPhotos(event, "BEFORE")}
-                onRemove={removeReportPhoto}
-              />
-              <ReportPhotoPicker
-                title="Fotos despues"
+                title={isNewInstallationReport ? "Fotos terminadas" : "Fotos despues"}
                 photos={reportAfterPhotos}
                 onAdd={(event) => addReportPhotos(event, "AFTER")}
                 onRemove={removeReportPhoto}
@@ -8138,8 +8370,8 @@ function WorkOrdersView({
                           <span>
                             {movement.name} x{movement.quantity} {movement.unit}
                           </span>
-                          <button type="button" onClick={() => onRemoveMaterial(movement.ids)} disabled={loading}>
-                            Eliminar
+                          <button type="button" onClick={() => returnMaterialQuantity(workOrder.id, movement)} disabled={loading}>
+                            Devolver
                           </button>
                         </div>
                       ))}
@@ -8154,7 +8386,7 @@ function WorkOrdersView({
                         onChange={(event) => updateMaterialForm(workOrder.id, { ...form, query: event.target.value, itemId: "", open: true })}
                         onFocus={() => updateMaterialForm(workOrder.id, { ...form, open: true })}
                         onBlur={() => window.setTimeout(() => updateMaterialForm(workOrder.id, { ...materialForm(workOrder.id), open: false }), 120)}
-                        placeholder="Buscar articulo para descontar"
+                        placeholder="Buscar articulo extra para descontar"
                         autoComplete="off"
                       />
                       {form.open ? (
@@ -8219,7 +8451,7 @@ function WorkOrdersView({
                         updateMaterialForm(workOrder.id, { query: "", itemId: "", quantity: 1, open: false, installAsDevice: form.installAsDevice });
                       }}
                     >
-                      Agregar
+                      Agregar extra
                     </button>
                   </div>
                   {selectedItem ? (
@@ -8296,13 +8528,14 @@ function WorkOrdersView({
               : Math.max(1, form.quantity);
             const workOrderSiteId = selectedWorkOrder.siteId ?? selectedWorkOrder.site?.id ?? "";
             const installAsDevice = Boolean(form.installAsDevice);
-            const quoteSummary = parseWorkOrderQuoteNotes(selectedWorkOrder.notes);
+            const quoteSummary = workOrderQuoteToSummary(selectedWorkOrder.quote) ?? parseWorkOrderQuoteNotes(selectedWorkOrder.notes);
             const operationalNotes = quoteSummary ? selectedWorkOrder.site?.address : selectedWorkOrder.notes || selectedWorkOrder.site?.address;
+            const isNewInstallationReport = selectedWorkOrder.reportType === "NEW_INSTALLATION";
             const reportPhotos = selectedWorkOrder.reportPhotos ?? [];
-            const detailBeforePhotos = reportPhotos.filter((photo) => photo.stage === "BEFORE");
+            const detailBeforePhotos = isNewInstallationReport ? [] : reportPhotos.filter((photo) => photo.stage === "BEFORE");
             const detailAfterPhotos = reportPhotos.filter((photo) => photo.stage === "AFTER");
             const hasTechnicalReport = Boolean(
-              selectedWorkOrder.reportBeforeNotes ||
+              (!isNewInstallationReport && selectedWorkOrder.reportBeforeNotes) ||
                 selectedWorkOrder.reportAfterNotes ||
                 selectedWorkOrder.reportTasks ||
                 selectedWorkOrder.reportTests ||
@@ -8331,6 +8564,10 @@ function WorkOrdersView({
                       <button type="button" className="secondaryButton" onClick={() => onComposeMail(selectedWorkOrder)}>
                         <Mail size={16} />
                         Mail
+                      </button>
+                      <button type="button" className="secondaryButton" onClick={() => onReconcileCosts(selectedWorkOrder.id)} disabled={loading}>
+                        <RefreshCw size={16} className={loading ? "spin" : ""} />
+                        Reconciliar costos
                       </button>
                       {selectedWorkOrder.status === "COMPLETED" ? (
                         <button type="button" className="secondaryButton" onClick={() => onOpenDocument(selectedWorkOrder)}>
@@ -8434,13 +8671,13 @@ function WorkOrdersView({
 
                   <section className="workOrderTechnicalReport">
                     <div className="workOrderMaterialsHeader">
-                      <strong>Informe tecnico</strong>
+                      <strong>{isNewInstallationReport ? "Informe tecnico de instalacion" : "Informe tecnico"}</strong>
                       <span>{hasTechnicalReport ? "Cargado" : "Pendiente"}</span>
                     </div>
                     {hasTechnicalReport ? (
                       <>
                         <div className="technicalReportGrid">
-                          {selectedWorkOrder.reportBeforeNotes ? (
+                          {!isNewInstallationReport && selectedWorkOrder.reportBeforeNotes ? (
                             <article>
                               <span>Antes</span>
                               <p>{selectedWorkOrder.reportBeforeNotes}</p>
@@ -8448,13 +8685,13 @@ function WorkOrdersView({
                           ) : null}
                           {selectedWorkOrder.reportTasks ? (
                             <article>
-                              <span>Trabajo realizado</span>
+                              <span>{isNewInstallationReport ? "Instalacion y configuracion" : "Trabajo realizado"}</span>
                               <p>{selectedWorkOrder.reportTasks}</p>
                             </article>
                           ) : null}
                           {selectedWorkOrder.reportAfterNotes ? (
                             <article>
-                              <span>Despues</span>
+                              <span>{isNewInstallationReport ? "Resultado final" : "Despues"}</span>
                               <p>{selectedWorkOrder.reportAfterNotes}</p>
                             </article>
                           ) : null}
@@ -8472,8 +8709,8 @@ function WorkOrdersView({
                           ) : null}
                         </div>
                         <div className="technicalReportPhotos">
-                          <ReportPhotoPreview title="Antes" photos={detailBeforePhotos} />
-                          <ReportPhotoPreview title="Despues" photos={detailAfterPhotos} />
+                          {!isNewInstallationReport ? <ReportPhotoPreview title="Antes" photos={detailBeforePhotos} /> : null}
+                          <ReportPhotoPreview title={isNewInstallationReport ? "Fotos terminadas" : "Despues"} photos={detailAfterPhotos} />
                         </div>
                       </>
                     ) : (
@@ -8491,8 +8728,8 @@ function WorkOrdersView({
                         {groupedMovements.map((movement) => (
                           <div key={movement.key} className="workOrderMaterialItem">
                             <span>{movement.name} x{movement.quantity} {movement.unit}</span>
-                            <button type="button" onClick={() => onRemoveMaterial(movement.ids)} disabled={loading}>
-                              Eliminar
+                            <button type="button" onClick={() => returnMaterialQuantity(selectedWorkOrder.id, movement)} disabled={loading}>
+                              Devolver
                             </button>
                           </div>
                         ))}
@@ -8507,7 +8744,7 @@ function WorkOrdersView({
                           onChange={(event) => updateMaterialForm(selectedWorkOrder.id, { ...form, query: event.target.value, itemId: "", open: true })}
                           onFocus={() => updateMaterialForm(selectedWorkOrder.id, { ...form, open: true })}
                           onBlur={() => window.setTimeout(() => updateMaterialForm(selectedWorkOrder.id, { ...materialForm(selectedWorkOrder.id), open: false }), 120)}
-                          placeholder="Buscar articulo para descontar"
+                          placeholder="Buscar articulo extra para descontar"
                           autoComplete="off"
                         />
                         {form.open ? (
@@ -8572,7 +8809,7 @@ function WorkOrdersView({
                           updateMaterialForm(selectedWorkOrder.id, { query: "", itemId: "", quantity: 1, open: false, installAsDevice: form.installAsDevice });
                         }}
                       >
-                        Agregar
+                        Agregar extra
                       </button>
                     </div>
                     {selectedItem ? (
@@ -8766,6 +9003,7 @@ function QuotesView({
   const [quoteImporterId, setQuoteImporterId] = useState("ALL");
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
   const [catalogUnitPrice, setCatalogUnitPrice] = useState<number>(0);
+  const [catalogUnitPriceEdited, setCatalogUnitPriceEdited] = useState(false);
   const [laborDescription, setLaborDescription] = useState("");
   const [laborUnitPrice, setLaborUnitPrice] = useState<number>(0);
   const [quoteExchangeRate, setQuoteExchangeRate] = useState("40");
@@ -8826,6 +9064,10 @@ function QuotesView({
   }, [discount, editingDiscountAmount]);
 
   useEffect(() => {
+    if (catalogUnitPriceEdited) {
+      return;
+    }
+
     if (selectedCatalogItem?.source === "INVENTORY") {
       const inventoryItem = inventoryItems.find((item) => item.id === selectedCatalogItem.id);
       const priceWithTax = Number(inventoryItem?.priceWithTax ?? inventoryItem?.costPrice ?? 0) || 0;
@@ -8835,7 +9077,7 @@ function QuotesView({
       const priceBookItem = priceBookItems.find((item) => item.id === selectedCatalogItem.id);
       setCatalogUnitPrice(convertQuotePrice(Number(priceBookItem?.salePrice ?? 0) || 0, priceBookItem?.currency));
     }
-  }, [inventoryItems, priceBookItems, quoteCurrency, normalizedExchangeRate, quoteForm.taxIncluded, selectedCatalogItem?.id, selectedCatalogItem?.source]);
+  }, [catalogUnitPriceEdited, inventoryItems, priceBookItems, quoteCurrency, normalizedExchangeRate, quoteForm.taxIncluded, selectedCatalogItem?.id, selectedCatalogItem?.source]);
 
   useEffect(() => {
     refreshFuelPrice();
@@ -8947,6 +9189,34 @@ function QuotesView({
     onFormChange({ ...quoteForm, customerId: "" });
   }
 
+  function quoteItemMatchesCatalogItem(item: NonNullable<QuotePayload["items"]>[number], catalogItem: QuoteCatalogOption) {
+    return (
+      item.description === catalogItem.name &&
+      item.category === catalogItem.category &&
+      item.unit === catalogItem.unit
+    );
+  }
+
+  function getCatalogItemUsedQuantity(catalogItem: QuoteCatalogOption) {
+    if (catalogItem.source !== "INVENTORY") {
+      return 0;
+    }
+
+    return quoteItems
+      .filter((item) => quoteItemMatchesCatalogItem(item, catalogItem))
+      .reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+  }
+
+  function getCatalogItemAvailableStock(catalogItem: QuoteCatalogOption) {
+    if (catalogItem.source !== "INVENTORY" || !catalogItem.managedStock) {
+      return null;
+    }
+
+    const inventoryItem = inventoryItems.find((item) => item.id === catalogItem.id);
+    const stock = Number(inventoryItem?.stock ?? catalogItem.stock ?? 0) || 0;
+    return Math.max(0, stock - getCatalogItemUsedQuantity(catalogItem));
+  }
+
   const normalizedCatalogQuery = catalogQuery.trim().toLowerCase();
   const catalogModeItems: QuoteCatalogOption[] =
     quoteForm.pricingMode === "THIRD_PARTY"
@@ -8969,7 +9239,7 @@ function QuotesView({
       : inventoryItems.map((item) => {
           const priceWithTax = Number(item.priceWithTax ?? item.costPrice ?? 0) || 0;
           const netPrice = quoteForm.taxIncluded === false ? priceWithTax : priceWithTax / 1.22;
-          return {
+          const catalogItem = {
             id: item.id,
             code: item.sku || item.reference,
             name: item.name,
@@ -8986,6 +9256,11 @@ function QuotesView({
             stock: Number(item.stock) || 0,
             managedStock: item.managedStock,
             source: "INVENTORY" as const,
+          };
+
+          return {
+            ...catalogItem,
+            stock: getCatalogItemAvailableStock(catalogItem) ?? 0,
           };
         }).filter((item) => item.managedStock && (item.stock ?? 0) > 0);
   const catalogResults = catalogModeItems
@@ -9009,18 +9284,11 @@ function QuotesView({
     .slice(0, 10);
   const selectedCatalogStock =
     selectedCatalogItem?.source === "INVENTORY" && selectedCatalogItem.managedStock
-      ? Number(selectedCatalogItem.stock) || 0
+      ? Number(inventoryItems.find((item) => item.id === selectedCatalogItem.id)?.stock ?? selectedCatalogItem.stock ?? 0) || 0
       : null;
   const selectedCatalogUsed =
     selectedCatalogItem?.source === "INVENTORY"
-      ? quoteItems
-          .filter(
-            (item) =>
-              item.description === selectedCatalogItem.name &&
-              item.category === selectedCatalogItem.category &&
-              item.unit === selectedCatalogItem.unit,
-          )
-          .reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
+      ? getCatalogItemUsedQuantity(selectedCatalogItem)
       : 0;
   const selectedCatalogAvailable =
     selectedCatalogStock === null ? null : Math.max(0, selectedCatalogStock - selectedCatalogUsed);
@@ -9042,6 +9310,7 @@ function QuotesView({
     setSelectedCatalogItem(item);
     setCatalogQuery(item.name);
     setCatalogUnitPrice(Number(item.unitPrice) || 0);
+    setCatalogUnitPriceEdited(false);
     setCatalogOpen(false);
   }
 
@@ -9065,6 +9334,7 @@ function QuotesView({
 
     const nextItem: NonNullable<QuotePayload["items"]>[number] = {
       priceBookItemId: selectedCatalogItem.source === "PRICE_BOOK" ? selectedCatalogItem.id : undefined,
+      inventoryItemId: selectedCatalogItem.source === "INVENTORY" ? selectedCatalogItem.id : undefined,
       type: selectedCatalogItem.type,
       category: selectedCatalogItem.category,
       description: selectedCatalogItem.name,
@@ -9079,8 +9349,17 @@ function QuotesView({
     setSelectedCatalogItem(null);
     setCatalogQuery("");
     setCatalogUnitPrice(0);
+    setCatalogUnitPriceEdited(false);
     setQuoteImporterId("ALL");
     setCatalogQuantity(1);
+  }
+
+  function updateQuoteItem(index: number, patch: Partial<NonNullable<QuotePayload["items"]>[number]>) {
+    onFormChange({
+      ...quoteForm,
+      items: quoteItems.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+      subtotal: 0,
+    });
   }
 
   function addLaborItem() {
@@ -9386,6 +9665,7 @@ function QuotesView({
                         setSelectedCatalogItem(null);
                         setCatalogQuery("");
                         setCatalogUnitPrice(0);
+                        setCatalogUnitPriceEdited(false);
                       }}
                     >
                       <option value="ALL">Todos los importadores</option>
@@ -9404,6 +9684,7 @@ function QuotesView({
                       onChange={(event) => {
                         setCatalogQuery(event.target.value);
                         setSelectedCatalogItem(null);
+                        setCatalogUnitPriceEdited(false);
                         setCatalogOpen(true);
                       }}
                       onFocus={() => setCatalogOpen(true)}
@@ -9459,14 +9740,17 @@ function QuotesView({
                   </label>
                   {quoteForm.pricingMode === "DIRECT" ? (
                     <label className="inlineCatalogField">
-                      Precio unit. ({quoteCurrency})
+                      Precio a presupuestar ({quoteCurrency})
                       <input
                         type="number"
                         min="0"
                         step="0.01"
                         value={catalogUnitPrice}
-                        onChange={(event) => setCatalogUnitPrice(Number(event.target.value) || 0)}
-                        aria-label="Precio unitario"
+                        onChange={(event) => {
+                          setCatalogUnitPrice(Number(event.target.value) || 0);
+                          setCatalogUnitPriceEdited(true);
+                        }}
+                        aria-label="Precio a presupuestar"
                       />
                     </label>
                   ) : null}
@@ -9483,6 +9767,9 @@ function QuotesView({
                   <p className="catalogStockHint">
                     Disponible en almacen: {selectedCatalogAvailable ?? 0} {selectedCatalogItem.unit || "u"}
                     {selectedCatalogUsed > 0 ? ` (${selectedCatalogUsed} ya agregado en este presupuesto)` : ""}
+                    {" - "}
+                    Costo interno: {formatPrice(selectedCatalogItem.unitCost, quoteCurrency)}
+                    {catalogUnitPriceEdited ? " - Precio manual aplicado" : ""}
                   </p>
                 ) : null}
                 {quoteForm.pricingMode === "DIRECT" ? (
@@ -9571,6 +9858,16 @@ function QuotesView({
                           <span>
                             {item.quantity} {item.unit} x {formatPrice(item.unitPrice, quoteCurrency)}
                           </span>
+                          <label className="quoteItemInlineEdit">
+                            Precio
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={Number(item.unitPrice) || 0}
+                              onChange={(event) => updateQuoteItem(index, { unitPrice: Number(event.target.value) || 0 })}
+                            />
+                          </label>
                         </div>
                         <b>{formatPrice((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), quoteCurrency)}</b>
                         <button type="button" className="iconButton" onClick={() => removeQuoteItem(index)} aria-label="Quitar ítem">
@@ -9905,7 +10202,7 @@ function QuotesView({
                         {(selectedQuote.items ?? []).map((item, index) => (
                           <article key={item.id ?? `${item.description}-${index}`}>
                             <div>
-                              <strong>{item.description}</strong>
+                              <strong>{quoteItemDisplayName(item)}</strong>
                             </div>
                             <span>{item.quantity} {item.unit}</span>
                             <span>{formatPrice(item.unitPrice, selectedQuote.currency)}</span>
@@ -9975,7 +10272,9 @@ function QuotesView({
                         </div>
                         <div>
                           <dt>Ganancia estimada</dt>
-                          <dd>{formatPrice(selectedQuote.estimatedProfit, selectedQuote.currency)}</dd>
+                          <dd className={toMoneyNumber(selectedQuote.estimatedProfit) < 0 ? "negativeAmount" : "positiveAmount"}>
+                            {formatPrice(selectedQuote.estimatedProfit, selectedQuote.currency)}
+                          </dd>
                         </div>
                       </dl>
                     </section>
@@ -10012,10 +10311,12 @@ function PaymentsView({
   paymentError,
   paymentForm,
   paymentSearch,
-  paymentStats,
   paymentStatus,
   paymentType,
+  paymentPeriod,
   payments,
+  quotes,
+  vehicles,
   selectedCustomerId,
   onFormChange,
   onDelete,
@@ -10026,6 +10327,7 @@ function PaymentsView({
   onCustomerFilter,
   onStatusChange,
   onTypeChange,
+  onPeriodChange,
 }: {
   customers: Customer[];
   inventoryItems: InventoryItem[];
@@ -10033,10 +10335,12 @@ function PaymentsView({
   paymentError: string;
   paymentForm: PaymentPayload;
   paymentSearch: string;
-  paymentStats: Array<{ label: string; value: number | string }>;
   paymentStatus: "ALL" | "PENDING" | "PAID" | "OVERDUE";
   paymentType: "ALL" | "INCOME" | "EXPENSE";
+  paymentPeriod: "ALL" | "CURRENT_MONTH";
   payments: Payment[];
+  quotes: Quote[];
+  vehicles: Vehicle[];
   selectedCustomerId: string | null;
   onFormChange: (form: PaymentPayload) => void;
   onDelete: (payment: Payment) => void;
@@ -10047,21 +10351,211 @@ function PaymentsView({
   onCustomerFilter: (customerId: string | null) => void;
   onStatusChange: (value: "ALL" | "PENDING" | "PAID" | "OVERDUE") => void;
   onTypeChange: (value: "ALL" | "INCOME" | "EXPENSE") => void;
+  onPeriodChange: (value: "ALL" | "CURRENT_MONTH") => void;
 }) {
   const transactionType = paymentForm.transactionType ?? "INCOME";
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+  const [selectedFinanceGroup, setSelectedFinanceGroup] = useState<{
+    title: string;
+    subtitle: string;
+    currency: string;
+    payments: Payment[];
+    totalRegistered: number;
+    totalReal: number;
+  } | null>(null);
   const [entityQuery, setEntityQuery] = useState("");
   const [inventoryQuery, setInventoryQuery] = useState("");
   const [filterEntityQuery, setFilterEntityQuery] = useState("");
+  const [financeExchangeRate, setFinanceExchangeRate] = useState("40");
   const selectedPaymentCustomer = customers.find((customer) => customer.id === (paymentForm.customerId || selectedCustomerId || ""));
   const isStockExpense = transactionType === "EXPENSE" && stockExpenseCategories.has(paymentForm.category || "");
+  const isVehicleExpense = transactionType === "EXPENSE" && ["FUEL", "VEHICLE_EXPENSE"].includes(paymentForm.category || "");
   const calculatedStockAmount =
     isStockExpense && paymentForm.createInventoryEntry
       ? (Number(paymentForm.quantity) || 0) * (Number(paymentForm.unitPrice) || 0)
       : Number(paymentForm.amount) || 0;
+  const exchangeRateValue = Number(financeExchangeRate);
+  const normalizedExchangeRate = Number.isFinite(exchangeRateValue) && exchangeRateValue > 0 ? exchangeRateValue : 40;
+  const operationalPayments = useMemo(
+    () => payments.filter((payment) => payment.category !== "WORK_ORDER_MATERIAL_COST"),
+    [payments],
+  );
+  const confirmedOperationalPayments = useMemo(
+    () => operationalPayments.filter((payment) => isConfirmedFinancePayment(payment)),
+    [operationalPayments],
+  );
+  const customerResultPayments = useMemo(() => {
+    const confirmedQuoteIds = new Set(
+      confirmedOperationalPayments
+        .filter((payment) => payment.transactionType === "INCOME" && payment.quoteId)
+        .map((payment) => payment.quoteId as string),
+    );
+    const confirmedWorkOrderIds = new Set(
+      confirmedOperationalPayments
+        .filter((payment) => payment.transactionType === "INCOME" && payment.workOrderId)
+        .map((payment) => payment.workOrderId as string),
+    );
+    const internalCostsForConfirmedIncome = payments.filter((payment) => {
+      if (payment.category !== "WORK_ORDER_MATERIAL_COST") {
+        return false;
+      }
+      return Boolean(
+        (payment.workOrderId && confirmedWorkOrderIds.has(payment.workOrderId)) ||
+          (payment.quoteId && confirmedQuoteIds.has(payment.quoteId)),
+      );
+    });
+
+    return [...confirmedOperationalPayments, ...internalCostsForConfirmedIncome];
+  }, [confirmedOperationalPayments, payments]);
+  const financeCurrencyTotals = useMemo(() => {
+    const totals = new Map<string, { currency: string; income: number; expense: number; balance: number }>();
+    ["UYU", "USD"].forEach((currency) => totals.set(currency, { currency, income: 0, expense: 0, balance: 0 }));
+
+    confirmedOperationalPayments.forEach((payment) => {
+      const currency = payment.currency || "UYU";
+      const current = totals.get(currency) ?? { currency, income: 0, expense: 0, balance: 0 };
+      const amount = toMoneyNumber(payment.amount);
+      if (payment.transactionType === "EXPENSE") {
+        current.expense += amount;
+      } else {
+        current.income += amount;
+      }
+      current.balance = current.income - current.expense;
+      totals.set(currency, current);
+    });
+
+    return Array.from(totals.values());
+  }, [confirmedOperationalPayments]);
+  const financeConsolidatedTotals = useMemo(() => {
+    const toUyu = (payment: Payment) => {
+      const amount = toMoneyNumber(payment.amount);
+      return (payment.currency || "UYU") === "USD" ? amount * normalizedExchangeRate : amount;
+    };
+    const incomeUyu = confirmedOperationalPayments
+      .filter((payment) => (payment.transactionType ?? "INCOME") === "INCOME")
+      .reduce((sum, payment) => sum + toUyu(payment), 0);
+    const expenseUyu = confirmedOperationalPayments
+      .filter((payment) => payment.transactionType === "EXPENSE")
+      .reduce((sum, payment) => sum + toUyu(payment), 0);
+    const balanceUyu = incomeUyu - expenseUyu;
+    const rate = normalizedExchangeRate || 1;
+
+    return {
+      incomeUyu,
+      expenseUyu,
+      balanceUyu,
+      incomeUsd: incomeUyu / rate,
+      expenseUsd: expenseUyu / rate,
+      balanceUsd: balanceUyu / rate,
+    };
+  }, [normalizedExchangeRate, confirmedOperationalPayments]);
+  const financeMethodTotals = useMemo(() => {
+    const totals = new Map<string, { method: string; count: number; income: number; expense: number }>();
+    confirmedOperationalPayments.forEach((payment) => {
+      const method = payment.method || "Sin definir";
+      const current = totals.get(method) ?? { method, count: 0, income: 0, expense: 0 };
+      const amount = toMoneyNumber(payment.amount);
+      const amountUyu = (payment.currency || "UYU") === "USD" ? amount * normalizedExchangeRate : amount;
+      current.count += 1;
+      if (payment.transactionType === "EXPENSE") {
+        current.expense += amountUyu;
+      } else {
+        current.income += amountUyu;
+      }
+      totals.set(method, current);
+    });
+    return Array.from(totals.values()).sort((a, b) => b.income - b.expense - (a.income - a.expense));
+  }, [normalizedExchangeRate, confirmedOperationalPayments]);
+  const supplierProfitTotals = useMemo(() => {
+    const totals = new Map<
+      string,
+      { id: string; name: string; currency: string; income: number; cost: number; profit: number; items: number }
+    >();
+    const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
+
+    quotes
+      .filter((quote) => quote.status === "APPROVED" || Boolean(quote.acceptedAt))
+      .forEach((quote) => {
+        (quote.items ?? []).forEach((item) => {
+          if (!item.inventoryItemId || item.type === "LABOR" || item.type === "EXPENSE") {
+            return;
+          }
+
+          const inventoryItem = item.inventoryItem ?? inventoryById.get(item.inventoryItemId);
+          const quantity = Number(item.quantity) || 0;
+          const itemCost = toMoneyNumber(item.unitCost ?? 0) * quantity;
+          const supplierName =
+            inventoryItem?.customer?.name ||
+            inventoryItem?.supplier ||
+            (itemCost <= 0 ? "Ganancia extra / sin compra asociada" : "Compra sin proveedor identificado");
+          const currency = inventoryItem?.currency || quote.currency || "UYU";
+          const key = `${supplierName}-${currency}`;
+          const current = totals.get(key) ?? { id: key, name: supplierName, currency, income: 0, cost: 0, profit: 0, items: 0 };
+          const itemIncome = item.total === undefined ? toMoneyNumber(item.unitPrice) * quantity : toMoneyNumber(item.total);
+          current.income += itemIncome;
+          current.cost += itemCost;
+          current.profit = current.income - current.cost;
+          current.items += quantity;
+          totals.set(key, current);
+        });
+      });
+
+    return Array.from(totals.values()).sort((a, b) => b.income - a.income);
+  }, [inventoryItems, quotes]);
+  const invoiceTotals = useMemo(() => {
+    const totals = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        currency: string;
+        count: number;
+        paid: number;
+        realCost: number;
+        invoices: string[];
+        products: string[];
+      }
+    >();
+
+    confirmedOperationalPayments
+      .filter((payment) => payment.transactionType === "EXPENSE" && (payment.method === "Factura" || payment.concept.toLowerCase().includes("factura")))
+      .forEach((payment) => {
+        const name = payment.customer.name;
+        const currency = payment.currency || "UYU";
+        const key = `${name}-${currency}`;
+        const current = totals.get(key) ?? { id: key, name, currency, count: 0, paid: 0, realCost: 0, invoices: [], products: [] };
+        const movements = payment.inventoryMovements ?? [];
+        const movementCost = movements.reduce((sum, movement) => sum + toMoneyNumber(movement.totalCost ?? 0), 0);
+
+        current.count += 1;
+        current.paid += toMoneyNumber(payment.amount);
+        current.realCost += movementCost || toMoneyNumber(payment.amount);
+        if (payment.reference) {
+          current.invoices.push(payment.reference);
+        }
+        movements.forEach((movement) => {
+          if (movement.item?.name) {
+            current.products.push(`${movement.item.name} x${movement.quantity}`);
+          }
+        });
+        totals.set(key, current);
+      });
+
+    return Array.from(totals.values()).sort((a, b) => b.realCost - a.realCost);
+  }, [confirmedOperationalPayments]);
+  const invoicePaymentsByGroup = useMemo(() => {
+    const groups = new Map<string, Payment[]>();
+    confirmedOperationalPayments
+      .filter((payment) => payment.transactionType === "EXPENSE" && (payment.method === "Factura" || payment.concept.toLowerCase().includes("factura")))
+      .forEach((payment) => {
+        const key = `${payment.customer.name}-${payment.currency || "UYU"}`;
+        groups.set(key, [...(groups.get(key) ?? []), payment]);
+      });
+    return groups;
+  }, [confirmedOperationalPayments]);
   const customerTotals = useMemo(() => {
     const totals = new Map<string, { id: string; name: string; currency: string; income: number; expense: number; balance: number }>();
-    payments.forEach((payment) => {
+    customerResultPayments.forEach((payment) => {
       const currency = payment.currency || "UYU";
       const key = `${payment.customer.id}-${currency}`;
       const current = totals.get(key) ?? {
@@ -10082,7 +10576,7 @@ function PaymentsView({
       totals.set(key, current);
     });
     return Array.from(totals.values()).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
-  }, [payments]);
+  }, [customerResultPayments]);
 
   useEffect(() => {
     setEntityQuery(selectedPaymentCustomer ? `${selectedPaymentCustomer.name} - ${customerTypeLabels[selectedPaymentCustomer.type ?? "NORMAL"]}` : "");
@@ -10193,13 +10687,50 @@ function PaymentsView({
 
   return (
     <section className="paymentsModule">
-      <div className="summaryGrid customerStats" aria-label="Resumen de gastos e ingresos">
-        {paymentStats.map((card) => (
-          <article key={card.label}>
-            <span>{card.label}</span>
-            <strong>{card.value}</strong>
+      <div className="financeSummaryPanel" aria-label="Resumen de gastos e ingresos por moneda">
+        <div className="financeExchangeBox">
+          <div>
+            <span>Tipo de cambio</span>
+            <strong>USD/UYU</strong>
+          </div>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={financeExchangeRate}
+            onChange={(event) => setFinanceExchangeRate(event.target.value)}
+            aria-label="Tipo de cambio dolar a peso"
+          />
+        </div>
+        {financeCurrencyTotals.map((total) => (
+          <article key={total.currency} className="financeSummaryCard">
+            <span>{total.currency}</span>
+            <strong className={total.balance < 0 ? "negativeAmount" : "positiveAmount"}>
+              {formatPrice(total.balance, total.currency)}
+            </strong>
+            <small>
+              Ingresos {formatPrice(total.income, total.currency)} - Egresos {formatPrice(total.expense, total.currency)}
+            </small>
           </article>
         ))}
+        <article className="financeSummaryCard financeTotalCard">
+          <span>Total estimado</span>
+          <strong className={financeConsolidatedTotals.balanceUyu < 0 ? "negativeAmount" : "positiveAmount"}>
+            {formatPrice(financeConsolidatedTotals.balanceUyu, "UYU")}
+          </strong>
+          <small>
+            Equivale a {formatPrice(financeConsolidatedTotals.balanceUsd, "USD")} con TC {formatNumber(normalizedExchangeRate, 2)}
+          </small>
+        </article>
+        <article className="financeSummaryCard financeTotalCard">
+          <span>Ingresos / egresos estimados</span>
+          <strong>
+            {formatPrice(financeConsolidatedTotals.incomeUyu, "UYU")} / {formatPrice(financeConsolidatedTotals.expenseUyu, "UYU")}
+          </strong>
+          <small>
+            {formatPrice(financeConsolidatedTotals.incomeUsd, "USD")} / {formatPrice(financeConsolidatedTotals.expenseUsd, "USD")}
+          </small>
+        </article>
       </div>
 
       <div className="paymentsLayout">
@@ -10258,6 +10789,7 @@ function PaymentsView({
                   onFormChange({
                     ...paymentForm,
                     category,
+                    vehicleId: ["FUEL", "VEHICLE_EXPENSE"].includes(category) ? paymentForm.vehicleId : "",
                     createInventoryEntry:
                       transactionType === "EXPENSE" && stockExpenseCategories.has(category)
                         ? paymentForm.createInventoryEntry ?? true
@@ -10300,7 +10832,7 @@ function PaymentsView({
                 onChange={(event) => onFormChange({ ...paymentForm, method: event.target.value })}
               >
                 <option value="">Sin definir</option>
-                <option value="Efectivo">Efectivo</option>
+                <option value="Efectivo">Cash / Efectivo</option>
                 <option value="Transferencia">Transferencia</option>
                 <option value="Debito">Debito</option>
                 <option value="Credito">Credito</option>
@@ -10316,6 +10848,22 @@ function PaymentsView({
                 placeholder="Factura, recibo, comprobante"
               />
             </label>
+            {isVehicleExpense ? (
+              <label>
+                Vehiculo
+                <select
+                  value={paymentForm.vehicleId || ""}
+                  onChange={(event) => onFormChange({ ...paymentForm, vehicleId: event.target.value })}
+                >
+                  <option value="">Sin vincular</option>
+                  {vehicles.map((vehicle) => (
+                    <option key={vehicle.id} value={vehicle.id}>
+                      {vehicle.name}{vehicle.plate ? ` - ${vehicle.plate}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label className="wideField">
               Concepto
               <input
@@ -10484,6 +11032,14 @@ function PaymentsView({
               <option value="EXPENSE">Egresos</option>
             </select>
             <select
+              value={paymentPeriod}
+              onChange={(event) => onPeriodChange(event.target.value as "ALL" | "CURRENT_MONTH")}
+              aria-label="Filtrar por periodo"
+            >
+              <option value="CURRENT_MONTH">Mes actual</option>
+              <option value="ALL">Todos los periodos</option>
+            </select>
+            <select
               value={paymentStatus}
               onChange={(event) => onStatusChange(event.target.value as "ALL" | "PENDING" | "PAID" | "OVERDUE")}
               aria-label="Filtrar por estado"
@@ -10528,17 +11084,114 @@ function PaymentsView({
             </div>
           ) : null}
 
+          {supplierProfitTotals.length ? (
+            <section className="financeInsightBlock">
+              <div className="financeInsightHeader">
+                <span>Rentabilidad por proveedor</span>
+                <small>Ventas de materiales aprobados contra costo de almacen</small>
+              </div>
+              <div className="paymentCustomerTotals supplierProfitTotals" aria-label="Rentabilidad por proveedor">
+                {supplierProfitTotals.map((total) => (
+                  <article key={total.id}>
+                    <span>{total.name}</span>
+                    <small>
+                      Venta {formatPrice(total.income, total.currency)} - Costo {formatPrice(total.cost, total.currency)}
+                    </small>
+                    <strong className={total.profit < 0 ? "negativeAmount" : "positiveAmount"}>
+                      {formatPrice(total.profit, total.currency)}
+                    </strong>
+                    <small>{formatNumber(total.items, 2)} unidades vendidas desde presupuestos aprobados</small>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {financeMethodTotals.length ? (
+            <div className="paymentMethodTotals" aria-label="Totales por metodo de pago">
+              {financeMethodTotals.map((total) => {
+                const balance = total.income - total.expense;
+                return (
+                  <article key={total.method}>
+                    <span>{total.method}</span>
+                    <strong className={balance < 0 ? "negativeAmount" : "positiveAmount"}>{formatPrice(balance, "UYU")}</strong>
+                    <small>
+                      {total.count} movimientos - Ingresos {formatPrice(total.income, "UYU")} - Egresos{" "}
+                      {formatPrice(total.expense, "UYU")}
+                    </small>
+                  </article>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {invoiceTotals.length ? (
+            <section className="financeInsightBlock">
+              <div className="financeInsightHeader">
+                <span>Facturas importadas por proveedor</span>
+                <small>Importe registrado contra valor real de productos ingresados</small>
+              </div>
+              <div className="paymentCustomerTotals supplierProfitTotals" aria-label="Facturas importadas por proveedor">
+                {invoiceTotals.map((total) => {
+                  const mismatch = Math.abs(total.realCost - total.paid) > 1;
+                  return (
+                    <article
+                      key={total.id}
+                      className={`financeClickableCard ${mismatch ? "invoiceMismatchCard" : ""}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() =>
+                        setSelectedFinanceGroup({
+                          title: total.name,
+                          subtitle: `${total.count} factura(s): ${total.invoices.join(", ") || "Sin numero"}`,
+                          currency: total.currency,
+                          payments: invoicePaymentsByGroup.get(total.id) ?? [],
+                          totalRegistered: total.paid,
+                          totalReal: total.realCost,
+                        })
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedFinanceGroup({
+                            title: total.name,
+                            subtitle: `${total.count} factura(s): ${total.invoices.join(", ") || "Sin numero"}`,
+                            currency: total.currency,
+                            payments: invoicePaymentsByGroup.get(total.id) ?? [],
+                            totalRegistered: total.paid,
+                            totalReal: total.realCost,
+                          });
+                        }
+                      }}
+                    >
+                      <span>{total.name}</span>
+                      <small>
+                        {total.count} factura(s): {total.invoices.slice(0, 4).join(", ") || "Sin numero"}
+                      </small>
+                      <strong className={mismatch ? "negativeAmount" : "positiveAmount"}>
+                        Real {formatPrice(total.realCost, total.currency)}
+                      </strong>
+                      <small>Registrado {formatPrice(total.paid, total.currency)}</small>
+                      {mismatch ? <small>Diferencia a revisar: {formatPrice(total.realCost - total.paid, total.currency)}</small> : null}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
           <div className="paymentListTable" role="table" aria-label="Movimientos financieros">
             <div className="paymentListHeader" role="row">
               <span>Movimiento</span>
               <span>Entidad</span>
               <span>Categoria</span>
+              <span>Metodo</span>
               <span>Vence</span>
               <span>Estado</span>
               <span>Importe</span>
               <span aria-hidden="true">Acciones</span>
             </div>
-            {payments.map((payment) => (
+            {operationalPayments.map((payment) => (
               <div
                 key={payment.id}
                 className="paymentListRow"
@@ -10551,6 +11204,7 @@ function PaymentsView({
                 </span>
                 <span>{payment.customer.name}</span>
                 <span>{financeCategoryLabels[payment.category] ?? payment.category}</span>
+                <span>{payment.method || "Sin definir"}</span>
                 <span>{formatShortDate(payment.dueDate)}</span>
                 <span>
                   <b className={`statusPill ${paymentStatusClass(payment)}`}>{paymentStatusLabel(payment)}</b>
@@ -10576,7 +11230,7 @@ function PaymentsView({
                 </span>
               </div>
             ))}
-            {!payments.length ? <p className="emptyPanel">No hay movimientos para los filtros actuales.</p> : null}
+            {!operationalPayments.length ? <p className="emptyPanel">No hay movimientos para los filtros actuales.</p> : null}
           </div>
         </section>
       </div>
@@ -10595,6 +11249,9 @@ function PaymentsView({
             setSelectedPayment(null);
           }}
         />
+      ) : null}
+      {selectedFinanceGroup ? (
+        <FinanceGroupDetailModal group={selectedFinanceGroup} onClose={() => setSelectedFinanceGroup(null)} />
       ) : null}
     </section>
   );
@@ -10723,6 +11380,151 @@ function PaymentDetailModal({
             <p>{payment.notes}</p>
           </section>
         ) : null}
+      </section>
+    </div>
+  );
+}
+
+function FinanceGroupDetailModal({
+  group,
+  onClose,
+}: {
+  group: {
+    title: string;
+    subtitle: string;
+    currency: string;
+    payments: Payment[];
+    totalRegistered: number;
+    totalReal: number;
+  };
+  onClose: () => void;
+}) {
+  function printGroup() {
+    if (typeof document === "undefined") {
+      window.print();
+      return;
+    }
+
+    const cleanup = () => {
+      document.body.classList.remove("printingCustomerProfile");
+      window.removeEventListener("afterprint", cleanup);
+    };
+    document.body.classList.add("printingCustomerProfile");
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+    window.setTimeout(cleanup, 60000);
+  }
+
+  const difference = group.totalReal - group.totalRegistered;
+
+  return (
+    <div className="deviceDetailOverlay customerProfileOverlay" onClick={onClose}>
+      <section
+        className="customerProfileModal printableCustomerProfile financeGroupModal"
+        aria-label="Detalle financiero por proveedor"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <img className="customerProfilePrintWatermark" src="/security-solutions-logo-bw.png" alt="" aria-hidden="true" />
+        <header className="deviceDetailHeader">
+          <div className="printCompanyIdentity" aria-hidden="true">
+            <img src="/security-solutions-logo.png" alt="" />
+            <div>
+              <strong>Security Solutions</strong>
+              <span>Informe financiero</span>
+            </div>
+          </div>
+          <div className="customerProfileTitleBlock">
+            <span>Facturas por proveedor</span>
+            <h2>{group.title}</h2>
+            <p>{group.subtitle}</p>
+          </div>
+          <div className="customerProfileActionBar">
+            <div className="documentToolbarActions">
+              <button type="button" className="secondaryButton printHidden" onClick={printGroup}>
+                <Printer size={16} />
+                Imprimir
+              </button>
+              <button type="button" className="iconButton printHidden" onClick={onClose} aria-label="Cerrar detalle">
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <section className="customerProfileSection">
+          <dl className="meetingModalFacts">
+            <div>
+              <dt>Registrado</dt>
+              <dd>{formatPrice(group.totalRegistered, group.currency)}</dd>
+            </div>
+            <div>
+              <dt>Real ingresado</dt>
+              <dd>{formatPrice(group.totalReal, group.currency)}</dd>
+            </div>
+            <div>
+              <dt>Diferencia</dt>
+              <dd className={Math.abs(difference) > 1 ? "negativeAmount" : "positiveAmount"}>
+                {formatPrice(difference, group.currency)}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="customerProfileSection printFullWidthSection">
+          <div className="customerProfileSectionHeader">
+            <h3>Facturas asociadas</h3>
+          </div>
+          <div className="customerProfileTableWrap">
+            <table className="customerProfileOrdersTable">
+              <thead>
+                <tr>
+                  <th>Factura</th>
+                  <th>Concepto</th>
+                  <th>Metodo</th>
+                  <th>Fecha</th>
+                  <th>Importe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.payments.map((payment) => (
+                  <tr key={payment.id}>
+                    <td data-label="Factura">
+                      <strong>{payment.reference || "Sin numero"}</strong>
+                    </td>
+                    <td data-label="Concepto">{payment.concept}</td>
+                    <td data-label="Metodo">{payment.method || "Sin definir"}</td>
+                    <td data-label="Fecha">{formatShortDate(payment.paidAt ?? payment.createdAt)}</td>
+                    <td data-label="Importe">
+                      <strong>{formatPrice(payment.amount, payment.currency || group.currency)}</strong>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="customerProfileSection printFullWidthSection">
+          <div className="customerProfileSectionHeader">
+            <h3>Productos / detalle detectado</h3>
+          </div>
+          <div className="financeGroupProducts">
+            {group.payments.flatMap((payment) =>
+              (payment.inventoryMovements ?? []).map((movement) => (
+                <article key={`${payment.id}-${movement.id}`}>
+                  <strong>{movement.item?.name || payment.concept}</strong>
+                  <span>
+                    {payment.reference || "Sin factura"} - {movement.quantity} {movement.item?.unit || "u"} -{" "}
+                    {formatPrice(movement.totalCost ?? payment.amount, payment.currency || group.currency)}
+                  </span>
+                </article>
+              )),
+            )}
+            {!group.payments.some((payment) => payment.inventoryMovements?.length) ? (
+              <p>Sin productos de almacen asociados. Factura registrada como gasto operativo.</p>
+            ) : null}
+          </div>
+        </section>
       </section>
     </div>
   );
@@ -11469,8 +12271,11 @@ function InventoryView({
   const [invoiceDataUrl, setInvoiceDataUrl] = useState("");
   const [invoiceFileName, setInvoiceFileName] = useState("");
   const [invoicePreview, setInvoicePreview] = useState<InvoiceImportPreview | null>(null);
+  const [invoiceImportMode, setInvoiceImportMode] = useState<"STOCK" | "EXPENSE">("STOCK");
   const [invoiceBusy, setInvoiceBusy] = useState(false);
   const [invoiceError, setInvoiceError] = useState("");
+  const inventoryFormRef = useRef<HTMLFormElement | null>(null);
+  const inventoryNameInputRef = useRef<HTMLInputElement | null>(null);
   const [inventoryColumnWidths, setInventoryColumnWidths] = useState<Record<InventoryColumnKey, number>>(() => {
     if (typeof window === "undefined") {
       return inventoryColumnDefaults;
@@ -11520,7 +12325,10 @@ function InventoryView({
   }, [inventoryItems, inventorySort]);
   const selectedMovementItem = inventoryItems.find((item) => item.id === inventoryMovementForm.itemId);
   const movementQuantity = Number(inventoryMovementForm.quantity) || 0;
-  const movementUnitCost = Number(inventoryMovementForm.unitCost) || toMoneyNumber(selectedMovementItem?.costPrice ?? selectedMovementItem?.priceWithTax ?? 0);
+  const movementIsZeroCostRecovery = Boolean(inventoryMovementForm.zeroCostRecovery && inventoryMovementForm.type === "IN");
+  const movementUnitCost = movementIsZeroCostRecovery
+    ? 0
+    : Number(inventoryMovementForm.unitCost) || toMoneyNumber(selectedMovementItem?.costPrice ?? selectedMovementItem?.priceWithTax ?? 0);
   const movementCurrency = inventoryMovementForm.currency || selectedMovementItem?.currency || "UYU";
   const movementEstimatedCost = movementQuantity * movementUnitCost;
   const movementCanCreateExpense = inventoryMovementForm.createExpense && inventoryMovementForm.type !== "ADJUST";
@@ -11535,11 +12343,17 @@ function InventoryView({
   }> = movementBatchItems
     .map((line) => {
       const item = inventoryItems.find((inventoryItem) => inventoryItem.id === line.itemId);
+      const requestedQuantity = Number(line.quantity) || 0;
+      const safeQuantity =
+        inventoryMovementForm.type === "OUT"
+          ? Math.min(Math.max(1, requestedQuantity), Math.max(1, Number(item?.stock) || 0))
+          : Math.max(1, requestedQuantity);
       return item
         ? {
             ...line,
+            quantity: safeQuantity,
             item,
-            unitCost: Number(line.unitCost) || toMoneyNumber(item.costPrice ?? item.priceWithTax ?? 0),
+            unitCost: movementIsZeroCostRecovery ? 0 : Number(line.unitCost) || toMoneyNumber(item.costPrice ?? item.priceWithTax ?? 0),
             currency: line.currency || item.currency || movementCurrency,
           }
         : null;
@@ -11559,16 +12373,28 @@ function InventoryView({
     selectedMovementMaxQuantity === undefined ? movementQuantity : Math.min(movementQuantity, selectedMovementMaxQuantity);
   const movementItemResults = useMemo(() => {
     const query = movementItemQuery.trim().toLowerCase();
+    const selectedBatchItemIds = new Set((inventoryMovementForm.items ?? []).map((line) => line.itemId));
     const matches = query
-      ? inventoryItems.filter((item) =>
-          [item.name, item.sku, item.supplier, item.supplierCategory]
+      ? inventoryItems.filter((item) => {
+          if (selectedBatchItemIds.has(item.id)) {
+            return false;
+          }
+          if (inventoryMovementForm.type === "OUT" && (!item.managedStock || item.stock <= 0)) {
+            return false;
+          }
+          return [item.name, item.sku, item.supplier, item.supplierCategory]
             .filter(Boolean)
-            .some((value) => String(value).toLowerCase().includes(query)),
-        )
-      : inventoryItems;
+            .some((value) => String(value).toLowerCase().includes(query));
+        })
+      : inventoryItems.filter((item) => {
+          if (selectedBatchItemIds.has(item.id)) {
+            return false;
+          }
+          return inventoryMovementForm.type !== "OUT" || (item.managedStock && item.stock > 0);
+        });
 
     return matches.slice(0, 8);
-  }, [inventoryItems, movementItemQuery]);
+  }, [inventoryItems, inventoryMovementForm.items, inventoryMovementForm.type, movementItemQuery]);
 
   useEffect(() => {
     if (selectedMovementItem && movementItemQuery !== selectedMovementItem.name) {
@@ -11589,6 +12415,18 @@ function InventoryView({
   useEffect(() => {
     window.localStorage.setItem("sscc.inventoryColumns", JSON.stringify(inventoryColumnWidths));
   }, [inventoryColumnWidths]);
+
+  useEffect(() => {
+    if (!editingInventoryItemId) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      inventoryFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      inventoryNameInputRef.current?.focus();
+      inventoryNameInputRef.current?.select();
+    }, 80);
+  }, [editingInventoryItemId]);
 
   function stockForm(item: InventoryItem) {
     return stockForms[item.id] ?? { entry: 1, exact: item.stock };
@@ -11623,6 +12461,26 @@ function InventoryView({
       sourceType: mode,
       customerId: mode === "THIRD_PARTY_SUPPLY" ? inventoryMovementForm.customerId : "",
       type: mode === "ASSET" ? "ADJUST" : "IN",
+    });
+  }
+
+  function applyZeroCostInventoryItem() {
+    onFormChange({
+      ...inventoryForm,
+      sourceType: "MATERIAL",
+      managedStock: true,
+      minStock: 0,
+      customerId: "",
+      stock: inventoryForm.stock && inventoryForm.stock > 0 ? inventoryForm.stock : 1,
+      costPrice: 0,
+      taxAmount: 0,
+      priceWithTax: inventoryForm.priceWithTax ?? 0,
+      currency: inventoryForm.currency || "USD",
+      supplierCategory: inventoryForm.supplierCategory || "Producto sin costo",
+      location: inventoryForm.location || "Stock propio sin costo",
+      notes:
+        inventoryForm.notes ||
+        "Producto ingresado sin costo de compra. Se presupuesta al valor real y no genera gasto de almacen.",
     });
   }
 
@@ -11688,9 +12546,10 @@ function InventoryView({
       return;
     }
 
+    const selectedStock = Math.max(0, Number(selectedMovementItem.stock) || 0);
     const quantity =
       inventoryMovementForm.type === "OUT"
-        ? Math.min(Math.max(1, movementQuantity), selectedMovementItem.stock)
+        ? Math.min(Math.max(1, movementQuantity), selectedStock)
         : Math.max(1, movementQuantity);
     if (quantity <= 0) {
       return;
@@ -11701,7 +12560,7 @@ function InventoryView({
     const nextLine = {
       itemId: selectedMovementItem.id,
       quantity,
-      unitCost: movementUnitCost,
+      unitCost: movementIsZeroCostRecovery ? 0 : movementUnitCost,
       currency: movementCurrency,
       sourceType: selectedMovementItem.sourceType || inventoryMovementForm.sourceType,
     };
@@ -11729,8 +12588,8 @@ function InventoryView({
           return line;
         }
         const item = inventoryItems.find((inventoryItem) => inventoryItem.id === itemId);
-        const max = inventoryMovementForm.type === "OUT" ? item?.stock ?? quantity : quantity;
-        return { ...line, quantity: Math.max(1, Math.min(Number(quantity) || 1, max)) };
+        const max = inventoryMovementForm.type === "OUT" ? Math.max(0, Number(item?.stock) || 0) : Number(quantity) || 1;
+        return { ...line, quantity: Math.max(1, Math.min(Number(quantity) || 1, max || 1)) };
       }),
     });
   }
@@ -11836,7 +12695,12 @@ function InventoryView({
       await apiRequest("/api/inventory/invoice/import", {
         token,
         method: "POST",
-        body: JSON.stringify({ dataUrl: invoiceDataUrl, fileName: invoiceFileName }),
+        body: JSON.stringify({
+          dataUrl: invoiceDataUrl,
+          fileName: invoiceFileName,
+          importMode: invoiceImportMode,
+          createStockEntries: invoiceImportMode === "STOCK",
+        }),
       });
       setInvoicePreview(null);
       setInvoiceDataUrl("");
@@ -11871,16 +12735,21 @@ function InventoryView({
         <div className="sectionHeader compactHeader">
           <div>
             <p>Factura inteligente</p>
-            <h2>Importar PDF al almacén</h2>
+            <h2>{invoiceImportMode === "STOCK" ? "Importar PDF al almacen" : "Registrar factura de gasto"}</h2>
           </div>
           <div className="rowActionButtons">
             <button type="button" className="secondaryButton" onClick={previewInvoice} disabled={invoiceBusy || !invoiceDataUrl}>
               <FileText size={17} />
               Analizar
             </button>
-            <button type="button" className="primaryButton smallPrimary" onClick={importInvoice} disabled={invoiceBusy || !invoicePreview?.items.length}>
+            <button
+              type="button"
+              className="primaryButton smallPrimary"
+              onClick={importInvoice}
+              disabled={invoiceBusy || !invoicePreview?.items.length || Boolean(invoicePreview?.duplicate?.exists)}
+            >
               <Save size={17} />
-              Importar
+              {invoiceImportMode === "STOCK" ? "Importar" : "Registrar gasto"}
             </button>
           </div>
         </div>
@@ -11901,6 +12770,27 @@ function InventoryView({
             <strong>{invoicePreview ? `${invoicePreview.items.length} item(s) detectados` : "Pendiente de analizar"}</strong>
           </div>
         </div>
+        <div className="invoiceModeSelector" role="group" aria-label="Destino de factura">
+          <button
+            type="button"
+            className={invoiceImportMode === "STOCK" ? "active" : ""}
+            onClick={() => setInvoiceImportMode("STOCK")}
+          >
+            Almacen
+          </button>
+          <button
+            type="button"
+            className={invoiceImportMode === "EXPENSE" ? "active" : ""}
+            onClick={() => setInvoiceImportMode("EXPENSE")}
+          >
+            Gasto operativo
+          </button>
+          <span>
+            {invoiceImportMode === "STOCK"
+              ? "Crea productos, entradas de stock y egreso de compra."
+              : "Solo registra el egreso. No crea productos ni stock."}
+          </span>
+        </div>
         {invoiceError ? <p className="formError">{invoiceError}</p> : null}
         {invoicePreview ? (
           <div className="invoicePreviewBox">
@@ -11916,6 +12806,26 @@ function InventoryView({
               <span>Total</span>
               <strong>{formatPrice(invoicePreview.totals.total, invoicePreview.currency)}</strong>
             </div>
+            {invoiceImportMode === "EXPENSE" ? (
+              <div className="invoiceExpenseNotice">
+                <strong>Se registrara como gasto operativo</strong>
+                <span>No se crearan productos ni entradas de stock.</span>
+              </div>
+            ) : null}
+            {invoicePreview.duplicate?.exists ? (
+              <div className="invoiceDuplicateWarning">
+                <strong>Factura ya importada</strong>
+                <p>{invoicePreview.duplicate.message}</p>
+                {invoicePreview.duplicate.importedAt ? <span>Importada: {formatDateTime(invoicePreview.duplicate.importedAt)}</span> : null}
+                {invoicePreview.duplicate.products.length ? (
+                  <ul>
+                    {invoicePreview.duplicate.products.map((product) => (
+                      <li key={product}>{product}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
             {invoicePreview.warnings?.length ? (
               <div className="invoiceWarnings">
                 {invoicePreview.warnings.map((warning) => (
@@ -11943,7 +12853,7 @@ function InventoryView({
 
       <div className="workOrdersLayout">
         <div className="inventoryForms">
-          <form className="workOrderForm" onSubmit={onSave}>
+          <form ref={inventoryFormRef} className="workOrderForm" onSubmit={onSave}>
             <div className="sectionHeader compactHeader">
               <div>
                 <p>{editingInventoryItemId ? "Actualizar stock" : "Alta de stock"}</p>
@@ -11954,7 +12864,12 @@ function InventoryView({
                   <X size={17} />
                   Cancelar
                 </button>
-              ) : null}
+              ) : (
+                <button type="button" className="secondaryButton" onClick={applyZeroCostInventoryItem}>
+                  <PackagePlus size={17} />
+                  Producto sin costo
+                </button>
+              )}
             </div>
             <div className="quoteModeSelector inventoryModeSelector" aria-label="Modalidad de ingreso al almacen">
               {inventoryEntryModes.map((mode) => (
@@ -12013,6 +12928,7 @@ function InventoryView({
                 Nombre
                 <div className="autocompleteField">
                   <input
+                    ref={inventoryNameInputRef}
                     value={inventoryForm.name}
                     onChange={(event) => {
                       onFormChange({ ...inventoryForm, name: event.target.value });
@@ -12046,6 +12962,9 @@ function InventoryView({
                     </div>
                   ) : null}
                 </div>
+                {editingInventoryItemId ? (
+                  <small className="fieldHelp">Corrige aqui tildes o caracteres mal leidos del PDF, por ejemplo camara en lugar de c�mara.</small>
+                ) : null}
               </label>
               <label>
                 Cantidad en stock
@@ -12084,6 +13003,50 @@ function InventoryView({
                   placeholder="Cliente, importador, activos"
                 />
               </label>
+              <label>
+                Costo real
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={inventoryForm.costPrice ?? ""}
+                  onChange={(event) =>
+                    onFormChange({
+                      ...inventoryForm,
+                      costPrice: event.target.value === "" ? undefined : Number(event.target.value),
+                    })
+                  }
+                  placeholder="0 si no tuvo costo"
+                />
+              </label>
+              <label>
+                Precio presupuesto / venta
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={inventoryForm.priceWithTax ?? ""}
+                  onChange={(event) =>
+                    onFormChange({
+                      ...inventoryForm,
+                      priceWithTax: event.target.value === "" ? undefined : Number(event.target.value),
+                    })
+                  }
+                  placeholder="Valor real a presupuestar"
+                />
+              </label>
+              <label>
+                Moneda
+                <select value={inventoryForm.currency || "USD"} onChange={(event) => onFormChange({ ...inventoryForm, currency: event.target.value })}>
+                  <option value="USD">USD</option>
+                  <option value="UYU">UYU</option>
+                </select>
+              </label>
+              {Number(inventoryForm.costPrice ?? 0) === 0 && Number(inventoryForm.priceWithTax ?? 0) > 0 ? (
+                <div className="wideField inventoryZeroCostNotice">
+                  Este producto queda con costo 0 y precio real de presupuesto. Cuando lo agregues a un presupuesto, el importe cuenta como ganancia.
+                </div>
+              ) : null}
               <label className="wideField">
                 Notas
                 <textarea value={inventoryForm.notes} onChange={(event) => onFormChange({ ...inventoryForm, notes: event.target.value })} />
@@ -12099,8 +13062,26 @@ function InventoryView({
             <div className="sectionHeader compactHeader">
               <div>
                 <p>Movimiento</p>
-                <h2>Consumir o ajustar</h2>
+                <h2>Consumir, ajustar o recuperar sobrantes</h2>
               </div>
+              <button
+                type="button"
+                className="secondaryButton"
+                onClick={() =>
+                  onMovementFormChange({
+                    ...inventoryMovementForm,
+                    type: "IN",
+                    zeroCostRecovery: true,
+                    unitCost: 0,
+                    createExpense: false,
+                    paymentCategory: "MATERIAL_PURCHASE",
+                    reason: inventoryMovementForm.reason || "Reingreso sobrante de obra sin costo - material recuperado",
+                  })
+                }
+              >
+                <RefreshCw size={17} />
+                Sobrante de obra
+              </button>
             </div>
             <div className="formGrid">
               <label>
@@ -12166,7 +13147,7 @@ function InventoryView({
                               itemId: item.id,
                               customerId: item.customerId || inventoryMovementForm.customerId,
                               sourceType: item.sourceType || inventoryMovementForm.sourceType,
-                              unitCost: Number(inventoryMovementForm.unitCost) || toMoneyNumber(item.costPrice ?? item.priceWithTax ?? 0),
+                              unitCost: movementIsZeroCostRecovery ? 0 : Number(inventoryMovementForm.unitCost) || toMoneyNumber(item.costPrice ?? item.priceWithTax ?? 0),
                               currency: inventoryMovementForm.currency || item.currency || "UYU",
                             });
                             if (itemCustomer) {
@@ -12197,6 +13178,7 @@ function InventoryView({
                     onMovementFormChange({
                       ...inventoryMovementForm,
                       type: event.target.value as InventoryMovementType,
+                      zeroCostRecovery: event.target.value === "IN" ? inventoryMovementForm.zeroCostRecovery : false,
                       createExpense: event.target.value === "OUT" ? true : inventoryMovementForm.createExpense,
                       paymentCategory:
                         event.target.value === "OUT"
@@ -12204,6 +13186,10 @@ function InventoryView({
                           : event.target.value === "IN"
                             ? "MATERIAL_PURCHASE"
                             : inventoryMovementForm.paymentCategory,
+                      reason:
+                        event.target.value === "OUT"
+                          ? inventoryMovementForm.reason || "Insumos consumidos por la empresa"
+                          : inventoryMovementForm.reason,
                     })
                   }
                 >
@@ -12234,6 +13220,27 @@ function InventoryView({
               </label>
               {inventoryMovementForm.type !== "ADJUST" ? (
                 <>
+                  {inventoryMovementForm.type === "IN" ? (
+                    <label className="checkRow wideField">
+                      <input
+                        type="checkbox"
+                        checked={inventoryMovementForm.zeroCostRecovery ?? false}
+                        onChange={(event) =>
+                          onMovementFormChange({
+                            ...inventoryMovementForm,
+                            zeroCostRecovery: event.target.checked,
+                            unitCost: event.target.checked ? 0 : inventoryMovementForm.unitCost,
+                            createExpense: event.target.checked ? false : inventoryMovementForm.createExpense,
+                            reason: event.target.checked
+                              ? inventoryMovementForm.reason || "Reingreso sobrante de obra sin costo - material recuperado"
+                              : inventoryMovementForm.reason,
+                          })
+                        }
+                      />
+                      Reingreso sobrante de obra sin costo
+                      {movementIsZeroCostRecovery ? <small>Entra al stock con costo 0 y no genera egreso.</small> : null}
+                    </label>
+                  ) : null}
                   <label>
                     Costo unitario
                     <input
@@ -12241,6 +13248,7 @@ function InventoryView({
                       min="0"
                       step="0.01"
                       value={inventoryMovementForm.unitCost ?? 0}
+                      disabled={movementIsZeroCostRecovery}
                       onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, unitCost: Number(event.target.value) })}
                     />
                   </label>
@@ -12258,6 +13266,7 @@ function InventoryView({
                     <input
                       type="checkbox"
                       checked={inventoryMovementForm.createExpense ?? false}
+                      disabled={movementIsZeroCostRecovery}
                       onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, createExpense: event.target.checked })}
                     />
                     {inventoryMovementForm.type === "OUT"
@@ -12294,6 +13303,9 @@ function InventoryView({
                           onChange={(event) => onMovementFormChange({ ...inventoryMovementForm, paymentReference: event.target.value })}
                           placeholder={inventoryMovementForm.type === "OUT" ? "Orden, tecnico, consumo, ajuste operativo" : "Factura, boleta o comprobante"}
                         />
+                        {inventoryMovementForm.type === "OUT" && (inventoryMovementForm.paymentCategory || "STOCK_CONSUMPTION") === "STOCK_CONSUMPTION" ? (
+                          <small>Si lo dejas sin entidad, se registra contra Security Solutions - Operativo.</small>
+                        ) : null}
                       </label>
                     </>
                   ) : null}
@@ -12384,34 +13396,43 @@ function InventoryView({
                     </div>
                     <strong>{formatPrice(movementBatchTotal, movementCurrency)}</strong>
                   </div>
-                  {movementBatchDetails.map((line) => (
-                    <div key={line.itemId} className="movementBatchLine">
-                      <div>
-                        <strong>{line.item.name}</strong>
-                        <span>
-                          Stock {line.item.stock} {line.item.unit} - {formatPrice(line.unitCost, line.currency)}
-                        </span>
+                  {movementBatchDetails.map((line) => {
+                    const maxQuantity = inventoryMovementForm.type === "OUT" ? Math.max(0, Number(line.item.stock) || 0) : undefined;
+                    const safeQuantity = maxQuantity === undefined ? line.quantity : Math.min(line.quantity, Math.max(1, maxQuantity));
+                    return (
+                      <div key={line.itemId} className="movementBatchLine">
+                        <div>
+                          <strong>{line.item.name}</strong>
+                          <span>
+                            Stock {line.item.stock} {line.item.unit} - {formatPrice(line.unitCost, line.currency)}
+                          </span>
+                        </div>
+                        <input
+                          type="number"
+                          min="1"
+                          max={maxQuantity}
+                          value={safeQuantity}
+                          onChange={(event) => updateMovementBatchQuantity(line.itemId, Number(event.target.value))}
+                          onBlur={() => updateMovementBatchQuantity(line.itemId, safeQuantity)}
+                          aria-label={`Cantidad para ${line.item.name}`}
+                        />
+                        <strong>{formatPrice(safeQuantity * line.unitCost, line.currency)}</strong>
+                        <button type="button" className="iconButton" onClick={() => removeMovementBatchItem(line.itemId)} aria-label="Quitar articulo">
+                          <X size={17} />
+                        </button>
                       </div>
-                      <input
-                        type="number"
-                        min="1"
-                        max={inventoryMovementForm.type === "OUT" ? line.item.stock : undefined}
-                        value={line.quantity}
-                        onChange={(event) => updateMovementBatchQuantity(line.itemId, Number(event.target.value))}
-                        aria-label={`Cantidad para ${line.item.name}`}
-                      />
-                      <strong>{formatPrice(line.quantity * line.unitCost, line.currency)}</strong>
-                      <button type="button" className="iconButton" onClick={() => removeMovementBatchItem(line.itemId)} aria-label="Quitar articulo">
-                        <X size={17} />
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : null}
             </div>
             <button className="primaryButton" type="submit" disabled={loading || !inventoryItems.length}>
               <RefreshCw size={18} />
-              {movementBatchDetails.length ? "Registrar salida agrupada" : "Registrar movimiento"}
+              {movementIsZeroCostRecovery
+                ? "Reingresar sobrante sin costo"
+                : movementBatchDetails.length
+                  ? "Registrar salida agrupada"
+                  : "Registrar movimiento"}
             </button>
           </form>
         </div>
@@ -13531,6 +14552,7 @@ function cleanDevicePayload(form: DevicePayload): DevicePayload {
 }
 
 function cleanWorkOrderPayload(form: WorkOrderPayload): WorkOrderPayload {
+  const reportType = form.reportType || "REPAIR";
   return {
     customerId: form.customerId,
     siteId: form.siteId || undefined,
@@ -13540,19 +14562,78 @@ function cleanWorkOrderPayload(form: WorkOrderPayload): WorkOrderPayload {
     scheduledAt: form.scheduledAt || undefined,
     completedAt: form.completedAt || undefined,
     notes: form.notes?.trim() || undefined,
-    reportBeforeNotes: form.reportBeforeNotes?.trim() || undefined,
+    reportType,
+    reportBeforeNotes: reportType === "NEW_INSTALLATION" ? undefined : form.reportBeforeNotes?.trim() || undefined,
     reportAfterNotes: form.reportAfterNotes?.trim() || undefined,
     reportTasks: form.reportTasks?.trim() || undefined,
     reportTests: form.reportTests?.trim() || undefined,
     reportRecommendations: form.reportRecommendations?.trim() || undefined,
-    reportPhotos: form.reportPhotos ?? [],
+    reportPhotos: reportType === "NEW_INSTALLATION" ? (form.reportPhotos ?? []).filter((photo) => photo.stage !== "BEFORE") : form.reportPhotos ?? [],
   };
+}
+
+async function readCompressedReportPhoto(file: File, stage: WorkOrderReportPhoto["stage"]): Promise<WorkOrderReportPhoto> {
+  const dataUrl = await fileToDataUrl(file);
+  return {
+    id: `${Date.now()}-${file.name}`,
+    stage,
+    name: file.name,
+    dataUrl: await compressImageDataUrl(dataUrl),
+  };
+}
+
+async function compressWorkOrderReportPhotos(photos: WorkOrderReportPhoto[]) {
+  return Promise.all(
+    photos.map(async (photo) => ({
+      ...photo,
+      dataUrl: await compressImageDataUrl(photo.dataUrl),
+    })),
+  );
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("No se pudo leer la imagen"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function compressImageDataUrl(dataUrl: string, maxSide = 1600, quality = 0.78): Promise<string> {
+  if (!dataUrl.startsWith("data:image/")) {
+    return Promise.resolve(dataUrl);
+  }
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const largestSide = Math.max(image.width, image.height);
+      const scale = largestSide > maxSide ? maxSide / largestSide : 1;
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        resolve(dataUrl);
+        return;
+      }
+
+      context.drawImage(image, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    image.onerror = () => resolve(dataUrl);
+    image.src = dataUrl;
+  });
 }
 
 function cleanQuotePayload(form: QuotePayload): QuotePayload {
   const cleanDiscountPercent = Math.min(100, Math.max(0, Number(form.discountPercent) || 0));
   const cleanItems = form.items?.map((item) => ({
     priceBookItemId: item.priceBookItemId || undefined,
+    inventoryItemId: item.inventoryItemId || undefined,
     type: item.type,
     category: item.category,
     description: item.description,
@@ -13687,13 +14768,15 @@ function cleanInventoryPayload(form: InventoryItemPayload): InventoryItemPayload
 }
 
 function cleanInventoryMovementPayload(form: InventoryMovementPayload): InventoryMovementPayload {
+  const zeroCostRecovery = Boolean(form.zeroCostRecovery && form.type === "IN");
   return {
     itemId: form.itemId,
     type: form.type,
     quantity: Number(form.quantity) || 0,
-    unitCost: Number(form.unitCost) || undefined,
+    unitCost: zeroCostRecovery ? 0 : form.unitCost === undefined ? undefined : Number(form.unitCost),
     currency: form.currency?.trim() || undefined,
-    createExpense: form.createExpense,
+    createExpense: zeroCostRecovery ? false : form.createExpense,
+    zeroCostRecovery,
     paymentCategory: form.paymentCategory?.trim() || undefined,
     paymentMethod: form.paymentMethod?.trim() || undefined,
     paymentReference: form.paymentReference?.trim() || undefined,
@@ -13706,16 +14789,19 @@ function cleanInventoryMovementPayload(form: InventoryMovementPayload): Inventor
 }
 
 function cleanInventoryMovementBatchPayload(form: InventoryMovementPayload) {
+  const zeroCostRecovery = Boolean(form.zeroCostRecovery && form.type === "IN");
   return {
     type: form.type,
     items: (form.items ?? []).map((item) => ({
       itemId: item.itemId,
+      type: form.type,
       quantity: Number(item.quantity) || 0,
-      unitCost: Number(item.unitCost) || undefined,
+      unitCost: zeroCostRecovery ? 0 : item.unitCost === undefined ? undefined : Number(item.unitCost),
       currency: item.currency?.trim() || form.currency?.trim() || undefined,
       sourceType: item.sourceType?.trim() || form.sourceType?.trim() || undefined,
     })),
-    createExpense: form.createExpense,
+    createExpense: zeroCostRecovery ? false : form.createExpense,
+    zeroCostRecovery,
     paymentCategory: form.paymentCategory?.trim() || undefined,
     paymentMethod: form.paymentMethod?.trim() || undefined,
     paymentReference: form.paymentReference?.trim() || undefined,
@@ -13803,6 +14889,10 @@ function readMeetingAttachment(file: File): Promise<NonNullable<MeetingPayload["
 
 function toMoneyNumber(value: string | number) {
   return typeof value === "number" ? value : Number(value);
+}
+
+function isConfirmedFinancePayment(payment: Payment) {
+  return Boolean(payment.paidAt && payment.method?.trim());
 }
 
 function formatCurrency(value: string | number) {
@@ -14806,6 +15896,7 @@ function formatWhatsAppTime(value?: number) {
 
 type GroupedWorkOrderMaterial = {
   key: string;
+  itemId: string;
   ids: string[];
   name: string;
   sku: string;
@@ -15055,6 +16146,10 @@ function groupWorkOrderMaterials(movements: InventoryMovement[]): GroupedWorkOrd
     const sku = movement.item?.sku ?? "";
     const unit = movement.item?.unit ?? "";
     const key = movement.itemId || `${name}-${sku}-${unit}`;
+    const signedQuantity = movement.type === "IN" ? -movement.quantity : movement.quantity;
+    if (signedQuantity === 0) {
+      continue;
+    }
     const detail = [
       movement.installedDevice?.brand,
       movement.installedDevice?.model,
@@ -15067,7 +16162,7 @@ function groupWorkOrderMaterials(movements: InventoryMovement[]): GroupedWorkOrd
     const current = groups.get(key);
     if (current) {
       current.ids.push(movement.id);
-      current.quantity += movement.quantity;
+      current.quantity += signedQuantity;
       if (detail && !current.deviceDetails.includes(detail)) {
         current.deviceDetails.push(detail);
       }
@@ -15076,16 +16171,17 @@ function groupWorkOrderMaterials(movements: InventoryMovement[]): GroupedWorkOrd
 
     groups.set(key, {
       key,
+      itemId: movement.itemId,
       ids: [movement.id],
       name,
       sku,
       unit,
-      quantity: movement.quantity,
+      quantity: signedQuantity,
       deviceDetails: detail ? [detail] : [],
     });
   }
 
-  return Array.from(groups.values());
+  return Array.from(groups.values()).filter((group) => group.quantity > 0);
 }
 
 function toWhatsAppPhone(value?: string | null) {
@@ -15108,7 +16204,7 @@ function toWhatsAppPhone(value?: string | null) {
 function buildWorkOrderShareText(workOrder: WorkOrder) {
   const documentNumber = formatWorkOrderNumber(workOrder);
   const site = workOrder.site ? `${workOrder.site.name} - ${workOrder.site.address}` : "Sin sitio especifico";
-  const quoteSummary = parseWorkOrderQuoteNotes(workOrder.notes);
+  const quoteSummary = workOrderQuoteToSummary(workOrder.quote) ?? parseWorkOrderQuoteNotes(workOrder.notes);
   const groupedMaterials = groupWorkOrderMaterials(workOrder.inventoryMovements ?? []);
   const materialsSource = groupedMaterials.length ? groupedMaterials : approvedQuoteItemsToMaterials(quoteSummary?.items ?? []);
   const materials = materialsSource.length
@@ -15135,7 +16231,7 @@ function buildWorkOrderShareText(workOrder: WorkOrder) {
 function buildQuoteShareText(quote: Quote) {
   const items = quote.items?.length
     ? quote.items
-        .map((item) => `- ${item.description}: ${item.quantity} ${item.unit} x ${formatPrice(item.unitPrice, quote.currency)}`)
+        .map((item) => `- ${quoteItemDisplayName(item)}: ${item.quantity} ${item.unit} x ${formatPrice(item.unitPrice, quote.currency)}`)
         .join("\n")
     : "- Segun detalle acordado";
 
@@ -15166,7 +16262,7 @@ function buildQuoteShareText(quote: Quote) {
 function buildQuoteWorkOrderNotes(quote: Quote) {
   const items = quote.items?.length
     ? quote.items
-        .map((item) => `- ${item.description}: ${item.quantity} ${item.unit} x ${formatPrice(item.unitPrice, quote.currency)}`)
+        .map((item) => `- ${quoteItemDisplayName(item)}: ${item.quantity} ${item.unit} x ${formatPrice(item.unitPrice, quote.currency)}`)
         .join("\n")
     : "Sin items cargados";
 
@@ -15194,6 +16290,30 @@ type ParsedWorkOrderQuoteNotes = {
   commercialTerms?: string;
   items: string[];
 };
+
+function workOrderQuoteToSummary(quote?: WorkOrder["quote"] | null): ParsedWorkOrderQuoteNotes | null {
+  if (!quote) {
+    return null;
+  }
+
+  return {
+    number: quote.number,
+    total: formatPrice(quote.total, quote.currency),
+    executionTime: quote.executionTime ?? undefined,
+    warranty: quote.warranty ?? undefined,
+    paymentTerms: quote.paymentTerms ?? undefined,
+    commercialTerms: quote.commercialTerms ?? undefined,
+    items: (quote.items ?? []).map((item) => {
+      const quantity = Number(item.quantity) || 0;
+      const unitPrice = Number(item.unitPrice) || 0;
+      return `${quoteItemDisplayName(item)}: ${quantity} ${item.unit} x ${formatPrice(unitPrice, quote.currency)}`;
+    }),
+  };
+}
+
+function quoteItemDisplayName(item: { description: string; inventoryItem?: { name?: string | null } | null }) {
+  return item.inventoryItem?.name?.trim() || item.description;
+}
 
 function parseWorkOrderQuoteNotes(notes?: string | null): ParsedWorkOrderQuoteNotes | null {
   if (!notes?.includes("Generado desde presupuesto")) {
@@ -15245,6 +16365,7 @@ function approvedQuoteItemsToMaterials(items: string[]): GroupedWorkOrderMateria
 
     materials.push({
       key: `quote-approved-${index}`,
+      itemId: "",
       ids: [],
       name: match?.[1]?.trim() || cleanItem,
       sku: "",
@@ -15390,7 +16511,7 @@ function buildQuoteTemplateHtml(quote: Quote, logoDataUrl: string, watermarkData
         .map(
           (item) => `
             <tr>
-              <td>${escapeHtml(item.description)}</td>
+              <td>${escapeHtml(quoteItemDisplayName(item))}</td>
               <td>${escapeHtml(`${item.quantity} ${item.unit}`)}</td>
               <td>${escapeHtml(formatPrice(item.unitPrice, quote.currency))}</td>
               <td>${escapeHtml(formatPrice(item.subtotal ?? (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), quote.currency))}</td>

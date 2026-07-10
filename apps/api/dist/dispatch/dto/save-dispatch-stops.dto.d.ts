@@ -1,4 +1,4 @@
-declare enum DispatchPlaceTypeDto {
+export declare enum DispatchPlaceTypeDto {
     CLIENT = "CLIENT",
     FUTURE_CLIENT = "FUTURE_CLIENT",
     IMPORTER = "IMPORTER",
@@ -33,4 +33,3 @@ export declare class SaveDispatchStopsDto {
     vehicleId?: string;
     stops: SaveDispatchStopDto[];
 }
-export {};

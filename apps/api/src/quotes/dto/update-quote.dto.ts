@@ -110,6 +110,10 @@ export class UpdateQuoteDto {
   acceptedAt?: string;
 
   @IsOptional()
+  @IsDateString()
+  scheduledAt?: string;
+
+  @IsOptional()
   @IsString()
   internalNotes?: string;
 

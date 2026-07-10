@@ -3,6 +3,7 @@ import { ServiceType, WorkOrderStatus } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { AddWorkOrderMaterialDto } from "./dto/add-work-order-material.dto";
 import { CreateWorkOrderDto } from "./dto/create-work-order.dto";
+import { ReturnWorkOrderMaterialDto } from "./dto/return-work-order-material.dto";
 import { UpdateWorkOrderDto } from "./dto/update-work-order.dto";
 import { WorkOrdersService } from "./work-orders.service";
 
@@ -30,6 +31,16 @@ export class WorkOrdersController {
   @Post(":id/materials")
   addMaterial(@Param("id") id: string, @Body() dto: AddWorkOrderMaterialDto) {
     return this.workOrdersService.addMaterial(id, dto);
+  }
+
+  @Post(":id/materials/return")
+  returnMaterial(@Param("id") id: string, @Body() dto: ReturnWorkOrderMaterialDto) {
+    return this.workOrdersService.returnMaterial(id, dto);
+  }
+
+  @Post(":id/reconcile-costs")
+  reconcileCosts(@Param("id") id: string) {
+    return this.workOrdersService.reconcileCosts(id);
   }
 
   @Patch(":id")

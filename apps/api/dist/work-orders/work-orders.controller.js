@@ -18,6 +18,7 @@ const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 const add_work_order_material_dto_1 = require("./dto/add-work-order-material.dto");
 const create_work_order_dto_1 = require("./dto/create-work-order.dto");
+const return_work_order_material_dto_1 = require("./dto/return-work-order-material.dto");
 const update_work_order_dto_1 = require("./dto/update-work-order.dto");
 const work_orders_service_1 = require("./work-orders.service");
 let WorkOrdersController = class WorkOrdersController {
@@ -33,6 +34,12 @@ let WorkOrdersController = class WorkOrdersController {
     }
     addMaterial(id, dto) {
         return this.workOrdersService.addMaterial(id, dto);
+    }
+    returnMaterial(id, dto) {
+        return this.workOrdersService.returnMaterial(id, dto);
+    }
+    reconcileCosts(id) {
+        return this.workOrdersService.reconcileCosts(id);
     }
     update(id, dto) {
         return this.workOrdersService.update(id, dto);
@@ -65,6 +72,21 @@ __decorate([
     __metadata("design:paramtypes", [String, add_work_order_material_dto_1.AddWorkOrderMaterialDto]),
     __metadata("design:returntype", void 0)
 ], WorkOrdersController.prototype, "addMaterial", null);
+__decorate([
+    (0, common_1.Post)(":id/materials/return"),
+    __param(0, (0, common_1.Param)("id")),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, return_work_order_material_dto_1.ReturnWorkOrderMaterialDto]),
+    __metadata("design:returntype", void 0)
+], WorkOrdersController.prototype, "returnMaterial", null);
+__decorate([
+    (0, common_1.Post)(":id/reconcile-costs"),
+    __param(0, (0, common_1.Param)("id")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], WorkOrdersController.prototype, "reconcileCosts", null);
 __decorate([
     (0, common_1.Patch)(":id"),
     __param(0, (0, common_1.Param)("id")),

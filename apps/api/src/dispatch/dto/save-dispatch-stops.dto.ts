@@ -1,7 +1,7 @@
 import { IsArray, IsDateString, IsEnum, IsNumber, IsOptional, IsString, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
-enum DispatchPlaceTypeDto {
+export enum DispatchPlaceTypeDto {
   CLIENT = "CLIENT",
   FUTURE_CLIENT = "FUTURE_CLIENT",
   IMPORTER = "IMPORTER",

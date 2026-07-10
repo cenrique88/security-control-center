@@ -8,12 +8,12 @@ export declare class VehiclesController {
     list(search?: string, active?: string): Promise<{
         id: string;
         name: string;
-        plate: string | null;
-        traccarDeviceId: string | null;
-        fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
-        active: boolean;
         createdAt: Date;
         updatedAt: Date;
+        traccarDeviceId: string | null;
+        plate: string | null;
+        fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
+        active: boolean;
     }[]>;
     getTraccarSettings(): Promise<{
         token: string;
@@ -85,12 +85,12 @@ export declare class VehiclesController {
         vehicle: {
             id: string;
             name: string;
-            plate: string | null;
-            traccarDeviceId: string | null;
-            fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
-            active: boolean;
             createdAt: Date;
             updatedAt: Date;
+            traccarDeviceId: string | null;
+            plate: string | null;
+            fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
+            active: boolean;
         };
         date: string;
         configured: boolean;
@@ -141,31 +141,31 @@ export declare class VehiclesController {
     create(dto: CreateVehicleDto): Promise<{
         id: string;
         name: string;
-        plate: string | null;
-        traccarDeviceId: string | null;
-        fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
-        active: boolean;
         createdAt: Date;
         updatedAt: Date;
+        traccarDeviceId: string | null;
+        plate: string | null;
+        fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
+        active: boolean;
     }>;
     update(id: string, dto: UpdateVehicleDto): Promise<{
         id: string;
         name: string;
-        plate: string | null;
-        traccarDeviceId: string | null;
-        fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
-        active: boolean;
         createdAt: Date;
         updatedAt: Date;
+        traccarDeviceId: string | null;
+        plate: string | null;
+        fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
+        active: boolean;
     }>;
     remove(id: string): Promise<{
         id: string;
         name: string;
-        plate: string | null;
-        traccarDeviceId: string | null;
-        fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
-        active: boolean;
         createdAt: Date;
         updatedAt: Date;
+        traccarDeviceId: string | null;
+        plate: string | null;
+        fuelKmPerLiter: import("@prisma/client/runtime/library").Decimal | null;
+        active: boolean;
     }>;
 }

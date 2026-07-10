@@ -4,7 +4,7 @@ import { PaymentsService } from "./payments.service";
 export declare class PaymentsController {
     private readonly paymentsService;
     constructor(paymentsService: PaymentsService);
-    list(search?: string, customerId?: string, status?: "PAID" | "PENDING" | "OVERDUE", type?: "INCOME" | "EXPENSE", category?: string): Promise<({
+    list(search?: string, customerId?: string, status?: "PAID" | "PENDING" | "OVERDUE", type?: "INCOME" | "EXPENSE", category?: string, period?: "CURRENT_MONTH", includeInternalCosts?: string): Promise<({
         customer: {
             id: string;
             name: string;
@@ -40,9 +40,18 @@ export declare class PaymentsController {
         inventoryMovements: {
             id: string;
             quantity: number;
+            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             stockAfter: number;
+            unitCost: import("@prisma/client/runtime/library").Decimal | null;
+            totalCost: import("@prisma/client/runtime/library").Decimal | null;
+            item: {
+                id: string;
+                name: string;
+                sku: string | null;
+                unit: string;
+            };
         }[];
     } & {
         id: string;
@@ -102,9 +111,18 @@ export declare class PaymentsController {
         inventoryMovements: {
             id: string;
             quantity: number;
+            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             stockAfter: number;
+            unitCost: import("@prisma/client/runtime/library").Decimal | null;
+            totalCost: import("@prisma/client/runtime/library").Decimal | null;
+            item: {
+                id: string;
+                name: string;
+                sku: string | null;
+                unit: string;
+            };
         }[];
     } & {
         id: string;
@@ -164,9 +182,18 @@ export declare class PaymentsController {
         inventoryMovements: {
             id: string;
             quantity: number;
+            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             stockAfter: number;
+            unitCost: import("@prisma/client/runtime/library").Decimal | null;
+            totalCost: import("@prisma/client/runtime/library").Decimal | null;
+            item: {
+                id: string;
+                name: string;
+                sku: string | null;
+                unit: string;
+            };
         }[];
     } & {
         id: string;
@@ -226,9 +253,18 @@ export declare class PaymentsController {
         inventoryMovements: {
             id: string;
             quantity: number;
+            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             stockAfter: number;
+            unitCost: import("@prisma/client/runtime/library").Decimal | null;
+            totalCost: import("@prisma/client/runtime/library").Decimal | null;
+            item: {
+                id: string;
+                name: string;
+                sku: string | null;
+                unit: string;
+            };
         }[];
     } & {
         id: string;

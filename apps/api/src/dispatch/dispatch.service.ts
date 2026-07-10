@@ -1,11 +1,15 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { DispatchPlaceType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { SaveDispatchStopsDto } from "./dto/save-dispatch-stops.dto";
+import { VehiclesService } from "../vehicles/vehicles.service";
+import { DispatchPlaceTypeDto, SaveDispatchStopsDto } from "./dto/save-dispatch-stops.dto";
 
 @Injectable()
 export class DispatchService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vehiclesService: VehiclesService,
+  ) {}
 
   async list(date: string, vehicleId?: string) {
     const day = this.parseDay(date);
@@ -50,6 +54,45 @@ export class DispatchService {
 
       return saved;
     });
+  }
+
+  async syncTraccar(date: string, vehicleId?: string) {
+    if (!vehicleId) {
+      throw new BadRequestException("Selecciona un vehiculo para sincronizar Traccar.");
+    }
+
+    const summary = await this.vehiclesService.traccarDailySummary(vehicleId, date);
+    if (!summary.configured) {
+      return {
+        configured: false,
+        saved: [],
+        message: summary.message || "Configura Traccar y vincula el ID del dispositivo.",
+        summary,
+      };
+    }
+
+    const stops = this.buildTraccarDispatchStops(summary);
+    if (!stops.length) {
+      return {
+        configured: true,
+        saved: [],
+        message: "Traccar no devolvio paradas para sincronizar en esta fecha.",
+        summary,
+      };
+    }
+
+    const saved = await this.save({
+      date,
+      vehicleId,
+      stops,
+    });
+
+    return {
+      configured: true,
+      saved,
+      message: `Despachador sincronizado con Traccar: ${saved.length} paradas guardadas.`,
+      summary,
+    };
   }
 
   async suppliers() {
@@ -166,6 +209,46 @@ export class DispatchService {
     }));
 
     return [...savedStops, ...customerPlaces].slice(0, 1000);
+  }
+
+  private buildTraccarDispatchStops(summary: Awaited<ReturnType<VehiclesService["traccarDailySummary"]>>) {
+    const visitsByStop = new Map(summary.visits.map((visit) => [visit.stopIndex, visit]));
+
+    const stops: SaveDispatchStopsDto["stops"] = summary.stops
+      .filter((stop) => stop.durationMinutes >= 5)
+      .map((stop) => {
+        const visit = visitsByStop.get(stop.index);
+        const placeType =
+          visit?.customerType === "IMPORTER"
+            ? DispatchPlaceTypeDto.IMPORTER
+            : visit
+              ? DispatchPlaceTypeDto.CLIENT
+              : DispatchPlaceTypeDto.OTHER;
+        const title = visit
+          ? `${visit.customerName}${visit.siteName ? ` - ${visit.siteName}` : ""}`
+          : `Parada GPS ${stop.index + 1}`;
+
+        return {
+          stopKey: `gps-${stop.index}`,
+          placeType,
+          title,
+          address: visit?.address || stop.address,
+          latitude: stop.latitude,
+          longitude: stop.longitude,
+          customerId: visit?.customerId,
+          siteId: visit?.siteId,
+          supplierName: visit?.customerType === "IMPORTER" ? visit.customerName : undefined,
+          kind: visit ? "CLIENT" : "NOT_CLIENT",
+          scheduledAt: stop.arrival,
+          durationMinutes: stop.durationMinutes,
+          parkingCost: 0,
+          tollCost: 0,
+          notes: visit?.match ? `Coincidencia ${visit.match}${visit.distanceMeters !== undefined ? ` a ${visit.distanceMeters} m` : ""}` : undefined,
+          source: "TRACCAR",
+        };
+      });
+
+    return stops;
   }
 
   private toStopData(stop: SaveDispatchStopsDto["stops"][number]) {

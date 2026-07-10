@@ -19,6 +19,7 @@ exports.VehiclesModule = VehiclesModule = __decorate([
         imports: [fuel_module_1.FuelModule],
         controllers: [vehicles_controller_1.VehiclesController],
         providers: [vehicles_service_1.VehiclesService],
+        exports: [vehicles_service_1.VehiclesService],
     })
 ], VehiclesModule);
 //# sourceMappingURL=vehicles.module.js.map

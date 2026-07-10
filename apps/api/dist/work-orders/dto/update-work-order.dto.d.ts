@@ -26,6 +26,7 @@ export declare class UpdateWorkOrderDto {
     scheduledAt?: string;
     completedAt?: string;
     notes?: string;
+    reportType?: string;
     reportBeforeNotes?: string;
     reportAfterNotes?: string;
     reportTasks?: string;

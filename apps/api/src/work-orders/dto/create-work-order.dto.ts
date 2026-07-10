@@ -53,6 +53,10 @@ export class CreateWorkOrderDto {
 
   @IsOptional()
   @IsString()
+  reportType?: string;
+
+  @IsOptional()
+  @IsString()
   reportBeforeNotes?: string;
 
   @IsOptional()

@@ -64,52 +64,58 @@ let QuotesService = class QuotesService {
             pricingMode: dto.pricingMode ?? "DIRECT",
             refreshLaborItem: true,
         });
-        return this.prisma.quote.create({
-            data: {
-                customerId: dto.customerId,
-                meetingId: this.cleanOptional(dto.meetingId),
-                number: dto.number?.trim() || (await this.nextNumber()),
-                title: dto.title.trim(),
-                service: dto.service ?? "OTHER",
-                status: dto.status ?? "DRAFT",
-                pricingMode: dto.pricingMode ?? "DIRECT",
-                currency: dto.currency?.trim() || "UYU",
-                issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
-                validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
-                taxIncluded: taxEnabled,
-                discountPercent: dto.discountPercent ?? 0,
-                profitMarginPercent: dto.profitMarginPercent ?? 0,
-                laborPoints: dto.laborPoints ?? 0,
-                materialsSubtotal: totals.materialsSubtotal,
-                laborSubtotal: totals.laborSubtotal,
-                expensesSubtotal: totals.expensesSubtotal,
-                subtotal: totals.subtotal,
-                discountAmount: totals.discountAmount,
-                taxableBase: totals.taxableBase,
-                tax: totals.tax,
-                total: totals.total,
-                costTotal: totals.costTotal,
-                estimatedProfit: totals.estimatedProfit,
-                estimatedMargin: totals.estimatedMargin,
-                internalNotes: this.cleanOptional(dto.internalNotes),
-                commercialTerms: this.cleanOptional(dto.commercialTerms),
-                executionTime: this.cleanOptional(dto.executionTime),
-                warranty: this.cleanOptional(dto.warranty),
-                paymentTerms: this.cleanOptional(dto.paymentTerms),
-                acceptedAt: dto.status === "APPROVED" ? new Date() : undefined,
-                sentAt: dto.status === "SENT" ? new Date() : undefined,
-                rejectedAt: dto.status === "REJECTED" ? new Date() : undefined,
-                items: {
-                    create: totals.items.map((item) => this.toQuoteItemCreate(item)),
-                },
-                history: {
-                    create: {
-                        action: "CREATED",
-                        comment: "Presupuesto creado",
+        return this.prisma.$transaction(async (tx) => {
+            const quote = await tx.quote.create({
+                data: {
+                    customerId: dto.customerId,
+                    meetingId: this.cleanOptional(dto.meetingId),
+                    number: dto.number?.trim() || (await this.nextNumber()),
+                    title: dto.title.trim(),
+                    service: dto.service ?? "OTHER",
+                    status: dto.status ?? "DRAFT",
+                    pricingMode: dto.pricingMode ?? "DIRECT",
+                    currency: dto.currency?.trim() || "UYU",
+                    issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
+                    validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
+                    taxIncluded: taxEnabled,
+                    discountPercent: dto.discountPercent ?? 0,
+                    profitMarginPercent: dto.profitMarginPercent ?? 0,
+                    laborPoints: dto.laborPoints ?? 0,
+                    materialsSubtotal: totals.materialsSubtotal,
+                    laborSubtotal: totals.laborSubtotal,
+                    expensesSubtotal: totals.expensesSubtotal,
+                    subtotal: totals.subtotal,
+                    discountAmount: totals.discountAmount,
+                    taxableBase: totals.taxableBase,
+                    tax: totals.tax,
+                    total: totals.total,
+                    costTotal: totals.costTotal,
+                    estimatedProfit: totals.estimatedProfit,
+                    estimatedMargin: totals.estimatedMargin,
+                    internalNotes: this.cleanOptional(dto.internalNotes),
+                    commercialTerms: this.cleanOptional(dto.commercialTerms),
+                    executionTime: this.cleanOptional(dto.executionTime),
+                    warranty: this.cleanOptional(dto.warranty),
+                    paymentTerms: this.cleanOptional(dto.paymentTerms),
+                    acceptedAt: dto.status === "APPROVED" ? new Date() : undefined,
+                    sentAt: dto.status === "SENT" ? new Date() : undefined,
+                    rejectedAt: dto.status === "REJECTED" ? new Date() : undefined,
+                    items: {
+                        create: totals.items.map((item) => this.toQuoteItemCreate(item)),
+                    },
+                    history: {
+                        create: {
+                            action: "CREATED",
+                            comment: "Presupuesto creado",
+                        },
                     },
                 },
-            },
-            include: this.includeCustomer(),
+                include: this.includeCustomer(),
+            });
+            if (quote.status === "APPROVED") {
+                await this.syncApprovedQuoteToWorkOrder(tx, quote.id);
+            }
+            return quote;
         });
     }
     async update(id, dto) {
@@ -129,6 +135,7 @@ let QuotesService = class QuotesService {
         const itemsForCalculation = dto.items ??
             current.items.map((item) => ({
                 priceBookItemId: item.priceBookItemId ?? undefined,
+                inventoryItemId: item.inventoryItemId ?? undefined,
                 type: item.type,
                 category: item.category,
                 description: item.description,
@@ -163,7 +170,7 @@ let QuotesService = class QuotesService {
             if (dto.items) {
                 await tx.quoteItem.deleteMany({ where: { quoteId: id } });
             }
-            return tx.quote.update({
+            const quote = await tx.quote.update({
                 where: { id },
                 data: {
                     customerId: dto.customerId,
@@ -213,6 +220,10 @@ let QuotesService = class QuotesService {
                 },
                 include: this.includeCustomer(),
             });
+            if (quote.status === "APPROVED" && (current.status !== "APPROVED" || dto.items || dto.scheduledAt)) {
+                await this.syncApprovedQuoteToWorkOrder(tx, quote.id, dto.scheduledAt);
+            }
+            return quote;
         });
     }
     async remove(id) {
@@ -246,6 +257,27 @@ let QuotesService = class QuotesService {
             },
             items: {
                 orderBy: { sortOrder: "asc" },
+                include: {
+                    inventoryItem: {
+                        select: {
+                            id: true,
+                            name: true,
+                            sku: true,
+                            supplier: true,
+                            currency: true,
+                            costPrice: true,
+                            priceWithTax: true,
+                            sourceType: true,
+                            customer: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    type: true,
+                                },
+                            },
+                        },
+                    },
+                },
             },
             history: {
                 orderBy: { createdAt: "desc" },
@@ -397,6 +429,7 @@ let QuotesService = class QuotesService {
     toQuoteItemCreate(item) {
         return {
             priceBookItem: item.priceBookItemId ? { connect: { id: item.priceBookItemId } } : undefined,
+            inventoryItem: item.inventoryItemId ? { connect: { id: item.inventoryItemId } } : undefined,
             type: item.type,
             category: item.category.trim(),
             description: item.description.trim(),
@@ -410,6 +443,232 @@ let QuotesService = class QuotesService {
             total: item.total,
             sortOrder: item.sortOrder,
         };
+    }
+    async syncApprovedQuoteToWorkOrder(tx, quoteId, scheduledAt) {
+        const quote = await tx.quote.findUnique({
+            where: { id: quoteId },
+            include: {
+                items: true,
+                workOrder: { select: { id: true } },
+            },
+        });
+        if (!quote) {
+            throw new common_1.NotFoundException("Quote not found");
+        }
+        let workOrder = quote.workOrder;
+        if (!workOrder) {
+            workOrder = await tx.workOrder.findFirst({
+                where: {
+                    quoteId: null,
+                    customerId: quote.customerId,
+                    title: { equals: quote.title, mode: "insensitive" },
+                },
+                orderBy: { createdAt: "desc" },
+                select: { id: true },
+            });
+            if (workOrder) {
+                await tx.workOrder.update({
+                    where: { id: workOrder.id },
+                    data: { quoteId: quote.id, scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined },
+                });
+            }
+        }
+        if (!workOrder) {
+            workOrder = await tx.workOrder.create({
+                data: {
+                    quoteId: quote.id,
+                    customerId: quote.customerId,
+                    title: quote.title,
+                    type: quote.service,
+                    status: "SCHEDULED",
+                    scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined,
+                    notes: [`Generada automaticamente al aprobar presupuesto ${quote.number}.`, quote.internalNotes].filter(Boolean).join("\n\n"),
+                },
+                select: { id: true },
+            });
+        }
+        const linesByItem = new Map();
+        for (const item of quote.items) {
+            if (!["EQUIPMENT", "MATERIAL", "SUPPLY"].includes(item.type)) {
+                continue;
+            }
+            const quantity = Math.trunc(Number(item.quantity) || 0);
+            if (quantity <= 0) {
+                continue;
+            }
+            let inventoryItemId = item.inventoryItemId;
+            if (!inventoryItemId) {
+                const inventoryItem = await tx.inventoryItem.findFirst({
+                    where: {
+                        name: { equals: item.description, mode: "insensitive" },
+                        managedStock: true,
+                        sourceType: { not: "ARCHIVED" },
+                    },
+                    select: { id: true },
+                });
+                inventoryItemId = inventoryItem?.id ?? null;
+                if (inventoryItemId) {
+                    await tx.quoteItem.update({
+                        where: { id: item.id },
+                        data: { inventoryItemId },
+                    });
+                }
+            }
+            if (!inventoryItemId) {
+                continue;
+            }
+            const current = linesByItem.get(inventoryItemId) ?? { quantity: 0, unitCost: Number(item.unitCost) || 0 };
+            linesByItem.set(inventoryItemId, {
+                quantity: current.quantity + quantity,
+                unitCost: current.unitCost,
+            });
+        }
+        const lines = [...linesByItem.entries()].map(([itemId, line]) => ({ itemId, ...line }));
+        if (!lines.length) {
+            return;
+        }
+        const movements = await tx.inventoryMovement.findMany({
+            where: {
+                workOrderId: workOrder.id,
+                itemId: { in: lines.map((line) => line.itemId) },
+            },
+            select: { itemId: true, type: true, quantity: true },
+        });
+        const currentByItem = new Map();
+        for (const movement of movements) {
+            const signedQuantity = movement.type === "IN" ? -movement.quantity : movement.type === "OUT" ? movement.quantity : 0;
+            currentByItem.set(movement.itemId, (currentByItem.get(movement.itemId) ?? 0) + signedQuantity);
+        }
+        const missingLines = lines
+            .map((line) => ({
+            ...line,
+            quantity: Math.max(0, line.quantity - (currentByItem.get(line.itemId) ?? 0)),
+        }))
+            .filter((line) => line.quantity > 0);
+        if (!missingLines.length) {
+            await this.syncApprovedQuotePayment(tx, quote, workOrder.id);
+            return;
+        }
+        const inventoryItems = await tx.inventoryItem.findMany({
+            where: { id: { in: missingLines.map((line) => line.itemId) } },
+            select: { id: true, name: true, stock: true, costPrice: true, currency: true, sourceType: true },
+        });
+        const itemById = new Map(inventoryItems.map((item) => [item.id, item]));
+        for (const line of missingLines) {
+            const item = itemById.get(line.itemId);
+            if (!item) {
+                throw new common_1.NotFoundException("Uno o mas articulos del presupuesto ya no existen en almacen");
+            }
+            const stockAfter = item.stock - line.quantity;
+            if (stockAfter < 0) {
+                throw new common_1.BadRequestException(`Stock insuficiente para ${item.name}. Disponible: ${item.stock}`);
+            }
+            const unitCost = Number(item.costPrice ?? line.unitCost ?? 0) || 0;
+            const totalCost = unitCost * line.quantity;
+            await tx.inventoryItem.update({
+                where: { id: item.id },
+                data: { stock: stockAfter, managedStock: true },
+            });
+            await tx.inventoryMovement.create({
+                data: {
+                    itemId: item.id,
+                    quoteId: quote.id,
+                    type: "OUT",
+                    quantity: line.quantity,
+                    stockAfter,
+                    unitCost,
+                    totalCost,
+                    currency: item.currency ?? quote.currency ?? "UYU",
+                    sourceType: item.sourceType,
+                    customerId: quote.customerId,
+                    reason: `Descuento automatico por aprobacion de presupuesto ${quote.number}`,
+                    workOrderId: workOrder.id,
+                },
+            });
+        }
+        await this.syncApprovedQuotePayment(tx, quote, workOrder.id);
+    }
+    async syncApprovedQuotePayment(tx, quote, workOrderId) {
+        const amount = this.roundMoney(Number(quote.total) || 0);
+        if (amount <= 0) {
+            return;
+        }
+        const reference = `AUTO-QUOTE-${quote.number}`;
+        const existing = await tx.payment.findFirst({
+            where: {
+                quoteId: quote.id,
+                transactionType: "INCOME",
+                reference,
+            },
+            select: { id: true, paidAt: true },
+        });
+        const matchingManualPayment = await tx.payment.findFirst({
+            where: {
+                quoteId: null,
+                customerId: quote.customerId,
+                transactionType: "INCOME",
+                currency: quote.currency,
+                amount,
+            },
+            orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+            select: { id: true },
+        });
+        if (existing) {
+            if (!existing.paidAt && matchingManualPayment) {
+                await tx.payment.update({
+                    where: { id: matchingManualPayment.id },
+                    data: {
+                        quoteId: quote.id,
+                        workOrderId,
+                        category: "QUOTE_BALANCE",
+                        notes: "Cobro manual vinculado automaticamente al presupuesto aprobado",
+                    },
+                });
+                await tx.payment.delete({ where: { id: existing.id } });
+                return;
+            }
+            if (!existing.paidAt) {
+                await tx.payment.update({
+                    where: { id: existing.id },
+                    data: {
+                        customerId: quote.customerId,
+                        workOrderId,
+                        concept: `Presupuesto aprobado ${quote.number} - ${quote.title}`,
+                        amount,
+                        currency: quote.currency,
+                        category: "QUOTE_BALANCE",
+                        notes: "Ingreso esperado generado automaticamente desde presupuesto aprobado",
+                    },
+                });
+            }
+            return;
+        }
+        if (matchingManualPayment) {
+            await tx.payment.update({
+                where: { id: matchingManualPayment.id },
+                data: {
+                    quoteId: quote.id,
+                    workOrderId,
+                    category: "QUOTE_BALANCE",
+                    notes: "Cobro manual vinculado automaticamente al presupuesto aprobado",
+                },
+            });
+            return;
+        }
+        await tx.payment.create({
+            data: {
+                customerId: quote.customerId,
+                quoteId: quote.id,
+                workOrderId,
+                transactionType: "INCOME",
+                category: "QUOTE_BALANCE",
+                concept: `Presupuesto aprobado ${quote.number} - ${quote.title}`,
+                amount,
+                currency: quote.currency,
+                reference,
+                notes: "Ingreso esperado generado automaticamente desde presupuesto aprobado",
+            },
+        });
     }
 };
 exports.QuotesService = QuotesService;

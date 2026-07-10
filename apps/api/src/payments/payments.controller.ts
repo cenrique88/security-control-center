@@ -16,8 +16,18 @@ export class PaymentsController {
     @Query("status") status?: "PAID" | "PENDING" | "OVERDUE",
     @Query("type") type?: "INCOME" | "EXPENSE",
     @Query("category") category?: string,
+    @Query("period") period?: "CURRENT_MONTH",
+    @Query("includeInternalCosts") includeInternalCosts?: string,
   ) {
-    return this.paymentsService.list({ search, customerId, status, type, category });
+    return this.paymentsService.list({
+      search,
+      customerId,
+      status,
+      type,
+      category,
+      period,
+      includeInternalCosts: includeInternalCosts === "true",
+    });
   }
 
   @Post()

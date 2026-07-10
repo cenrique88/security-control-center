@@ -18,7 +18,23 @@ export declare class QuotesService {
             email: string | null;
             phone: string | null;
         };
-        items: {
+        items: ({
+            inventoryItem: {
+                id: string;
+                currency: string | null;
+                customer: {
+                    id: string;
+                    name: string;
+                    type: import(".prisma/client").$Enums.CustomerType;
+                } | null;
+                name: string;
+                sku: string | null;
+                sourceType: string;
+                supplier: string | null;
+                costPrice: Prisma.Decimal | null;
+                priceWithTax: Prisma.Decimal | null;
+            } | null;
+        } & {
             id: string;
             subtotal: Prisma.Decimal;
             total: Prisma.Decimal;
@@ -26,17 +42,18 @@ export declare class QuotesService {
             updatedAt: Date;
             type: import(".prisma/client").$Enums.QuoteItemType;
             sortOrder: number;
+            category: string;
+            unit: string;
+            taxAmount: Prisma.Decimal;
             quoteId: string;
             priceBookItemId: string | null;
-            category: string;
+            inventoryItemId: string | null;
             description: string;
             quantity: Prisma.Decimal;
-            unit: string;
             unitPrice: Prisma.Decimal;
             taxRate: Prisma.Decimal;
             unitCost: Prisma.Decimal;
-            taxAmount: Prisma.Decimal;
-        }[];
+        })[];
         history: {
             id: string;
             createdBy: string | null;
@@ -91,7 +108,23 @@ export declare class QuotesService {
             email: string | null;
             phone: string | null;
         };
-        items: {
+        items: ({
+            inventoryItem: {
+                id: string;
+                currency: string | null;
+                customer: {
+                    id: string;
+                    name: string;
+                    type: import(".prisma/client").$Enums.CustomerType;
+                } | null;
+                name: string;
+                sku: string | null;
+                sourceType: string;
+                supplier: string | null;
+                costPrice: Prisma.Decimal | null;
+                priceWithTax: Prisma.Decimal | null;
+            } | null;
+        } & {
             id: string;
             subtotal: Prisma.Decimal;
             total: Prisma.Decimal;
@@ -99,17 +132,18 @@ export declare class QuotesService {
             updatedAt: Date;
             type: import(".prisma/client").$Enums.QuoteItemType;
             sortOrder: number;
+            category: string;
+            unit: string;
+            taxAmount: Prisma.Decimal;
             quoteId: string;
             priceBookItemId: string | null;
-            category: string;
+            inventoryItemId: string | null;
             description: string;
             quantity: Prisma.Decimal;
-            unit: string;
             unitPrice: Prisma.Decimal;
             taxRate: Prisma.Decimal;
             unitCost: Prisma.Decimal;
-            taxAmount: Prisma.Decimal;
-        }[];
+        })[];
         history: {
             id: string;
             createdBy: string | null;
@@ -164,7 +198,23 @@ export declare class QuotesService {
             email: string | null;
             phone: string | null;
         };
-        items: {
+        items: ({
+            inventoryItem: {
+                id: string;
+                currency: string | null;
+                customer: {
+                    id: string;
+                    name: string;
+                    type: import(".prisma/client").$Enums.CustomerType;
+                } | null;
+                name: string;
+                sku: string | null;
+                sourceType: string;
+                supplier: string | null;
+                costPrice: Prisma.Decimal | null;
+                priceWithTax: Prisma.Decimal | null;
+            } | null;
+        } & {
             id: string;
             subtotal: Prisma.Decimal;
             total: Prisma.Decimal;
@@ -172,17 +222,18 @@ export declare class QuotesService {
             updatedAt: Date;
             type: import(".prisma/client").$Enums.QuoteItemType;
             sortOrder: number;
+            category: string;
+            unit: string;
+            taxAmount: Prisma.Decimal;
             quoteId: string;
             priceBookItemId: string | null;
-            category: string;
+            inventoryItemId: string | null;
             description: string;
             quantity: Prisma.Decimal;
-            unit: string;
             unitPrice: Prisma.Decimal;
             taxRate: Prisma.Decimal;
             unitCost: Prisma.Decimal;
-            taxAmount: Prisma.Decimal;
-        }[];
+        })[];
         history: {
             id: string;
             createdBy: string | null;
@@ -237,7 +288,23 @@ export declare class QuotesService {
             email: string | null;
             phone: string | null;
         };
-        items: {
+        items: ({
+            inventoryItem: {
+                id: string;
+                currency: string | null;
+                customer: {
+                    id: string;
+                    name: string;
+                    type: import(".prisma/client").$Enums.CustomerType;
+                } | null;
+                name: string;
+                sku: string | null;
+                sourceType: string;
+                supplier: string | null;
+                costPrice: Prisma.Decimal | null;
+                priceWithTax: Prisma.Decimal | null;
+            } | null;
+        } & {
             id: string;
             subtotal: Prisma.Decimal;
             total: Prisma.Decimal;
@@ -245,17 +312,18 @@ export declare class QuotesService {
             updatedAt: Date;
             type: import(".prisma/client").$Enums.QuoteItemType;
             sortOrder: number;
+            category: string;
+            unit: string;
+            taxAmount: Prisma.Decimal;
             quoteId: string;
             priceBookItemId: string | null;
-            category: string;
+            inventoryItemId: string | null;
             description: string;
             quantity: Prisma.Decimal;
-            unit: string;
             unitPrice: Prisma.Decimal;
             taxRate: Prisma.Decimal;
             unitCost: Prisma.Decimal;
-            taxAmount: Prisma.Decimal;
-        }[];
+        })[];
         history: {
             id: string;
             createdBy: string | null;
@@ -314,5 +382,7 @@ export declare class QuotesService {
     private effectiveLaborPointRate;
     private sumByType;
     private toQuoteItemCreate;
+    private syncApprovedQuoteToWorkOrder;
+    private syncApprovedQuotePayment;
 }
 export {};

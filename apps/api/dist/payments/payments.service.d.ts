@@ -8,6 +8,8 @@ type PaymentFilters = {
     status?: "PAID" | "PENDING" | "OVERDUE";
     type?: "INCOME" | "EXPENSE";
     category?: string;
+    period?: "CURRENT_MONTH";
+    includeInternalCosts?: boolean;
 };
 export declare class PaymentsService {
     private readonly prisma;
@@ -48,9 +50,18 @@ export declare class PaymentsService {
         inventoryMovements: {
             id: string;
             quantity: number;
+            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             stockAfter: number;
+            unitCost: Prisma.Decimal | null;
+            totalCost: Prisma.Decimal | null;
+            item: {
+                id: string;
+                name: string;
+                sku: string | null;
+                unit: string;
+            };
         }[];
     } & {
         id: string;
@@ -110,9 +121,18 @@ export declare class PaymentsService {
         inventoryMovements: {
             id: string;
             quantity: number;
+            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             stockAfter: number;
+            unitCost: Prisma.Decimal | null;
+            totalCost: Prisma.Decimal | null;
+            item: {
+                id: string;
+                name: string;
+                sku: string | null;
+                unit: string;
+            };
         }[];
     } & {
         id: string;
@@ -172,9 +192,18 @@ export declare class PaymentsService {
         inventoryMovements: {
             id: string;
             quantity: number;
+            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             stockAfter: number;
+            unitCost: Prisma.Decimal | null;
+            totalCost: Prisma.Decimal | null;
+            item: {
+                id: string;
+                name: string;
+                sku: string | null;
+                unit: string;
+            };
         }[];
     } & {
         id: string;
@@ -234,9 +263,18 @@ export declare class PaymentsService {
         inventoryMovements: {
             id: string;
             quantity: number;
+            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
             stockAfter: number;
+            unitCost: Prisma.Decimal | null;
+            totalCost: Prisma.Decimal | null;
+            item: {
+                id: string;
+                name: string;
+                sku: string | null;
+                unit: string;
+            };
         }[];
     } & {
         id: string;

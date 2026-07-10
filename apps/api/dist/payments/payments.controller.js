@@ -23,8 +23,16 @@ let PaymentsController = class PaymentsController {
     constructor(paymentsService) {
         this.paymentsService = paymentsService;
     }
-    list(search, customerId, status, type, category) {
-        return this.paymentsService.list({ search, customerId, status, type, category });
+    list(search, customerId, status, type, category, period, includeInternalCosts) {
+        return this.paymentsService.list({
+            search,
+            customerId,
+            status,
+            type,
+            category,
+            period,
+            includeInternalCosts: includeInternalCosts === "true",
+        });
     }
     create(dto) {
         return this.paymentsService.create(dto);
@@ -44,8 +52,10 @@ __decorate([
     __param(2, (0, common_1.Query)("status")),
     __param(3, (0, common_1.Query)("type")),
     __param(4, (0, common_1.Query)("category")),
+    __param(5, (0, common_1.Query)("period")),
+    __param(6, (0, common_1.Query)("includeInternalCosts")),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String, String, String, String]),
     __metadata("design:returntype", void 0)
 ], PaymentsController.prototype, "list", null);
 __decorate([

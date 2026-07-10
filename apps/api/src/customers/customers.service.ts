@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { CustomerStatus, CustomerType, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { VehiclesService } from "../vehicles/vehicles.service";
 import { CreateCustomerDocumentDto } from "./dto/create-customer-document.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
 import { CreateSiteDto } from "./dto/create-site.dto";
@@ -14,7 +15,10 @@ type CustomerFilters = {
 
 @Injectable()
 export class CustomersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vehiclesService: VehiclesService,
+  ) {}
 
   async list(filters: CustomerFilters) {
     const where: Prisma.CustomerWhereInput = {};
@@ -57,43 +61,29 @@ export class CustomersService {
   }
 
   async create(dto: CreateCustomerDto) {
-    return this.prisma.customer.create({
+    const customer = await this.prisma.customer.create({
       data: {
         ...this.toCreateData(dto),
         reference: await this.nextCustomerReference(),
       },
-      include: {
-        _count: {
-          select: {
-            sites: true,
-            workOrders: true,
-            quotes: true,
-            payments: true,
-            meetings: true,
-          },
-        },
-      },
+      include: this.customerListInclude(),
     });
+
+    await this.trySyncCustomerGeofence(customer.id);
+    return this.findListCustomer(customer.id);
   }
 
   async update(id: string, dto: UpdateCustomerDto) {
     await this.ensureExists(id);
 
-    return this.prisma.customer.update({
+    await this.prisma.customer.update({
       where: { id },
       data: this.toUpdateData(dto),
-      include: {
-        _count: {
-          select: {
-            sites: true,
-            workOrders: true,
-            quotes: true,
-            payments: true,
-            meetings: true,
-          },
-        },
-      },
+      include: this.customerListInclude(),
     });
+
+    await this.trySyncCustomerGeofence(id);
+    return this.findListCustomer(id);
   }
 
   async remove(id: string) {
@@ -126,14 +116,7 @@ export class CustomersService {
     return this.prisma.site.findMany({
       where: { customerId },
       orderBy: [{ updatedAt: "desc" }, { name: "asc" }],
-      include: {
-        _count: {
-          select: {
-            equipment: true,
-            workOrders: true,
-          },
-        },
-      },
+      include: this.siteListInclude(),
     });
   }
 
@@ -319,7 +302,7 @@ export class CustomersService {
     await this.ensureExists(customerId);
     const coordinates = this.normalizeCoordinates(dto.latitude, dto.longitude);
 
-    return this.prisma.site.create({
+    const site = await this.prisma.site.create({
       data: {
         customerId,
         name: dto.name.trim(),
@@ -328,21 +311,82 @@ export class CustomersService {
         longitude: coordinates.longitude,
         notes: this.cleanOptional(dto.notes),
       },
-      include: {
-        _count: {
-          select: {
-            equipment: true,
-            workOrders: true,
-          },
-        },
-      },
+      include: this.siteListInclude(),
     });
+
+    await this.trySyncSiteGeofence(site.id);
+    return this.findListSite(site.id);
   }
 
   private async ensureExists(id: string) {
     const customer = await this.prisma.customer.findUnique({ where: { id }, select: { id: true } });
     if (!customer) {
       throw new NotFoundException("Customer not found");
+    }
+  }
+
+  private customerListInclude() {
+    return {
+      _count: {
+        select: {
+          sites: true,
+          workOrders: true,
+          quotes: true,
+          payments: true,
+          meetings: true,
+        },
+      },
+    } satisfies Prisma.CustomerInclude;
+  }
+
+  private siteListInclude() {
+    return {
+      _count: {
+        select: {
+          equipment: true,
+          workOrders: true,
+        },
+      },
+    } satisfies Prisma.SiteInclude;
+  }
+
+  private async findListCustomer(id: string) {
+    const customer = await this.prisma.customer.findUnique({
+      where: { id },
+      include: this.customerListInclude(),
+    });
+    if (!customer) {
+      throw new NotFoundException("Customer not found");
+    }
+
+    return customer;
+  }
+
+  private async findListSite(id: string) {
+    const site = await this.prisma.site.findUnique({
+      where: { id },
+      include: this.siteListInclude(),
+    });
+    if (!site) {
+      throw new NotFoundException("Site not found");
+    }
+
+    return site;
+  }
+
+  private async trySyncCustomerGeofence(id: string) {
+    try {
+      await this.vehiclesService.syncCustomerGeofenceById(id);
+    } catch {
+      // El cliente debe guardarse aunque Traccar este fuera de linea o sin credenciales.
+    }
+  }
+
+  private async trySyncSiteGeofence(id: string) {
+    try {
+      await this.vehiclesService.syncSiteGeofenceById(id);
+    } catch {
+      // El sitio debe guardarse aunque Traccar este fuera de linea o sin credenciales.
     }
   }
 

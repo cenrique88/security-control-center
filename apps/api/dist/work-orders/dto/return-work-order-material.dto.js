@@ -9,32 +9,20 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ImportInvoiceDto = void 0;
+exports.ReturnWorkOrderMaterialDto = void 0;
 const class_validator_1 = require("class-validator");
-class ImportInvoiceDto {
-    dataUrl;
-    fileName;
-    createStockEntries;
-    importMode;
+class ReturnWorkOrderMaterialDto {
+    itemId;
+    quantity;
 }
-exports.ImportInvoiceDto = ImportInvoiceDto;
+exports.ReturnWorkOrderMaterialDto = ReturnWorkOrderMaterialDto;
 __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
-], ImportInvoiceDto.prototype, "dataUrl", void 0);
+], ReturnWorkOrderMaterialDto.prototype, "itemId", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
-], ImportInvoiceDto.prototype, "fileName", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsBoolean)(),
-    __metadata("design:type", Boolean)
-], ImportInvoiceDto.prototype, "createStockEntries", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    __metadata("design:type", String)
-], ImportInvoiceDto.prototype, "importMode", void 0);
-//# sourceMappingURL=import-invoice.dto.js.map
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(1),
+    __metadata("design:type", Number)
+], ReturnWorkOrderMaterialDto.prototype, "quantity", void 0);
+//# sourceMappingURL=return-work-order-material.dto.js.map

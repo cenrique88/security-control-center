@@ -31,6 +31,7 @@ declare enum QuoteItemTypeDto {
 }
 export declare class CreateQuoteItemDto {
     priceBookItemId?: string;
+    inventoryItemId?: string;
     type: QuoteItemTypeDto;
     category: string;
     description: string;

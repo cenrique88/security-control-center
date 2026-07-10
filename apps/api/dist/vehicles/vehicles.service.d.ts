@@ -15,42 +15,42 @@ export declare class VehiclesService {
     list(filters: VehicleFilters): Promise<{
         id: string;
         name: string;
-        plate: string | null;
-        traccarDeviceId: string | null;
-        fuelKmPerLiter: Prisma.Decimal | null;
-        active: boolean;
         createdAt: Date;
         updatedAt: Date;
+        traccarDeviceId: string | null;
+        plate: string | null;
+        fuelKmPerLiter: Prisma.Decimal | null;
+        active: boolean;
     }[]>;
     create(dto: CreateVehicleDto): Promise<{
         id: string;
         name: string;
-        plate: string | null;
-        traccarDeviceId: string | null;
-        fuelKmPerLiter: Prisma.Decimal | null;
-        active: boolean;
         createdAt: Date;
         updatedAt: Date;
+        traccarDeviceId: string | null;
+        plate: string | null;
+        fuelKmPerLiter: Prisma.Decimal | null;
+        active: boolean;
     }>;
     update(id: string, dto: UpdateVehicleDto): Promise<{
         id: string;
         name: string;
-        plate: string | null;
-        traccarDeviceId: string | null;
-        fuelKmPerLiter: Prisma.Decimal | null;
-        active: boolean;
         createdAt: Date;
         updatedAt: Date;
+        traccarDeviceId: string | null;
+        plate: string | null;
+        fuelKmPerLiter: Prisma.Decimal | null;
+        active: boolean;
     }>;
     remove(id: string): Promise<{
         id: string;
         name: string;
-        plate: string | null;
-        traccarDeviceId: string | null;
-        fuelKmPerLiter: Prisma.Decimal | null;
-        active: boolean;
         createdAt: Date;
         updatedAt: Date;
+        traccarDeviceId: string | null;
+        plate: string | null;
+        fuelKmPerLiter: Prisma.Decimal | null;
+        active: boolean;
     }>;
     getTraccarSettings(): Promise<{
         token: string;
@@ -106,12 +106,12 @@ export declare class VehiclesService {
         vehicle: {
             id: string;
             name: string;
-            plate: string | null;
-            traccarDeviceId: string | null;
-            fuelKmPerLiter: Prisma.Decimal | null;
-            active: boolean;
             createdAt: Date;
             updatedAt: Date;
+            traccarDeviceId: string | null;
+            plate: string | null;
+            fuelKmPerLiter: Prisma.Decimal | null;
+            active: boolean;
         };
         date: string;
         configured: boolean;
@@ -174,6 +174,50 @@ export declare class VehiclesService {
             geofenceId?: number;
         }[];
         message: string;
+    }>;
+    syncCustomerGeofenceById(customerId: string): Promise<{
+        configured: boolean;
+        status: "skipped";
+        reason: string;
+    } | {
+        status: "error";
+        reason: string;
+        geofenceId?: undefined;
+        configured: boolean;
+    } | {
+        linked: number;
+        status: "updated";
+        geofenceId: number;
+        reason?: undefined;
+        configured: boolean;
+    } | {
+        linked: number;
+        status: "created";
+        geofenceId: number;
+        reason?: undefined;
+        configured: boolean;
+    }>;
+    syncSiteGeofenceById(siteId: string): Promise<{
+        configured: boolean;
+        status: "skipped";
+        reason: string;
+    } | {
+        status: "error";
+        reason: string;
+        geofenceId?: undefined;
+        configured: boolean;
+    } | {
+        linked: number;
+        status: "updated";
+        geofenceId: number;
+        reason?: undefined;
+        configured: boolean;
+    } | {
+        linked: number;
+        status: "created";
+        geofenceId: number;
+        reason?: undefined;
+        configured: boolean;
     }>;
     private fetchTraccarPositions;
     private upsertTraccarGeofence;

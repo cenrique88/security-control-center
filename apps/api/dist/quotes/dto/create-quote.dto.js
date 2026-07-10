@@ -49,6 +49,7 @@ var QuoteItemTypeDto;
 })(QuoteItemTypeDto || (QuoteItemTypeDto = {}));
 class CreateQuoteItemDto {
     priceBookItemId;
+    inventoryItemId;
     type;
     category;
     description;
@@ -64,6 +65,11 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateQuoteItemDto.prototype, "priceBookItemId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateQuoteItemDto.prototype, "inventoryItemId", void 0);
 __decorate([
     (0, class_validator_1.IsEnum)(QuoteItemTypeDto),
     __metadata("design:type", String)

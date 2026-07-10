@@ -13,6 +13,7 @@ exports.PaymentsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const STOCK_EXPENSE_CATEGORIES = new Set(["MATERIAL_PURCHASE", "SUPPLIES", "IMPORTER_PAYMENT", "TOOLS"]);
+const INTERNAL_COST_CATEGORIES = new Set(["WORK_ORDER_MATERIAL_COST"]);
 let PaymentsService = class PaymentsService {
     prisma;
     constructor(prisma) {
@@ -20,6 +21,7 @@ let PaymentsService = class PaymentsService {
     }
     async list(filters) {
         const where = {};
+        const andFilters = [];
         if (filters.customerId) {
             where.customerId = filters.customerId;
         }
@@ -28,6 +30,15 @@ let PaymentsService = class PaymentsService {
         }
         if (filters.category) {
             where.category = filters.category;
+        }
+        if (!filters.category && !filters.includeInternalCosts) {
+            andFilters.push({
+                NOT: {
+                    category: {
+                        in: Array.from(INTERNAL_COST_CATEGORIES),
+                    },
+                },
+            });
         }
         if (filters.status === "PAID") {
             where.paidAt = { not: null };
@@ -39,15 +50,31 @@ let PaymentsService = class PaymentsService {
             where.paidAt = null;
             where.dueDate = { lt: new Date() };
         }
+        if (filters.period === "CURRENT_MONTH") {
+            const now = new Date();
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+            andFilters.push({
+                OR: [
+                    { paidAt: { gte: monthStart, lt: nextMonthStart } },
+                    { paidAt: null, createdAt: { gte: monthStart, lt: nextMonthStart } },
+                ],
+            });
+        }
         if (filters.search?.trim()) {
             const query = filters.search.trim();
-            where.OR = [
-                { concept: { contains: query, mode: "insensitive" } },
-                { category: { contains: query, mode: "insensitive" } },
-                { method: { contains: query, mode: "insensitive" } },
-                { reference: { contains: query, mode: "insensitive" } },
-                { customer: { name: { contains: query, mode: "insensitive" } } },
-            ];
+            andFilters.push({
+                OR: [
+                    { concept: { contains: query, mode: "insensitive" } },
+                    { category: { contains: query, mode: "insensitive" } },
+                    { method: { contains: query, mode: "insensitive" } },
+                    { reference: { contains: query, mode: "insensitive" } },
+                    { customer: { name: { contains: query, mode: "insensitive" } } },
+                ],
+            });
+        }
+        if (andFilters.length) {
+            where.AND = andFilters;
         }
         return this.prisma.payment.findMany({
             where,
@@ -220,7 +247,19 @@ let PaymentsService = class PaymentsService {
             workOrder: { select: { id: true, title: true, status: true } },
             vehicle: { select: { id: true, name: true, plate: true } },
             inventoryItem: { select: { id: true, reference: true, sku: true, name: true, unit: true, stock: true, sourceType: true } },
-            inventoryMovements: { select: { id: true, type: true, quantity: true, stockAfter: true, createdAt: true } },
+            inventoryMovements: {
+                select: {
+                    id: true,
+                    type: true,
+                    quantity: true,
+                    stockAfter: true,
+                    unitCost: true,
+                    totalCost: true,
+                    currency: true,
+                    createdAt: true,
+                    item: { select: { id: true, name: true, sku: true, unit: true } },
+                },
+            },
         };
     }
     async ensureCustomer(id) {

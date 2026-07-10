@@ -32,6 +32,10 @@ export class CreateInventoryMovementDto {
   createExpense?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  zeroCostRecovery?: boolean;
+
+  @IsOptional()
   @IsString()
   paymentCategory?: string;
 
@@ -77,6 +81,10 @@ export class CreateInventoryMovementBatchDto {
   @IsOptional()
   @IsBoolean()
   createExpense?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  zeroCostRecovery?: boolean;
 
   @IsOptional()
   @IsString()

@@ -28,6 +28,15 @@ export declare class DashboardService {
         pendingPayments: number;
         overduePayments: number;
         pendingPaymentAmount: number;
+        finance: {
+            exchangeRateUsdUyu: number;
+            monthIncomeUyu: number;
+            monthExpensesUyu: number;
+            monthProfitUyu: number;
+            monthIncomeUsd: number;
+            monthExpensesUsd: number;
+            monthProfitUsd: number;
+        };
         installedDevices: number;
         installedDevicesThisMonth: number;
         totalVehicles: number;
@@ -69,4 +78,5 @@ export declare class DashboardService {
     }>;
     private safeIntegration;
     private normalizeIntegration;
+    private toUyu;
 }

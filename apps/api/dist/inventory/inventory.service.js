@@ -95,7 +95,7 @@ let InventoryService = class InventoryService {
     async createItem(dto) {
         try {
             return await this.prisma.$transaction(async (tx) => {
-                return tx.inventoryItem.create({
+                const item = await tx.inventoryItem.create({
                     data: {
                         reference: await this.nextReference(tx),
                         sku: this.cleanNullable(dto.sku),
@@ -125,6 +125,49 @@ let InventoryService = class InventoryService {
                         customer: true,
                     },
                 });
+                const quantity = Math.trunc(Number(dto.stock) || 0);
+                const unitCost = Number(dto.costPrice) || 0;
+                const currency = this.cleanOptional(dto.currency) ?? "USD";
+                const totalCost = this.roundMoney(quantity * unitCost);
+                const financeCustomer = unitCost > 0 ? await this.resolveInventoryFinanceCustomer(tx, dto.customerId, dto.supplier) : null;
+                const payment = financeCustomer && quantity > 0 && totalCost > 0
+                    ? await tx.payment.create({
+                        data: {
+                            customerId: financeCustomer.id,
+                            inventoryItemId: item.id,
+                            transactionType: "EXPENSE",
+                            category: this.paymentCategoryFromSource(dto.sourceType, "IN"),
+                            concept: `Alta inicial de almacen: ${item.name}`,
+                            amount: totalCost,
+                            quantity,
+                            unitPrice: unitCost,
+                            currency,
+                            method: "Alta de stock",
+                            reference: item.reference,
+                            notes: "Generado automaticamente al crear articulo con stock y costo real",
+                            paidAt: new Date(),
+                        },
+                        select: { id: true },
+                    })
+                    : null;
+                if (quantity > 0) {
+                    await tx.inventoryMovement.create({
+                        data: {
+                            itemId: item.id,
+                            paymentId: payment?.id,
+                            type: "IN",
+                            quantity,
+                            stockAfter: quantity,
+                            unitCost,
+                            totalCost: totalCost > 0 ? totalCost : undefined,
+                            currency,
+                            sourceType: this.cleanOptional(dto.sourceType) ?? "MATERIAL",
+                            customerId: financeCustomer?.id ?? this.cleanNullable(dto.customerId),
+                            reason: unitCost > 0 ? "Alta inicial de almacen con costo real" : "Alta inicial de almacen sin costo",
+                        },
+                    });
+                }
+                return item;
             });
         }
         catch (error) {
@@ -137,35 +180,45 @@ let InventoryService = class InventoryService {
             throw new common_1.NotFoundException("Inventory item not found");
         }
         try {
-            return await this.prisma.inventoryItem.update({
-                where: { id },
-                data: {
-                    sku: dto.sku === undefined ? undefined : this.cleanNullable(dto.sku),
-                    name: dto.name?.trim(),
-                    category: dto.category === undefined ? undefined : dto.category ? dto.category : null,
-                    unit: this.cleanOptional(dto.unit),
-                    stock: dto.stock,
-                    minStock: dto.minStock,
-                    managedStock: dto.managedStock,
-                    sourceType: this.cleanOptional(dto.sourceType),
-                    customerId: dto.customerId === undefined ? undefined : this.cleanNullable(dto.customerId),
-                    location: dto.location === undefined ? undefined : this.cleanNullable(dto.location),
-                    supplier: dto.supplier === undefined ? undefined : this.cleanNullable(dto.supplier),
-                    supplierCategory: dto.supplierCategory === undefined ? undefined : this.cleanNullable(dto.supplierCategory),
-                    costPrice: dto.costPrice,
-                    taxAmount: dto.taxAmount,
-                    priceWithTax: dto.priceWithTax,
-                    currency: this.cleanOptional(dto.currency),
-                    notes: dto.notes === undefined ? undefined : this.cleanNullable(dto.notes),
-                },
-                include: {
-                    movements: {
-                        take: 5,
-                        orderBy: { createdAt: "desc" },
-                        include: this.movementInclude(),
+            return await this.prisma.$transaction(async (tx) => {
+                const cleanName = dto.name?.trim();
+                const item = await tx.inventoryItem.update({
+                    where: { id },
+                    data: {
+                        sku: dto.sku === undefined ? undefined : this.cleanNullable(dto.sku),
+                        name: cleanName,
+                        category: dto.category === undefined ? undefined : dto.category ? dto.category : null,
+                        unit: this.cleanOptional(dto.unit),
+                        stock: dto.stock,
+                        minStock: dto.minStock,
+                        managedStock: dto.managedStock,
+                        sourceType: this.cleanOptional(dto.sourceType),
+                        customerId: dto.customerId === undefined ? undefined : this.cleanNullable(dto.customerId),
+                        location: dto.location === undefined ? undefined : this.cleanNullable(dto.location),
+                        supplier: dto.supplier === undefined ? undefined : this.cleanNullable(dto.supplier),
+                        supplierCategory: dto.supplierCategory === undefined ? undefined : this.cleanNullable(dto.supplierCategory),
+                        costPrice: dto.costPrice,
+                        taxAmount: dto.taxAmount,
+                        priceWithTax: dto.priceWithTax,
+                        currency: this.cleanOptional(dto.currency),
+                        notes: dto.notes === undefined ? undefined : this.cleanNullable(dto.notes),
                     },
-                    customer: true,
-                },
+                    include: {
+                        movements: {
+                            take: 5,
+                            orderBy: { createdAt: "desc" },
+                            include: this.movementInclude(),
+                        },
+                        customer: true,
+                    },
+                });
+                if (cleanName) {
+                    await tx.quoteItem.updateMany({
+                        where: { inventoryItemId: id },
+                        data: { description: cleanName },
+                    });
+                }
+                return item;
             });
         }
         catch (error) {
@@ -176,7 +229,7 @@ let InventoryService = class InventoryService {
         return this.prisma.$transaction(async (tx) => {
             const item = await tx.inventoryItem.findUnique({
                 where: { id: dto.itemId },
-                select: { id: true, name: true, stock: true, costPrice: true, priceWithTax: true, currency: true },
+                select: { id: true, name: true, stock: true, costPrice: true, priceWithTax: true, currency: true, customerId: true, supplier: true, sourceType: true },
             });
             if (!item) {
                 throw new common_1.NotFoundException("Inventory item not found");
@@ -191,13 +244,24 @@ let InventoryService = class InventoryService {
             const type = dto.type;
             const quantity = dto.quantity;
             const stockAfter = type === "IN" ? item.stock + quantity : type === "OUT" ? item.stock - quantity : quantity;
-            const unitCost = Number(dto.unitCost) || Number(item.costPrice ?? item.priceWithTax) || undefined;
+            const zeroCostRecovery = Boolean(dto.zeroCostRecovery && type === "IN");
+            const unitCost = zeroCostRecovery ? 0 : this.resolveMovementUnitCost(dto.unitCost, item.costPrice, item.priceWithTax);
             const totalCost = unitCost && quantity ? unitCost * quantity : undefined;
             const currency = this.cleanOptional(dto.currency) ?? item.currency ?? "UYU";
             if (stockAfter < 0) {
                 throw new common_1.BadRequestException("Stock cannot be negative");
             }
-            if (dto.createExpense && !dto.customerId) {
+            const shouldCreateExpense = Boolean((dto.createExpense && (type === "IN" || type === "OUT")) || (type === "IN" && !zeroCostRecovery && totalCost && totalCost > 0));
+            const paymentCategory = this.cleanOptional(dto.paymentCategory) ?? this.paymentCategoryFromSource(dto.sourceType, type);
+            const financeCustomer = shouldCreateExpense
+                ? await this.resolveMovementFinanceCustomer(tx, {
+                    customerId: dto.customerId ?? item.customerId ?? undefined,
+                    supplier: item.supplier,
+                    movementType: type,
+                    paymentCategory,
+                })
+                : null;
+            if (dto.createExpense && !financeCustomer) {
                 throw new common_1.BadRequestException("Selecciona una entidad para crear el egreso contable");
             }
             await tx.inventoryItem.update({
@@ -206,7 +270,7 @@ let InventoryService = class InventoryService {
                     stock: stockAfter,
                     managedStock: true,
                     costPrice: unitCost,
-                    priceWithTax: unitCost,
+                    priceWithTax: zeroCostRecovery ? item.priceWithTax : unitCost,
                     currency,
                     sourceType: this.cleanOptional(dto.sourceType) ?? undefined,
                     customerId: dto.customerId ? dto.customerId : undefined,
@@ -214,14 +278,14 @@ let InventoryService = class InventoryService {
                     supplierCategory: linkedCustomer?.type === "IMPORTER" ? "Importador" : undefined,
                 },
             });
-            const payment = dto.createExpense && (type === "IN" || type === "OUT") && dto.customerId && totalCost
+            const payment = shouldCreateExpense && financeCustomer && totalCost
                 ? await tx.payment.create({
                     data: {
-                        customerId: dto.customerId,
+                        customerId: financeCustomer.id,
                         workOrderId: this.cleanNullable(dto.workOrderId),
                         inventoryItemId: item.id,
                         transactionType: "EXPENSE",
-                        category: this.cleanOptional(dto.paymentCategory) ?? this.paymentCategoryFromSource(dto.sourceType, type),
+                        category: paymentCategory,
                         concept: this.cleanOptional(dto.reason) ??
                             (type === "OUT" ? `Consumo de almacen: ${item.name}` : `Compra para almacen: ${item.name}`),
                         amount: totalCost,
@@ -250,7 +314,9 @@ let InventoryService = class InventoryService {
                     currency,
                     sourceType: this.cleanNullable(dto.sourceType),
                     customerId: this.cleanNullable(dto.customerId),
-                    reason: this.cleanNullable(dto.reason),
+                    reason: this.cleanNullable(zeroCostRecovery
+                        ? dto.reason || "Reingreso sobrante de obra sin costo - material recuperado"
+                        : dto.reason),
                     workOrderId: this.cleanNullable(dto.workOrderId),
                     installedDeviceId: this.cleanNullable(dto.installedDeviceId),
                 },
@@ -267,9 +333,6 @@ let InventoryService = class InventoryService {
                 throw new common_1.BadRequestException("Agrega al menos un articulo al movimiento");
             }
             const type = dto.type;
-            if (dto.createExpense && !dto.customerId) {
-                throw new common_1.BadRequestException("Selecciona una entidad para crear el egreso contable");
-            }
             if (dto.workOrderId) {
                 await this.ensureWorkOrder(tx, dto.workOrderId);
             }
@@ -293,7 +356,7 @@ let InventoryService = class InventoryService {
             }
             const dbItems = await tx.inventoryItem.findMany({
                 where: { id: { in: itemIds } },
-                select: { id: true, name: true, stock: true, costPrice: true, priceWithTax: true, currency: true },
+                select: { id: true, name: true, stock: true, costPrice: true, priceWithTax: true, currency: true, customerId: true, supplier: true, sourceType: true },
             });
             const itemById = new Map(dbItems.map((item) => [item.id, item]));
             if (dbItems.length !== itemIds.length) {
@@ -306,7 +369,8 @@ let InventoryService = class InventoryService {
                 if (stockAfter < 0) {
                     throw new common_1.BadRequestException(`Stock insuficiente para ${item.name}. Disponible: ${item.stock}`);
                 }
-                const unitCost = Number(line.unitCost) || Number(item.costPrice ?? item.priceWithTax) || undefined;
+                const zeroCostRecovery = Boolean(dto.zeroCostRecovery && type === "IN");
+                const unitCost = zeroCostRecovery ? 0 : this.resolveMovementUnitCost(line.unitCost, item.costPrice, item.priceWithTax);
                 const totalCost = unitCost && quantity ? unitCost * quantity : undefined;
                 const currency = this.cleanOptional(line.currency) ?? this.cleanOptional(dto.currency) ?? item.currency ?? "UYU";
                 return { line, item, quantity, stockAfter, unitCost, totalCost, currency };
@@ -314,13 +378,26 @@ let InventoryService = class InventoryService {
             const batchTotal = movementLines.reduce((total, line) => total + (line.totalCost ?? 0), 0);
             const currency = movementLines[0]?.currency ?? this.cleanOptional(dto.currency) ?? "UYU";
             const reason = this.cleanOptional(dto.reason);
-            const payment = dto.createExpense && (type === "IN" || type === "OUT") && dto.customerId && batchTotal > 0
+            const shouldCreateExpense = Boolean((dto.createExpense && (type === "IN" || type === "OUT")) || (type === "IN" && !dto.zeroCostRecovery && batchTotal > 0));
+            const paymentCategory = this.cleanOptional(dto.paymentCategory) ?? this.paymentCategoryFromSource(dto.sourceType, type);
+            const financeCustomer = shouldCreateExpense
+                ? await this.resolveMovementFinanceCustomer(tx, {
+                    customerId: dto.customerId ?? movementLines.find((line) => line.item.customerId)?.item.customerId ?? undefined,
+                    supplier: movementLines.find((line) => line.item.supplier)?.item.supplier,
+                    movementType: type,
+                    paymentCategory,
+                })
+                : null;
+            if (dto.createExpense && !financeCustomer) {
+                throw new common_1.BadRequestException("Selecciona una entidad para crear el egreso contable");
+            }
+            const payment = shouldCreateExpense && financeCustomer && batchTotal > 0
                 ? await tx.payment.create({
                     data: {
-                        customerId: dto.customerId,
+                        customerId: financeCustomer.id,
                         workOrderId: this.cleanNullable(dto.workOrderId),
                         transactionType: "EXPENSE",
-                        category: this.cleanOptional(dto.paymentCategory) ?? this.paymentCategoryFromSource(dto.sourceType, type),
+                        category: paymentCategory,
                         concept: reason ??
                             (type === "OUT"
                                 ? `Salida de almacen: ${movementLines.length} articulos`
@@ -346,7 +423,7 @@ let InventoryService = class InventoryService {
                         stock: movement.stockAfter,
                         managedStock: true,
                         costPrice: movement.unitCost,
-                        priceWithTax: movement.unitCost,
+                        priceWithTax: dto.zeroCostRecovery && type === "IN" ? movement.item.priceWithTax : movement.unitCost,
                         currency: movement.currency,
                         sourceType: this.cleanOptional(dto.sourceType ?? movement.line.sourceType) ?? undefined,
                         customerId: dto.customerId ? dto.customerId : undefined,
@@ -366,7 +443,9 @@ let InventoryService = class InventoryService {
                         currency: movement.currency,
                         sourceType: this.cleanNullable(dto.sourceType ?? movement.line.sourceType),
                         customerId: this.cleanNullable(dto.customerId),
-                        reason: this.cleanNullable(reason),
+                        reason: this.cleanNullable(dto.zeroCostRecovery && type === "IN"
+                            ? reason || "Reingreso sobrante de obra sin costo - material recuperado"
+                            : reason),
                         workOrderId: this.cleanNullable(dto.workOrderId),
                         installedDeviceId: this.cleanNullable(dto.installedDeviceId),
                     },
@@ -478,15 +557,50 @@ let InventoryService = class InventoryService {
     }
     async previewInvoice(dto) {
         const text = await this.extractInvoiceText(dto.dataUrl);
-        return this.parseInvoiceText(text, dto.fileName);
+        const preview = this.parseInvoiceText(text, dto.fileName);
+        return this.withInvoiceDuplicateStatus(preview);
     }
     async importInvoice(dto) {
         const preview = await this.previewInvoice(dto);
         if (!preview.items.length) {
             throw new common_1.BadRequestException("No se encontraron materiales en la factura");
         }
+        if (preview.duplicate?.exists) {
+            throw new common_1.ConflictException(preview.duplicate.message);
+        }
         return this.prisma.$transaction(async (tx) => {
             const importer = await this.findOrCreateImporter(tx, preview);
+            const importMode = dto.importMode === "EXPENSE" || dto.createStockEntries === false ? "EXPENSE" : "STOCK";
+            if (importMode === "EXPENSE") {
+                const payment = await tx.payment.create({
+                    data: {
+                        customerId: importer.id,
+                        transactionType: "EXPENSE",
+                        category: "OTHER_EXPENSE",
+                        concept: `Gasto factura ${preview.reference} - ${preview.providerName}`,
+                        amount: preview.totals.total,
+                        currency: preview.currency,
+                        method: "Factura",
+                        reference: preview.reference,
+                        notes: [
+                            `Importado automaticamente como gasto operativo desde ${dto.fileName || "PDF"}.`,
+                            `Subtotal ${preview.totals.subtotal}, IVA ${preview.totals.tax}.`,
+                            preview.items.length ? `Detalle: ${preview.items.map((item) => `${item.description} x${item.quantity}`).join("; ")}` : "",
+                        ]
+                            .filter(Boolean)
+                            .join(" "),
+                        paidAt: preview.date ? this.parseInvoiceDate(preview.date) : new Date(),
+                    },
+                    select: { id: true },
+                });
+                return {
+                    importer,
+                    paymentId: payment.id,
+                    movements: [],
+                    invoice: preview,
+                    importMode,
+                };
+            }
             const payment = await tx.payment.create({
                 data: {
                     customerId: importer.id,
@@ -551,6 +665,76 @@ let InventoryService = class InventoryService {
                 invoice: preview,
             };
         });
+    }
+    async withInvoiceDuplicateStatus(preview) {
+        const duplicate = await this.findDuplicateInvoice(preview);
+        return {
+            ...preview,
+            duplicate: duplicate ?? {
+                exists: false,
+                message: "Factura sin importacion previa detectada.",
+                products: [],
+            },
+        };
+    }
+    async findDuplicateInvoice(preview) {
+        const reference = this.cleanOptional(preview.reference);
+        if (!reference) {
+            return null;
+        }
+        const importer = await this.prisma.customer.findFirst({
+            where: preview.providerTaxId
+                ? { taxId: preview.providerTaxId }
+                : { name: { equals: preview.providerName, mode: "insensitive" } },
+            select: { id: true },
+        });
+        const payment = await this.prisma.payment.findFirst({
+            where: {
+                transactionType: "EXPENSE",
+                reference,
+                ...(importer ? { customerId: importer.id } : {}),
+            },
+            orderBy: { createdAt: "desc" },
+            include: {
+                inventoryMovements: {
+                    include: {
+                        item: { select: { name: true, sku: true } },
+                    },
+                },
+            },
+        });
+        if (payment) {
+            const products = payment.inventoryMovements.map((movement) => [movement.item.name, movement.item.sku ? `SKU ${movement.item.sku}` : "", `${movement.quantity} u`].filter(Boolean).join(" - "));
+            const detail = products.length ? ` Los productos ya se agregaron al almacen: ${products.join("; ")}.` : " Ya fue registrada como gasto operativo.";
+            return {
+                exists: true,
+                paymentId: payment.id,
+                importedAt: payment.createdAt.toISOString(),
+                message: `La factura ${reference} ya fue importada.${detail}`,
+                products,
+            };
+        }
+        const movements = await this.prisma.inventoryMovement.findMany({
+            where: {
+                type: "IN",
+                reason: { equals: `Factura ${reference}` },
+                ...(importer ? { customerId: importer.id } : {}),
+            },
+            include: {
+                item: { select: { name: true, sku: true } },
+            },
+            orderBy: { createdAt: "desc" },
+        });
+        if (!movements.length) {
+            return null;
+        }
+        const products = movements.map((movement) => [movement.item.name, movement.item.sku ? `SKU ${movement.item.sku}` : "", `${movement.quantity} u`].filter(Boolean).join(" - "));
+        return {
+            exists: true,
+            importedAt: movements[0]?.createdAt.toISOString(),
+            message: `La factura ${reference} ya tiene entradas de almacen registradas. Productos agregados: ${products.join("; ")}.`,
+            products,
+        };
     }
     async installedQuantityByItem(itemIds) {
         if (!itemIds.length) {
@@ -642,15 +826,22 @@ let InventoryService = class InventoryService {
         const number = this.firstMatch(text, /N[uú]mero\s+(\d+)/i) || this.firstMatch(text, /SERIE\s+NUMERO[^\n]*\n[A-Z]+\s+(\d+)/i);
         const reference = [series, number].filter(Boolean).join("-") || fileName || `FACT-${Date.now()}`;
         const items = this.parseInvoiceItems(lines);
-        const subtotal = this.roundMoney(this.numberAfterLabel(text, /Subtotal\s+gravado\s+22%/i) ?? items.reduce((total, item) => total + item.subtotal, 0));
-        const tax = this.roundMoney(this.numberAfterLabel(text, /I\.?V\.?A\.?\s+22%/i) ?? subtotal * 0.22);
-        const total = this.roundMoney(this.numberAfterLabel(text, /Monto\s+Total|Total:/i) ?? subtotal + tax);
+        const itemsSubtotal = this.roundMoney(items.reduce((total, item) => total + item.subtotal, 0));
+        const extractedSubtotal = this.numberAfterLabel(text, /Subtotal\s+gravado\s+22%/i);
+        const subtotal = this.roundMoney(extractedSubtotal && extractedSubtotal >= itemsSubtotal * 0.5 ? extractedSubtotal : itemsSubtotal);
+        const extractedTax = this.numberAfterLabel(text, /I\.?V\.?A\.?\s+22%/i);
+        const tax = this.roundMoney(extractedTax && extractedTax >= 0 ? extractedTax : subtotal * 0.22);
+        const extractedTotal = this.numberAfterLabel(text, /Monto\s+Total|Total:/i);
+        const total = this.roundMoney(extractedTotal && extractedTotal >= subtotal * 0.5 ? extractedTotal : subtotal + tax);
         const warnings = [];
         if (!text.trim()) {
             warnings.push("El PDF no contiene texto legible. Parece un escaneo o una imagen dentro del PDF; para leerlo automaticamente hace falta OCR.");
         }
         else if (!items.length) {
             warnings.push("Se pudo leer texto del PDF, pero no se encontraron lineas de articulos con cantidad y precio. Puede ser un formato de factura distinto.");
+        }
+        if (extractedTotal !== undefined && extractedTotal < subtotal * 0.5) {
+            warnings.push(`El total leido (${extractedTotal}) no coincide con los articulos detectados. Se uso el total calculado por productos: ${total}.`);
         }
         return {
             providerName,
@@ -749,6 +940,80 @@ let InventoryService = class InventoryService {
             select: { id: true, name: true, type: true },
         });
     }
+    async resolveInventoryFinanceCustomer(tx, customerId, supplier) {
+        const cleanCustomerId = this.cleanOptional(customerId);
+        if (cleanCustomerId) {
+            const customer = await tx.customer.findUnique({
+                where: { id: cleanCustomerId },
+                select: { id: true, name: true, type: true },
+            });
+            if (customer) {
+                return customer;
+            }
+        }
+        const name = this.cleanOptional(supplier ?? undefined) ?? "Almacen SS - Importador";
+        const existing = await tx.customer.findFirst({
+            where: { name: { equals: name, mode: "insensitive" } },
+            select: { id: true, name: true, type: true },
+        });
+        if (existing) {
+            if (existing.type !== "IMPORTER") {
+                return tx.customer.update({
+                    where: { id: existing.id },
+                    data: { type: "IMPORTER", status: "ACTIVE" },
+                    select: { id: true, name: true, type: true },
+                });
+            }
+            return existing;
+        }
+        return tx.customer.create({
+            data: {
+                reference: await this.nextCustomerReference(tx),
+                name,
+                legalName: name,
+                type: "IMPORTER",
+                status: "ACTIVE",
+                notes: "Creado automaticamente para vincular egresos de almacen a Finanzas",
+            },
+            select: { id: true, name: true, type: true },
+        });
+    }
+    async resolveMovementFinanceCustomer(tx, input) {
+        const explicitCustomerId = this.cleanOptional(input.customerId);
+        const isInternalConsumption = input.movementType === "OUT" && (input.paymentCategory ?? "STOCK_CONSUMPTION") === "STOCK_CONSUMPTION";
+        if (isInternalConsumption && !explicitCustomerId) {
+            return this.resolveInternalOperationsCustomer(tx);
+        }
+        return this.resolveInventoryFinanceCustomer(tx, explicitCustomerId, input.supplier);
+    }
+    async resolveInternalOperationsCustomer(tx) {
+        const name = "Security Solutions - Operativo";
+        const existing = await tx.customer.findFirst({
+            where: { name: { equals: name, mode: "insensitive" } },
+            select: { id: true, name: true, type: true },
+        });
+        if (existing) {
+            if (existing.type !== "INTERNAL") {
+                return tx.customer.update({
+                    where: { id: existing.id },
+                    data: { type: "INTERNAL", status: "ACTIVE" },
+                    select: { id: true, name: true, type: true },
+                });
+            }
+            return existing;
+        }
+        return tx.customer.create({
+            data: {
+                reference: await this.nextCustomerReference(tx),
+                name,
+                legalName: name,
+                type: "INTERNAL",
+                status: "ACTIVE",
+                notes: "Entidad interna para gastos operativos sin cliente ni orden vinculada.",
+            },
+            select: { id: true, name: true, type: true },
+        });
+    }
     async findOrCreateInvoiceItem(tx, invoiceItem, importerId, supplier, currency) {
         const existing = await tx.inventoryItem.findFirst({
             where: {
@@ -820,6 +1085,12 @@ let InventoryService = class InventoryService {
     }
     roundMoney(value) {
         return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+    }
+    resolveMovementUnitCost(value, fallbackCost, fallbackPrice) {
+        if (value !== undefined && value !== null && Number.isFinite(Number(value))) {
+            return Number(value);
+        }
+        return Number(fallbackCost ?? fallbackPrice) || undefined;
     }
     movementInclude() {
         return {

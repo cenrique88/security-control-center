@@ -26,6 +26,7 @@ export declare class CreateWorkOrderDto {
     scheduledAt?: string;
     completedAt?: string;
     notes?: string;
+    reportType?: string;
     reportBeforeNotes?: string;
     reportAfterNotes?: string;
     reportTasks?: string;

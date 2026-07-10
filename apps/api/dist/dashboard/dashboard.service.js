@@ -32,7 +32,7 @@ let DashboardService = class DashboardService {
         monthStart.setHours(0, 0, 0, 0);
         const nextMonthStart = new Date(monthStart);
         nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
-        const [totalCustomers, activeCustomers, prospectCustomers, inactiveCustomers, totalSites, totalWorkOrders, scheduledJobs, inProgressJobs, waitingJobs, completedJobs, totalQuotes, pendingQuotes, acceptedQuotes, quoteTotals, totalPayments, pendingPayments, overduePayments, pendingPaymentTotals, installedDevices, installedDevicesThisMonth, totalVehicles, activeVehicles, inactiveVehicles, inventory, gmail, whatsApp,] = await Promise.all([
+        const [totalCustomers, activeCustomers, prospectCustomers, inactiveCustomers, totalSites, totalWorkOrders, scheduledJobs, inProgressJobs, waitingJobs, completedJobs, totalQuotes, pendingQuotes, acceptedQuotes, quoteTotals, totalPayments, pendingPayments, overduePayments, pendingPaymentTotals, monthlyPayments, installedDevices, installedDevicesThisMonth, totalVehicles, activeVehicles, inactiveVehicles, inventory, gmail, whatsApp,] = await Promise.all([
             this.prisma.customer.count(),
             this.prisma.customer.count({ where: { status: "ACTIVE" } }),
             this.prisma.customer.count({ where: { status: "PROSPECT" } }),
@@ -72,6 +72,23 @@ let DashboardService = class DashboardService {
                 where: {
                     transactionType: "INCOME",
                     paidAt: null,
+                },
+            }),
+            this.prisma.payment.findMany({
+                where: {
+                    category: { not: "WORK_ORDER_MATERIAL_COST" },
+                    paidAt: { gte: monthStart, lt: nextMonthStart },
+                    NOT: [
+                        { method: null },
+                        { method: "" },
+                    ],
+                },
+                select: {
+                    transactionType: true,
+                    amount: true,
+                    currency: true,
+                    paidAt: true,
+                    createdAt: true,
                 },
             }),
             this.prisma.inventoryMovement.aggregate({
@@ -118,6 +135,18 @@ let DashboardService = class DashboardService {
         const installedDevicesThisMonthTotal = installedDevicesThisMonth._sum.quantity ?? 0;
         const quotePipeline = Number(quoteTotals._sum.total ?? 0);
         const pendingPaymentAmount = Number(pendingPaymentTotals._sum.amount ?? 0);
+        const exchangeRateUsdUyu = 40;
+        const monthlyFinancial = monthlyPayments.reduce((total, payment) => {
+            const amountUyu = this.toUyu(Number(payment.amount), payment.currency, exchangeRateUsdUyu);
+            if (payment.transactionType === "EXPENSE") {
+                total.expensesUyu += amountUyu;
+            }
+            else {
+                total.incomeUyu += amountUyu;
+            }
+            return total;
+        }, { incomeUyu: 0, expensesUyu: 0 });
+        const monthlyProfitUyu = monthlyFinancial.incomeUyu - monthlyFinancial.expensesUyu;
         return {
             lastUpdatedAt: new Date().toISOString(),
             totalCustomers,
@@ -138,6 +167,15 @@ let DashboardService = class DashboardService {
             pendingPayments,
             overduePayments,
             pendingPaymentAmount,
+            finance: {
+                exchangeRateUsdUyu,
+                monthIncomeUyu: monthlyFinancial.incomeUyu,
+                monthExpensesUyu: monthlyFinancial.expensesUyu,
+                monthProfitUyu: monthlyProfitUyu,
+                monthIncomeUsd: monthlyFinancial.incomeUyu / exchangeRateUsdUyu,
+                monthExpensesUsd: monthlyFinancial.expensesUyu / exchangeRateUsdUyu,
+                monthProfitUsd: monthlyProfitUyu / exchangeRateUsdUyu,
+            },
             installedDevices: installedDevicesTotal,
             installedDevicesThisMonth: installedDevicesThisMonthTotal,
             totalVehicles,
@@ -157,6 +195,9 @@ let DashboardService = class DashboardService {
                 { label: "Pipeline presupuestado", value: quotePipeline, detail: "Importe pendiente de aprobacion" },
                 { label: "Ingresos pendientes", value: pendingPayments, detail: `${overduePayments} vencidos` },
                 { label: "Monto a cobrar", value: pendingPaymentAmount, detail: "Suma de ingresos sin aplicar" },
+                { label: "Ingresos del mes", value: monthlyFinancial.incomeUyu, detail: `Equivale a USD ${(monthlyFinancial.incomeUyu / exchangeRateUsdUyu).toFixed(2)}` },
+                { label: "Gastos del mes", value: monthlyFinancial.expensesUyu, detail: `Equivale a USD ${(monthlyFinancial.expensesUyu / exchangeRateUsdUyu).toFixed(2)}` },
+                { label: "Ganancia neta mes", value: monthlyProfitUyu, detail: `Ingresos menos gastos con TC ${exchangeRateUsdUyu}` },
                 { label: "Equipos por mes", value: installedDevicesThisMonthTotal, detail: `${installedDevicesTotal} equipos instalados en total` },
                 { label: "Vehiculos activos", value: activeVehicles, detail: `${inactiveVehicles} inactivos` },
                 { label: "Stock disponible", value: inventory.availableStock, detail: `${inventory.installed} unidades instaladas desde almacen` },
@@ -201,6 +242,9 @@ let DashboardService = class DashboardService {
             important: Number(result.data?.important ?? fallback.important),
             activeChats: Number(result.data?.activeChats ?? fallback.activeChats),
         };
+    }
+    toUyu(amount, currency, exchangeRateUsdUyu = 40) {
+        return currency === "USD" ? amount * exchangeRateUsdUyu : amount;
     }
 };
 exports.DashboardService = DashboardService;

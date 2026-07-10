@@ -3,6 +3,7 @@ import { Prisma, ServiceType, WorkOrderStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { AddWorkOrderMaterialDto } from "./dto/add-work-order-material.dto";
 import { CreateWorkOrderDto } from "./dto/create-work-order.dto";
+import { ReturnWorkOrderMaterialDto } from "./dto/return-work-order-material.dto";
 import { UpdateWorkOrderDto } from "./dto/update-work-order.dto";
 
 type WorkOrderFilters = {
@@ -70,6 +71,7 @@ export class WorkOrdersService {
         scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
         completedAt: dto.completedAt ? new Date(dto.completedAt) : undefined,
         notes: this.cleanOptional(dto.notes),
+        reportType: this.cleanReportType(dto.reportType),
         reportBeforeNotes: this.cleanOptional(dto.reportBeforeNotes),
         reportAfterNotes: this.cleanOptional(dto.reportAfterNotes),
         reportTasks: this.cleanOptional(dto.reportTasks),
@@ -84,7 +86,7 @@ export class WorkOrdersService {
   async update(id: string, dto: UpdateWorkOrderDto) {
     const current = await this.prisma.workOrder.findUnique({
       where: { id },
-      select: { id: true, customerId: true },
+      select: { id: true, customerId: true, status: true },
     });
 
     if (!current) {
@@ -100,25 +102,44 @@ export class WorkOrdersService {
       await this.ensureSiteBelongsToCustomer(dto.siteId, customerId);
     }
 
-    return this.prisma.workOrder.update({
-      where: { id },
-      data: {
-        customerId: dto.customerId,
-        siteId: dto.siteId === "" ? null : this.cleanNullable(dto.siteId),
-        title: this.cleanOptional(dto.title),
-        type: dto.type as ServiceType | undefined,
-        status: dto.status as WorkOrderStatus | undefined,
-        scheduledAt: dto.scheduledAt === "" ? null : dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
-        completedAt: dto.completedAt === "" ? null : dto.completedAt ? new Date(dto.completedAt) : undefined,
-        notes: this.cleanNullable(dto.notes),
-        reportBeforeNotes: this.cleanNullable(dto.reportBeforeNotes),
-        reportAfterNotes: this.cleanNullable(dto.reportAfterNotes),
-        reportTasks: this.cleanNullable(dto.reportTasks),
-        reportTests: this.cleanNullable(dto.reportTests),
-        reportRecommendations: this.cleanNullable(dto.reportRecommendations),
-        reportPhotos: dto.reportPhotos as Prisma.InputJsonValue[] | undefined,
-      },
-      include: this.includeRelations(),
+    return this.prisma.$transaction(async (tx) => {
+      const nextStatus = dto.status as WorkOrderStatus | undefined;
+      const completedAt =
+        dto.completedAt === ""
+          ? null
+          : dto.completedAt
+            ? new Date(dto.completedAt)
+            : nextStatus === "COMPLETED" && current.status !== "COMPLETED"
+              ? new Date()
+              : undefined;
+
+      const workOrder = await tx.workOrder.update({
+        where: { id },
+        data: {
+          customerId: dto.customerId,
+          siteId: dto.siteId === "" ? null : this.cleanNullable(dto.siteId),
+          title: this.cleanOptional(dto.title),
+          type: dto.type as ServiceType | undefined,
+          status: nextStatus,
+          scheduledAt: dto.scheduledAt === "" ? null : dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
+          completedAt,
+          notes: this.cleanNullable(dto.notes),
+          reportType: this.cleanReportType(dto.reportType),
+          reportBeforeNotes: this.cleanNullable(dto.reportBeforeNotes),
+          reportAfterNotes: this.cleanNullable(dto.reportAfterNotes),
+          reportTasks: this.cleanNullable(dto.reportTasks),
+          reportTests: this.cleanNullable(dto.reportTests),
+          reportRecommendations: this.cleanNullable(dto.reportRecommendations),
+          reportPhotos: dto.reportPhotos as Prisma.InputJsonValue[] | undefined,
+        },
+        include: this.includeRelations(),
+      });
+
+      if (workOrder.status === "COMPLETED") {
+        await this.syncCompletedWorkOrderMaterialExpenses(tx, workOrder.id);
+      }
+
+      return workOrder;
     });
   }
 
@@ -154,6 +175,9 @@ export class WorkOrdersService {
           category: true,
           supplier: true,
           stock: true,
+          costPrice: true,
+          currency: true,
+          sourceType: true,
         },
       });
 
@@ -171,6 +195,8 @@ export class WorkOrdersService {
         data: { stock: stockAfter, managedStock: true },
       });
 
+      const unitCost = Number(item.costPrice ?? 0) || 0;
+      const totalCost = unitCost * dto.quantity;
       if (!dto.installAsDevice) {
         return tx.inventoryMovement.create({
           data: {
@@ -178,6 +204,10 @@ export class WorkOrdersService {
             type: "OUT",
             quantity: dto.quantity,
             stockAfter,
+            unitCost,
+            totalCost,
+            currency: item.currency ?? "UYU",
+            sourceType: item.sourceType,
             reason: "Asignado a orden de trabajo",
             workOrderId: workOrder.id,
           },
@@ -218,6 +248,10 @@ export class WorkOrdersService {
               type: "OUT",
               quantity: 1,
               stockAfter: item.stock - index - 1,
+              unitCost,
+              totalCost: unitCost,
+              currency: item.currency ?? "UYU",
+              sourceType: item.sourceType,
               reason: "Asignado a orden de trabajo e instalado como equipo",
               workOrderId: workOrder.id,
               installedDeviceId: device.id,
@@ -239,6 +273,230 @@ export class WorkOrdersService {
 
       return movements;
     });
+  }
+
+  async returnMaterial(id: string, dto: ReturnWorkOrderMaterialDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const workOrder = await tx.workOrder.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          quoteId: true,
+          customerId: true,
+        },
+      });
+
+      if (!workOrder) {
+        throw new NotFoundException("Work order not found");
+      }
+
+      const item = await tx.inventoryItem.findUnique({
+        where: { id: dto.itemId },
+        select: {
+          id: true,
+          name: true,
+          stock: true,
+          costPrice: true,
+          currency: true,
+          sourceType: true,
+        },
+      });
+
+      if (!item) {
+        throw new NotFoundException("Inventory item not found");
+      }
+
+      const consumed = await tx.inventoryMovement.aggregate({
+        where: {
+          workOrderId: workOrder.id,
+          itemId: item.id,
+          type: "OUT",
+        },
+        _sum: { quantity: true },
+      });
+      const returned = await tx.inventoryMovement.aggregate({
+        where: {
+          workOrderId: workOrder.id,
+          itemId: item.id,
+          type: "IN",
+        },
+        _sum: { quantity: true },
+      });
+      const availableToReturn = (consumed._sum.quantity ?? 0) - (returned._sum.quantity ?? 0);
+
+      if (dto.quantity > availableToReturn) {
+        throw new BadRequestException(`Solo quedan ${availableToReturn} unidad(es) para devolver de ${item.name}`);
+      }
+
+      const stockAfter = item.stock + dto.quantity;
+      const unitCost = Number(item.costPrice ?? 0) || 0;
+      await tx.inventoryItem.update({
+        where: { id: item.id },
+        data: { stock: stockAfter, managedStock: true },
+      });
+
+      return tx.inventoryMovement.create({
+        data: {
+          itemId: item.id,
+          quoteId: workOrder.quoteId,
+          type: "IN",
+          quantity: dto.quantity,
+          stockAfter,
+          unitCost,
+          totalCost: unitCost * dto.quantity,
+          currency: item.currency ?? "UYU",
+          sourceType: item.sourceType,
+          customerId: workOrder.customerId,
+          reason: "Material no instalado devuelto desde orden de trabajo",
+          workOrderId: workOrder.id,
+        },
+        include: {
+          item: true,
+          workOrder: {
+            select: {
+              id: true,
+              title: true,
+              customer: { select: { id: true, name: true } },
+            },
+          },
+          installedDevice: true,
+        },
+      });
+    });
+  }
+
+  async reconcileCosts(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const workOrder = await tx.workOrder.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+
+      if (!workOrder) {
+        throw new NotFoundException("Work order not found");
+      }
+
+      await this.syncCompletedWorkOrderMaterialExpenses(tx, id);
+
+      return tx.workOrder.findUniqueOrThrow({
+        where: { id },
+        include: this.includeRelations(),
+      });
+    });
+  }
+
+  private async syncCompletedWorkOrderMaterialExpenses(tx: Prisma.TransactionClient, workOrderId: string) {
+    const workOrder = await tx.workOrder.findUnique({
+      where: { id: workOrderId },
+      select: {
+        id: true,
+        title: true,
+        customerId: true,
+        quoteId: true,
+        quote: { select: { number: true } },
+        completedAt: true,
+      },
+    });
+
+    if (!workOrder) {
+      throw new NotFoundException("Work order not found");
+    }
+
+    const movements = await tx.inventoryMovement.findMany({
+      where: { workOrderId: workOrder.id },
+      include: {
+        item: {
+          select: {
+            costPrice: true,
+            currency: true,
+          },
+        },
+      },
+    });
+
+    const totalsByCurrency = new Map<string, number>();
+    for (const movement of movements) {
+      if (movement.type !== "OUT" && movement.type !== "IN") {
+        continue;
+      }
+
+      const currency = movement.currency ?? movement.item.currency ?? "UYU";
+      const unitCost = Number(movement.unitCost ?? movement.item.costPrice ?? 0) || 0;
+      const totalCost = Number(movement.totalCost ?? unitCost * movement.quantity) || 0;
+      const signedCost = movement.type === "IN" ? -totalCost : totalCost;
+      totalsByCurrency.set(currency, (totalsByCurrency.get(currency) ?? 0) + signedCost);
+    }
+
+    const referencePrefix = `AUTO-WO-MATERIAL-COST-${workOrder.id}`;
+    const activeCurrencies = new Set<string>();
+
+    for (const [currency, rawAmount] of totalsByCurrency.entries()) {
+      const amount = this.roundMoney(rawAmount);
+      const reference = `${referencePrefix}-${currency}`;
+      activeCurrencies.add(currency);
+
+      const existing = await tx.payment.findFirst({
+        where: {
+          workOrderId: workOrder.id,
+          transactionType: "EXPENSE",
+          category: "WORK_ORDER_MATERIAL_COST",
+          reference,
+        },
+        select: { id: true },
+      });
+
+      if (amount <= 0) {
+        if (existing) {
+          await tx.payment.delete({ where: { id: existing.id } });
+        }
+        continue;
+      }
+
+      const data = {
+        customerId: workOrder.customerId,
+        quoteId: workOrder.quoteId,
+        workOrderId: workOrder.id,
+        transactionType: "EXPENSE",
+        category: "WORK_ORDER_MATERIAL_COST",
+        concept: `Costo interno de materiales - ${workOrder.title}`,
+        amount,
+        currency,
+        reference,
+        notes: [
+          "Costo interno generado al completar la orden; no representa una nueva salida de caja.",
+          "Calculado con salidas reales de almacen menos devoluciones.",
+          workOrder.quote?.number ? `Presupuesto ${workOrder.quote.number}` : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        paidAt: workOrder.completedAt ?? new Date(),
+      };
+
+      if (existing) {
+        await tx.payment.update({
+          where: { id: existing.id },
+          data,
+        });
+      } else {
+        await tx.payment.create({ data });
+      }
+    }
+
+    const stalePayments = await tx.payment.findMany({
+      where: {
+        workOrderId: workOrder.id,
+        transactionType: "EXPENSE",
+        category: "WORK_ORDER_MATERIAL_COST",
+        reference: { startsWith: referencePrefix },
+      },
+      select: { id: true, currency: true },
+    });
+
+    for (const payment of stalePayments) {
+      if (!activeCurrencies.has(payment.currency)) {
+        await tx.payment.delete({ where: { id: payment.id } });
+      }
+    }
   }
 
   private includeRelations() {
@@ -276,6 +534,39 @@ export class WorkOrdersService {
           latitude: true,
           longitude: true,
           traccarGeofenceId: true,
+        },
+      },
+      quote: {
+        select: {
+          id: true,
+          number: true,
+          title: true,
+          currency: true,
+          total: true,
+          executionTime: true,
+          warranty: true,
+          paymentTerms: true,
+          commercialTerms: true,
+          items: {
+            orderBy: { sortOrder: "asc" },
+            select: {
+              id: true,
+              inventoryItemId: true,
+              type: true,
+              category: true,
+              description: true,
+              quantity: true,
+              unit: true,
+              unitPrice: true,
+              total: true,
+              inventoryItem: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
         },
       },
       inventoryMovements: {
@@ -379,5 +670,17 @@ export class WorkOrdersService {
 
     const clean = value.trim();
     return clean ? clean : null;
+  }
+
+  private cleanReportType(value?: string) {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    return value === "NEW_INSTALLATION" ? "NEW_INSTALLATION" : "REPAIR";
+  }
+
+  private roundMoney(value: number) {
+    return Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
   }
 }

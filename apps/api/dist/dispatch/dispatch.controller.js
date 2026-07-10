@@ -31,6 +31,9 @@ let DispatchController = class DispatchController {
     saveStops(dto) {
         return this.dispatchService.save(dto);
     }
+    syncTraccar(date, vehicleId) {
+        return this.dispatchService.syncTraccar(date, vehicleId);
+    }
     suppliers() {
         return this.dispatchService.suppliers();
     }
@@ -57,6 +60,14 @@ __decorate([
     __metadata("design:paramtypes", [save_dispatch_stops_dto_1.SaveDispatchStopsDto]),
     __metadata("design:returntype", void 0)
 ], DispatchController.prototype, "saveStops", null);
+__decorate([
+    (0, common_1.Post)("traccar/sync"),
+    __param(0, (0, common_1.Query)("date")),
+    __param(1, (0, common_1.Query)("vehicleId")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], DispatchController.prototype, "syncTraccar", null);
 __decorate([
     (0, common_1.Get)("suppliers"),
     __metadata("design:type", Function),

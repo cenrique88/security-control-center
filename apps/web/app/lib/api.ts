@@ -40,6 +40,15 @@ export type DashboardSummary = {
   pendingPayments: number;
   overduePayments?: number;
   pendingPaymentAmount?: number;
+  finance?: {
+    exchangeRateUsdUyu: number;
+    monthIncomeUyu: number;
+    monthExpensesUyu: number;
+    monthProfitUyu: number;
+    monthIncomeUsd: number;
+    monthExpensesUsd: number;
+    monthProfitUsd: number;
+  };
   installedDevices: number;
   installedDevicesThisMonth?: number;
   totalVehicles?: number;
@@ -225,6 +234,7 @@ export type WorkOrder = {
   scheduledAt?: string | null;
   completedAt?: string | null;
   notes?: string | null;
+  reportType?: "NEW_INSTALLATION" | "REPAIR" | null;
   reportBeforeNotes?: string | null;
   reportAfterNotes?: string | null;
   reportTasks?: string | null;
@@ -260,6 +270,18 @@ export type WorkOrder = {
     latitude?: string | number | null;
     longitude?: string | number | null;
   } | null;
+  quote?: {
+    id: string;
+    number: string;
+    title: string;
+    currency: string;
+    total: string | number;
+    executionTime?: string | null;
+    warranty?: string | null;
+    paymentTerms?: string | null;
+    commercialTerms?: string | null;
+    items?: QuoteItem[];
+  } | null;
   inventoryMovements?: InventoryMovement[];
 };
 
@@ -280,6 +302,7 @@ export type WorkOrderPayload = {
   scheduledAt?: string;
   completedAt?: string;
   notes?: string;
+  reportType?: "NEW_INSTALLATION" | "REPAIR";
   reportBeforeNotes?: string;
   reportAfterNotes?: string;
   reportTasks?: string;
@@ -446,6 +469,22 @@ export type QuoteItem = {
   id?: string;
   quoteId?: string;
   priceBookItemId?: string | null;
+  inventoryItemId?: string | null;
+  inventoryItem?: {
+    id: string;
+    name: string;
+    sku?: string | null;
+    supplier?: string | null;
+    currency?: string | null;
+    costPrice?: string | number | null;
+    priceWithTax?: string | number | null;
+    sourceType?: string | null;
+    customer?: {
+      id: string;
+      name: string;
+      type?: string | null;
+    } | null;
+  } | null;
   type: QuoteItemType;
   category: string;
   description: string;
@@ -617,7 +656,16 @@ export type Payment = {
     type: InventoryMovementType;
     quantity: number;
     stockAfter: number;
+    unitCost?: string | number | null;
+    totalCost?: string | number | null;
+    currency?: string | null;
     createdAt: string;
+    item?: {
+      id: string;
+      name: string;
+      sku?: string | null;
+      unit: string;
+    } | null;
   }>;
 };
 
@@ -721,6 +769,13 @@ export type DispatchStopPayload = {
   tollCost?: number;
   notes?: string;
   source?: string;
+};
+
+export type DispatchTraccarSync = {
+  configured: boolean;
+  saved: DispatchStopRecord[];
+  message: string;
+  summary: VehicleDailySummary;
 };
 
 export type TraccarSettings = {
@@ -911,6 +966,7 @@ export type InventoryMovementPayload = {
   unitCost?: number;
   currency?: string;
   createExpense?: boolean;
+  zeroCostRecovery?: boolean;
   paymentCategory?: string;
   paymentMethod?: string;
   paymentReference?: string;
@@ -921,6 +977,7 @@ export type InventoryMovementPayload = {
   installedDeviceId?: string;
   items?: Array<{
     itemId: string;
+    type?: InventoryMovementType;
     quantity: number;
     unitCost?: number;
     currency?: string;
