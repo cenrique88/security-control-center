@@ -8,10 +8,10 @@ export declare class MeetingsController {
     list(search?: string, customerId?: string, type?: MeetingType, status?: MeetingStatus): Promise<({
         customer: {
             id: string;
-            email: string | null;
             name: string;
-            reference: string;
             phone: string | null;
+            reference: string;
+            email: string | null;
         };
         attachments: {
             id: string;
@@ -26,8 +26,8 @@ export declare class MeetingsController {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        type: import(".prisma/client").$Enums.MeetingType;
         status: import(".prisma/client").$Enums.MeetingStatus;
+        type: import(".prisma/client").$Enums.MeetingType;
         notes: string | null;
         customerId: string;
         dateTime: Date;
@@ -48,10 +48,10 @@ export declare class MeetingsController {
     create(dto: CreateMeetingDto): Promise<{
         customer: {
             id: string;
-            email: string | null;
             name: string;
-            reference: string;
             phone: string | null;
+            reference: string;
+            email: string | null;
         };
         attachments: {
             id: string;
@@ -66,8 +66,8 @@ export declare class MeetingsController {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        type: import(".prisma/client").$Enums.MeetingType;
         status: import(".prisma/client").$Enums.MeetingStatus;
+        type: import(".prisma/client").$Enums.MeetingType;
         notes: string | null;
         customerId: string;
         dateTime: Date;
@@ -88,10 +88,10 @@ export declare class MeetingsController {
     update(id: string, dto: UpdateMeetingDto): Promise<{
         customer: {
             id: string;
-            email: string | null;
             name: string;
-            reference: string;
             phone: string | null;
+            reference: string;
+            email: string | null;
         };
         attachments: {
             id: string;
@@ -106,8 +106,8 @@ export declare class MeetingsController {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        type: import(".prisma/client").$Enums.MeetingType;
         status: import(".prisma/client").$Enums.MeetingStatus;
+        type: import(".prisma/client").$Enums.MeetingType;
         notes: string | null;
         customerId: string;
         dateTime: Date;

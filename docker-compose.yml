@@ -17,5 +17,17 @@ services:
       timeout: 5s
       retries: 5
 
+  osrm-uruguay:
+    image: osrm/osrm-backend:latest
+    container_name: sscc-osrm-uruguay
+    profiles:
+      - gps
+    restart: unless-stopped
+    command: osrm-routed --algorithm mld /data/uruguay-latest.osrm
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./infra/osrm/data:/data
+
 volumes:
   postgres-data:

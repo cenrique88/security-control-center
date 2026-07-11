@@ -1,13 +1,16 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { ServiceType } from "@prisma/client";
+import { ServiceType, UserRole } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Roles } from "../auth/roles.decorator";
+import { RolesGuard } from "../auth/roles.guard";
 import { CreateInventoryItemDto } from "./dto/create-inventory-item.dto";
 import { CreateInventoryMovementBatchDto, CreateInventoryMovementDto } from "./dto/create-inventory-movement.dto";
 import { ImportInvoiceDto } from "./dto/import-invoice.dto";
 import { InventoryService } from "./inventory.service";
 
 @Controller("inventory")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.TECHNICIAN)
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 

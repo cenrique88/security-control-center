@@ -1,0 +1,1 @@
+{"version":3,"file":"send-traccar-command.dto.js","sourceRoot":"","sources":["../../../src/vehicles/dto/send-traccar-command.dto.ts"],"names":[],"mappings":";;;;;;;;;;;;AAAA,qDAA6D;AAE7D,MAAa,qBAAqB;IAEhC,OAAO,CAA4C;IAInD,YAAY,CAAU;CACvB;AAPD,sDAOC;AALC;IADC,IAAA,sBAAI,EAAC,CAAC,QAAQ,EAAE,YAAY,EAAE,cAAc,CAAC,CAAC;;sDACI;AAInD;IAFC,IAAA,4BAAU,GAAE;IACZ,IAAA,0BAAQ,GAAE;;2DACW"}

@@ -11,15 +11,18 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DispatchService = void 0;
 const common_1 = require("@nestjs/common");
+const config_1 = require("@nestjs/config");
 const prisma_service_1 = require("../prisma/prisma.service");
 const vehicles_service_1 = require("../vehicles/vehicles.service");
 const save_dispatch_stops_dto_1 = require("./dto/save-dispatch-stops.dto");
 let DispatchService = class DispatchService {
     prisma;
     vehiclesService;
-    constructor(prisma, vehiclesService) {
+    config;
+    constructor(prisma, vehiclesService, config) {
         this.prisma = prisma;
         this.vehiclesService = vehiclesService;
+        this.config = config;
     }
     async list(date, vehicleId) {
         const day = this.parseDay(date);
@@ -73,7 +76,7 @@ let DispatchService = class DispatchService {
                 summary,
             };
         }
-        const stops = this.buildTraccarDispatchStops(summary);
+        const stops = await this.buildTraccarDispatchStops(summary);
         if (!stops.length) {
             return {
                 configured: true,
@@ -203,40 +206,154 @@ let DispatchService = class DispatchService {
         }));
         return [...savedStops, ...customerPlaces].slice(0, 1000);
     }
-    buildTraccarDispatchStops(summary) {
+    async buildTraccarDispatchStops(summary) {
         const visitsByStop = new Map(summary.visits.map((visit) => [visit.stopIndex, visit]));
-        const stops = summary.stops
+        const stops = await Promise.all(summary.stops
             .filter((stop) => stop.durationMinutes >= 5)
-            .map((stop) => {
+            .map(async (stop) => {
             const visit = visitsByStop.get(stop.index);
+            const googlePlace = visit ? null : await this.identifyGooglePlace(stop.latitude, stop.longitude);
             const placeType = visit?.customerType === "IMPORTER"
                 ? save_dispatch_stops_dto_1.DispatchPlaceTypeDto.IMPORTER
                 : visit
                     ? save_dispatch_stops_dto_1.DispatchPlaceTypeDto.CLIENT
-                    : save_dispatch_stops_dto_1.DispatchPlaceTypeDto.OTHER;
+                    : googlePlace?.placeType
+                        ? googlePlace.placeType
+                        : save_dispatch_stops_dto_1.DispatchPlaceTypeDto.OTHER;
             const title = visit
                 ? `${visit.customerName}${visit.siteName ? ` - ${visit.siteName}` : ""}`
-                : `Parada GPS ${stop.index + 1}`;
+                : googlePlace?.title
+                    ? googlePlace.title
+                    : `Parada GPS ${stop.index + 1}`;
             return {
                 stopKey: `gps-${stop.index}`,
                 placeType,
                 title,
-                address: visit?.address || stop.address,
+                address: visit?.address || googlePlace?.address || stop.address,
                 latitude: stop.latitude,
                 longitude: stop.longitude,
                 customerId: visit?.customerId,
                 siteId: visit?.siteId,
                 supplierName: visit?.customerType === "IMPORTER" ? visit.customerName : undefined,
-                kind: visit ? "CLIENT" : "NOT_CLIENT",
+                kind: visit ? "CLIENT" : googlePlace?.kind ?? "NOT_CLIENT",
                 scheduledAt: stop.arrival,
                 durationMinutes: stop.durationMinutes,
                 parkingCost: 0,
                 tollCost: 0,
-                notes: visit?.match ? `Coincidencia ${visit.match}${visit.distanceMeters !== undefined ? ` a ${visit.distanceMeters} m` : ""}` : undefined,
+                notes: visit?.match
+                    ? `Coincidencia ${visit.match}${visit.distanceMeters !== undefined ? ` a ${visit.distanceMeters} m` : ""}`
+                    : googlePlace?.notes,
                 source: "TRACCAR",
             };
-        });
+        }));
         return stops;
+    }
+    async identifyGooglePlace(latitude, longitude) {
+        const key = this.config.get("GOOGLE_MAPS_API_KEY") || process.env.GOOGLE_MAPS_API_KEY;
+        if (!key) {
+            return null;
+        }
+        const place = await this.findNearbyGooglePlace(latitude, longitude, key);
+        if (place) {
+            const name = place.displayName?.text?.trim();
+            if (name) {
+                return {
+                    title: name,
+                    address: place.formattedAddress,
+                    placeType: save_dispatch_stops_dto_1.DispatchPlaceTypeDto.OTHER,
+                    kind: "NOT_CLIENT",
+                    notes: [
+                        "Identificado automaticamente con Google Maps como local o punto de interes.",
+                        place.types?.length ? `Tipos: ${place.types.slice(0, 5).join(", ")}` : "",
+                    ]
+                        .filter(Boolean)
+                        .join(" "),
+                };
+            }
+        }
+        const address = await this.reverseGoogleAddress(latitude, longitude, key);
+        if (address) {
+            return {
+                title: "Residencia / domicilio",
+                address,
+                placeType: save_dispatch_stops_dto_1.DispatchPlaceTypeDto.OTHER,
+                kind: "NOT_CLIENT",
+                notes: "Google Maps no detecto local cercano; marcado como residencia o domicilio por direccion.",
+            };
+        }
+        return null;
+    }
+    async findNearbyGooglePlace(latitude, longitude, key) {
+        try {
+            const response = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Goog-Api-Key": key,
+                    "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location,places.types",
+                },
+                body: JSON.stringify({
+                    maxResultCount: 5,
+                    rankPreference: "DISTANCE",
+                    locationRestriction: {
+                        circle: {
+                            center: { latitude, longitude },
+                            radius: 45,
+                        },
+                    },
+                    languageCode: "es-419",
+                    regionCode: "UY",
+                }),
+            });
+            if (!response.ok) {
+                return null;
+            }
+            const data = (await response.json());
+            return data.places?.find((place) => {
+                if (!place.location?.latitude || !place.location?.longitude) {
+                    return Boolean(place.displayName?.text);
+                }
+                const distanceMeters = this.haversineKm(latitude, longitude, place.location.latitude, place.location.longitude) * 1000;
+                return distanceMeters <= 55 && Boolean(place.displayName?.text);
+            }) ?? null;
+        }
+        catch {
+            return null;
+        }
+    }
+    async reverseGoogleAddress(latitude, longitude, key) {
+        try {
+            const params = new URLSearchParams({
+                latlng: `${latitude},${longitude}`,
+                key,
+                language: "es-419",
+                region: "uy",
+                result_type: "street_address|premise|subpremise",
+            });
+            const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`);
+            if (!response.ok) {
+                return null;
+            }
+            const data = (await response.json());
+            if (data.status !== "OK") {
+                return null;
+            }
+            return data.results?.[0]?.formatted_address?.trim() || null;
+        }
+        catch {
+            return null;
+        }
+    }
+    haversineKm(lat1, lon1, lat2, lon2) {
+        const radius = 6371;
+        const dLat = this.deg2rad(lat2 - lat1);
+        const dLon = this.deg2rad(lon2 - lon1);
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(this.deg2rad(lat1)) * Math.cos(this.deg2rad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return radius * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    }
+    deg2rad(value) {
+        return value * (Math.PI / 180);
     }
     toStopData(stop) {
         return {
@@ -274,6 +391,7 @@ exports.DispatchService = DispatchService;
 exports.DispatchService = DispatchService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        vehicles_service_1.VehiclesService])
+        vehicles_service_1.VehiclesService,
+        config_1.ConfigService])
 ], DispatchService);
 //# sourceMappingURL=dispatch.service.js.map

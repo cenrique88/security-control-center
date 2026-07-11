@@ -16,6 +16,8 @@ exports.PriceBookController = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const roles_decorator_1 = require("../auth/roles.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 const update_labor_point_rate_dto_1 = require("./dto/update-labor-point-rate.dto");
 const upsert_customer_labor_point_rate_dto_1 = require("./dto/upsert-customer-labor-point-rate.dto");
 const upsert_customer_price_override_dto_1 = require("./dto/upsert-customer-price-override.dto");
@@ -160,7 +162,8 @@ __decorate([
 ], PriceBookController.prototype, "update", null);
 exports.PriceBookController = PriceBookController = __decorate([
     (0, common_1.Controller)("price-book"),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.OWNER, client_1.UserRole.ADMIN, client_1.UserRole.SALES),
     __metadata("design:paramtypes", [price_book_service_1.PriceBookService])
 ], PriceBookController);
 //# sourceMappingURL=price-book.controller.js.map

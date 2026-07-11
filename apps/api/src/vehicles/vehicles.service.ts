@@ -1,8 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { AuditSeverity, Prisma } from "@prisma/client";
+import { AuditService } from "../audit/audit.service";
 import { FuelService } from "../fuel/fuel.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { WhatsAppService } from "../whatsapp/whatsapp.service";
 import { CreateVehicleDto } from "./dto/create-vehicle.dto";
+import { SendTraccarCommandDto } from "./dto/send-traccar-command.dto";
 import { UpdateTraccarSettingsDto } from "./dto/update-traccar-settings.dto";
 import { UpdateVehicleDto } from "./dto/update-vehicle.dto";
 
@@ -36,14 +40,96 @@ type TraccarSettingsShape = {
   password: string | null;
 };
 
+type TraccarEvent = {
+  id: number;
+  type: string;
+  eventTime?: string;
+  serverTime?: string;
+  deviceId?: number;
+  positionId?: number;
+  geofenceId?: number;
+  attributes?: Record<string, unknown>;
+};
+
+type TraccarDevice = {
+  id: number;
+  name?: string;
+  uniqueId?: string;
+  status?: string;
+  lastUpdate?: string;
+  positionId?: number;
+  phone?: string;
+  model?: string;
+  contact?: string;
+  category?: string;
+  attributes?: Record<string, unknown>;
+};
+
+type MatchedRoutePoint = {
+  time?: string;
+  latitude: number;
+  longitude: number;
+  speedKmh?: number;
+  accuracyMeters?: number | null;
+};
+
+type MatchedRouteResult = {
+  mode: "MATCHED" | "GPS_FILTERED";
+  distanceKm: number;
+  route: MatchedRoutePoint[];
+  message?: string;
+};
+
+type VehicleAlertContext = {
+  eventType: string;
+  eventId?: number | null;
+  traccarDeviceId?: string | null;
+  geofenceId?: number | null;
+  geofenceName?: string | null;
+  positionId?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  mapUrl?: string | null;
+  eventTime?: string | Date | null;
+};
+
+type EnrichedTraccarEvent = {
+  position?: TraccarPosition | null;
+  geofenceName?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  mapUrl?: string | null;
+};
+
 const MOVEMENT_SPEED_THRESHOLD_KMH = 5;
+const GPS_MAX_ACCURACY_METERS = 100;
+const GPS_MAX_SEGMENT_SPEED_KMH = 130;
+const GPS_MIN_POINT_DISTANCE_METERS = 3;
+const OSRM_MAX_MATCH_POINTS = 95;
 
 @Injectable()
-export class VehiclesService {
+export class VehiclesService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(VehiclesService.name);
+  private alertTimer?: NodeJS.Timeout;
+  private alertSyncRunning = false;
+
   constructor(
     private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
     private readonly fuelService: FuelService,
+    private readonly whatsAppService: WhatsAppService,
+    private readonly config: ConfigService,
   ) {}
+
+  onModuleInit() {
+    this.alertTimer = setInterval(() => void this.syncAllVehicleAlerts(), 60_000);
+  }
+
+  onModuleDestroy() {
+    if (this.alertTimer) {
+      clearInterval(this.alertTimer);
+    }
+  }
 
   async list(filters: VehicleFilters) {
     const where: Prisma.VehicleWhereInput = {};
@@ -72,9 +158,25 @@ export class VehiclesService {
       data: {
         name: dto.name.trim(),
         plate: this.cleanOptional(dto.plate),
+        make: this.cleanOptional(dto.make),
+        model: this.cleanOptional(dto.model),
+        color: this.cleanOptional(dto.color),
+        colorHex: this.cleanOptional(dto.colorHex),
+        icon: this.cleanOptional(dto.icon),
+        logoUrl: this.cleanOptional(dto.logoUrl),
         traccarDeviceId: this.cleanOptional(dto.traccarDeviceId),
         fuelKmPerLiter: dto.fuelKmPerLiter,
         active: dto.active ?? true,
+        monitoringPhones: this.cleanOptional(dto.monitoringPhones),
+        clientShareUrl: this.cleanOptional(dto.clientShareUrl),
+        gpsMonitoringEnabled: dto.gpsMonitoringEnabled ?? false,
+        gpsWhatsappAlerts: dto.gpsWhatsappAlerts ?? false,
+        gpsEngineCommandsEnabled: dto.gpsEngineCommandsEnabled ?? false,
+        gpsAutoEngineStopOnAlarm: dto.gpsAutoEngineStopOnAlarm ?? false,
+        gpsCommandTextChannel: dto.gpsCommandTextChannel ?? false,
+        gpsStatusCommand: this.cleanOptional(dto.gpsStatusCommand),
+        gpsEngineStopCommand: this.cleanOptional(dto.gpsEngineStopCommand),
+        gpsEngineResumeCommand: this.cleanOptional(dto.gpsEngineResumeCommand),
       },
     });
   }
@@ -87,9 +189,25 @@ export class VehiclesService {
       data: {
         name: this.cleanOptional(dto.name),
         plate: this.cleanNullable(dto.plate),
+        make: this.cleanNullable(dto.make),
+        model: this.cleanNullable(dto.model),
+        color: this.cleanNullable(dto.color),
+        colorHex: this.cleanNullable(dto.colorHex),
+        icon: this.cleanNullable(dto.icon),
+        logoUrl: this.cleanNullable(dto.logoUrl),
         traccarDeviceId: this.cleanNullable(dto.traccarDeviceId),
         fuelKmPerLiter: dto.fuelKmPerLiter,
         active: dto.active,
+        monitoringPhones: this.cleanNullable(dto.monitoringPhones),
+        clientShareUrl: this.cleanNullable(dto.clientShareUrl),
+        gpsMonitoringEnabled: dto.gpsMonitoringEnabled,
+        gpsWhatsappAlerts: dto.gpsWhatsappAlerts,
+        gpsEngineCommandsEnabled: dto.gpsEngineCommandsEnabled,
+        gpsAutoEngineStopOnAlarm: dto.gpsAutoEngineStopOnAlarm,
+        gpsCommandTextChannel: dto.gpsCommandTextChannel,
+        gpsStatusCommand: this.cleanNullable(dto.gpsStatusCommand),
+        gpsEngineStopCommand: this.cleanNullable(dto.gpsEngineStopCommand),
+        gpsEngineResumeCommand: this.cleanNullable(dto.gpsEngineResumeCommand),
       },
     });
   }
@@ -178,11 +296,13 @@ export class VehiclesService {
     const sorted = positions
       .filter((position) => Number.isFinite(position.latitude) && Number.isFinite(position.longitude))
       .sort((left, right) => this.positionTime(left).getTime() - this.positionTime(right).getTime());
-    const distanceKm = this.roundNumber(this.calculateMovingDistanceKm(sorted), 2);
-    const stops = this.detectStops(sorted, settings.minStopMinutes, MOVEMENT_SPEED_THRESHOLD_KMH);
+    const routePositions = this.cleanRoutePositions(sorted);
+    const matchedRoute = await this.matchRouteToRoads(routePositions);
+    const distanceKm = matchedRoute.distanceKm;
+    const stops = this.detectStops(routePositions, settings.minStopMinutes, MOVEMENT_SPEED_THRESHOLD_KMH);
     const visits = await this.detectCustomerVisits(stops, settings.matchRadiusMeters);
-    const movingMinutes = Math.round(this.calculateMovingMinutes(sorted, MOVEMENT_SPEED_THRESHOLD_KMH));
-    const speedStats = this.calculateSpeedStats(sorted, MOVEMENT_SPEED_THRESHOLD_KMH);
+    const movingMinutes = Math.round(this.calculateMovingMinutes(routePositions, MOVEMENT_SPEED_THRESHOLD_KMH));
+    const speedStats = this.calculateSpeedStats(routePositions, MOVEMENT_SPEED_THRESHOLD_KMH);
     const fuelKmPerLiter = Number(vehicle.fuelKmPerLiter) || 10;
     const estimatedLiters = fuelKmPerLiter > 0 ? this.roundNumber(distanceKm / fuelKmPerLiter, 2) : 0;
     const fuel = await this.fuelService.getUruguaySuperPrice();
@@ -193,6 +313,9 @@ export class VehiclesService {
       date: from.toISOString().slice(0, 10),
       configured: true,
       positions: sorted.length,
+      routePositions: routePositions.length,
+      filteredPositions: Math.max(0, sorted.length - routePositions.length),
+      routeMode: matchedRoute.mode,
       distanceKm,
       movingMinutes,
       stoppedMinutes: stops.reduce((sum, stop) => sum + stop.durationMinutes, 0),
@@ -205,8 +328,94 @@ export class VehiclesService {
       stops,
       visits,
       unmatchedStops: stops.filter((stop) => !visits.some((visit) => visit.stopIndex === stop.index)),
-      message: sorted.length ? "" : "Traccar no devolvio posiciones para ese dia.",
+      route: matchedRoute.route,
+      message: sorted.length ? (matchedRoute.message ?? "") : "Traccar no devolvio posiciones para ese dia.",
     };
+  }
+
+  async traccarLivePosition(id: string) {
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id } });
+    if (!vehicle) {
+      throw new NotFoundException("Vehicle not found");
+    }
+
+    const settings = await this.prisma.traccarSettings.findUnique({ where: { id: "default" } });
+    if (!settings?.baseUrl || !vehicle.traccarDeviceId) {
+      return {
+        configured: false,
+        vehicle,
+        online: false,
+        moving: false,
+        message: "Configura Traccar y vincula el ID del dispositivo.",
+      };
+    }
+
+    try {
+      const [device, position] = await Promise.all([
+        this.fetchTraccarDevice(settings, vehicle.traccarDeviceId).catch(() => null),
+        this.fetchTraccarCurrentPosition(settings, vehicle.traccarDeviceId).catch(() => null),
+      ]);
+      const resolvedPosition = position ?? (device?.positionId ? await this.fetchTraccarPositionById(settings, device.positionId).catch(() => null) : null);
+      const latitude = Number(resolvedPosition?.latitude);
+      const longitude = Number(resolvedPosition?.longitude);
+      const hasPosition = Number.isFinite(latitude) && Number.isFinite(longitude);
+      const speedKmh = resolvedPosition ? this.roundNumber(this.positionSpeedKmh(resolvedPosition), 1) : 0;
+      const positionTime = resolvedPosition ? this.positionTime(resolvedPosition) : null;
+      const lastUpdate = this.parsePositionDate(device?.lastUpdate) ?? positionTime;
+      const ageSeconds = lastUpdate ? Math.max(0, Math.round((Date.now() - lastUpdate.getTime()) / 1000)) : null;
+      const attributes = {
+        ...(device?.attributes ?? {}),
+        ...(resolvedPosition?.attributes ?? {}),
+      };
+
+      return {
+        configured: true,
+        vehicle,
+        device: device
+          ? {
+              id: device.id,
+              name: device.name,
+              uniqueId: device.uniqueId,
+              status: device.status,
+              lastUpdate: device.lastUpdate,
+              phone: device.phone,
+              model: device.model,
+              category: device.category,
+            }
+          : null,
+        online: device?.status === "online",
+        moving: speedKmh >= MOVEMENT_SPEED_THRESHOLD_KMH || Boolean(attributes.motion),
+        stale: ageSeconds === null ? true : ageSeconds > 120,
+        ageSeconds,
+        latitude: hasPosition ? latitude : null,
+        longitude: hasPosition ? longitude : null,
+        speedKmh,
+        course: Number.isFinite(Number(resolvedPosition?.course)) ? Number(resolvedPosition?.course) : null,
+        altitude: Number.isFinite(Number(resolvedPosition?.altitude)) ? Number(resolvedPosition?.altitude) : null,
+        accuracyMeters: resolvedPosition ? this.positionAccuracyMeters(resolvedPosition) : null,
+        address: resolvedPosition?.address ?? null,
+        positionTime: positionTime?.toISOString() ?? null,
+        serverTime: resolvedPosition?.serverTime ?? null,
+        fixTime: resolvedPosition?.fixTime ?? null,
+        mapUrl: hasPosition ? this.googleMapsSearchUrl(latitude, longitude) : null,
+        ignition: this.toNullableBoolean(attributes.ignition),
+        motion: this.toNullableBoolean(attributes.motion),
+        alarm: attributes.alarm ? String(attributes.alarm) : null,
+        batteryLevel: this.toNullableNumber(attributes.batteryLevel ?? attributes.battery),
+        power: this.toNullableNumber(attributes.power),
+        charge: this.toNullableBoolean(attributes.charge),
+        attributes,
+        message: hasPosition ? "" : "Traccar no devolvio posicion actual para este dispositivo.",
+      };
+    } catch (error) {
+      return {
+        configured: true,
+        vehicle,
+        online: false,
+        moving: false,
+        message: error instanceof Error ? error.message : "No se pudo consultar la posicion en vivo.",
+      };
+    }
   }
 
   async syncCustomerGeofences() {
@@ -328,6 +537,279 @@ export class VehiclesService {
     };
   }
 
+  async traccarEvents(id: string, date?: string) {
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id } });
+    if (!vehicle) {
+      throw new NotFoundException("Vehicle not found");
+    }
+
+    const settings = await this.prisma.traccarSettings.findUnique({ where: { id: "default" } });
+    if (!settings?.baseUrl || !vehicle.traccarDeviceId) {
+      return { configured: false, vehicle, events: [], message: "Configura Traccar y vincula el ID del dispositivo." };
+    }
+
+    const day = this.parseReportDate(date);
+    const from = new Date(day);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(day);
+    to.setHours(23, 59, 59, 999);
+    const events = await this.fetchTraccarEvents(settings, vehicle.traccarDeviceId, from, to);
+
+    return { configured: true, vehicle, events, message: events.length ? "" : "Sin eventos Traccar para ese dia." };
+  }
+
+  async sendTraccarCommand(id: string, dto: SendTraccarCommandDto) {
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id } });
+    if (!vehicle) {
+      throw new NotFoundException("Vehicle not found");
+    }
+    if (!vehicle.traccarDeviceId) {
+      throw new BadRequestException("El vehiculo no tiene dispositivo Traccar vinculado.");
+    }
+
+    const settings = await this.prisma.traccarSettings.findUnique({ where: { id: "default" } });
+    if (!settings?.baseUrl) {
+      throw new BadRequestException("Configura Traccar antes de enviar comandos.");
+    }
+
+    if (["engineStop", "engineResume"].includes(dto.command) && !vehicle.gpsEngineCommandsEnabled) {
+      throw new BadRequestException("Los comandos de motor no estan habilitados para este vehiculo.");
+    }
+    if (dto.command === "engineStop" && dto.confirmation !== "BLOQUEAR") {
+      throw new BadRequestException("Para bloquear motor debes confirmar escribiendo BLOQUEAR.");
+    }
+    if (dto.command === "engineResume" && dto.confirmation !== "RESTAURAR") {
+      throw new BadRequestException("Para restaurar motor debes confirmar escribiendo RESTAURAR.");
+    }
+
+    const command = this.buildTraccarCommandPayload(vehicle, dto.command);
+    const response = await this.traccarRequest(settings, "/api/commands/send", {
+      method: "POST",
+      body: JSON.stringify({
+        id: 0,
+        deviceId: Number(vehicle.traccarDeviceId),
+        textChannel: vehicle.gpsCommandTextChannel,
+        description: this.traccarCommandLabel(dto.command),
+        ...command,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new BadRequestException(`Traccar no acepto el comando (${response.status}).`);
+    }
+
+    const result = await response.json().catch(() => ({}));
+    await this.sendVehicleWhatsApp(vehicle, this.buildCommandWhatsAppMessage(vehicle, dto.command), {
+      onlyIfEnabled: false,
+      context: { eventType: `command:${dto.command}`, traccarDeviceId: vehicle.traccarDeviceId },
+    });
+    await this.audit.record({
+      module: "VEHICLES",
+      action: "TRACCAR_COMMAND_SENT",
+      entityType: "Vehicle",
+      entityId: vehicle.id,
+      severity: dto.command === "status" ? AuditSeverity.INFO : AuditSeverity.CRITICAL,
+      summary: `${this.traccarCommandLabel(dto.command)} enviado a ${vehicle.name}`,
+      metadata: {
+        command: dto.command,
+        commandMode: command.type === "custom" ? "custom" : "traccar-type",
+        textChannel: vehicle.gpsCommandTextChannel,
+        customCommandConfigured: command.type === "custom",
+        traccarDeviceId: vehicle.traccarDeviceId,
+        plate: vehicle.plate,
+      },
+    });
+
+    return {
+      sent: true,
+      command: dto.command,
+      commandMode: command.type === "custom" ? "custom" : "traccar-type",
+      textChannel: vehicle.gpsCommandTextChannel,
+      vehicle,
+      result,
+      message:
+        command.type === "custom"
+          ? `${this.traccarCommandLabel(dto.command)} enviado con comando especifico del GPS.`
+          : `${this.traccarCommandLabel(dto.command)} enviado a Traccar con comando generico.`,
+    };
+  }
+
+  async sendVehicleTestWhatsApp(id: string) {
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id } });
+    if (!vehicle) {
+      throw new NotFoundException("Vehicle not found");
+    }
+
+    const phones = this.vehiclePhones(vehicle);
+    if (!phones.length) {
+      throw new BadRequestException("Agrega telefonos WhatsApp para este vehiculo.");
+    }
+
+    const message = [
+      "Security Solutions - prueba de monitoreo GPS",
+      `Vehiculo: ${vehicle.name}${vehicle.plate ? ` (${vehicle.plate})` : ""}`,
+      `Traccar ID: ${vehicle.traccarDeviceId || "sin vincular"}`,
+      "Este numero recibira alertas configuradas para este vehiculo.",
+    ].join("\n");
+    const results = await this.sendVehicleWhatsApp(vehicle, message, {
+      onlyIfEnabled: false,
+      context: { eventType: "test-whatsapp", traccarDeviceId: vehicle.traccarDeviceId },
+    });
+
+    const sent = results.filter((result) => result.sent !== false).length;
+    const failed = results.filter((result) => result.sent === false).length;
+    await this.audit.record({
+      module: "VEHICLES",
+      action: "WHATSAPP_TEST_SENT",
+      entityType: "Vehicle",
+      entityId: vehicle.id,
+      severity: failed ? AuditSeverity.WARNING : AuditSeverity.INFO,
+      summary: `Prueba WhatsApp de ${vehicle.name}: ${sent} enviada(s), ${failed} fallida(s)`,
+      metadata: {
+        phones,
+        sent,
+        failed,
+        traccarDeviceId: vehicle.traccarDeviceId,
+      },
+    });
+
+    return {
+      sent,
+      failed,
+      phones,
+      results,
+      message: sent ? `Prueba WhatsApp enviada: ${sent}${failed ? `, fallidas: ${failed}` : ""}.` : "No se pudo enviar la prueba WhatsApp.",
+    };
+  }
+
+  async traccarAlertLogs(id: string) {
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id } });
+    if (!vehicle) {
+      throw new NotFoundException("Vehicle not found");
+    }
+
+    const logs = await this.prisma.vehicleAlertLog.findMany({
+      where: { vehicleId: id },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+    });
+
+    return { vehicle, logs };
+  }
+
+  async syncVehicleAlerts(id: string) {
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id } });
+    if (!vehicle) {
+      throw new NotFoundException("Vehicle not found");
+    }
+    if (!vehicle.traccarDeviceId || !vehicle.gpsMonitoringEnabled) {
+      return { sent: 0, events: [], message: "Monitoreo GPS no habilitado o dispositivo sin vincular." };
+    }
+
+    const settings = await this.prisma.traccarSettings.findUnique({ where: { id: "default" } });
+    if (!settings?.baseUrl) {
+      return { sent: 0, events: [], message: "Configura Traccar antes de sincronizar alertas." };
+    }
+
+    const to = new Date();
+    const from = vehicle.gpsLastAlertAt ? new Date(vehicle.gpsLastAlertAt) : new Date(to.getTime() - 6 * 60 * 60 * 1000);
+    const events = await this.fetchTraccarEvents(settings, vehicle.traccarDeviceId, from, to);
+    const newEvents = events
+      .filter((event) => !vehicle.gpsLastEventId || event.id > vehicle.gpsLastEventId)
+      .filter((event) => this.isCriticalTraccarEvent(event));
+    const latestId = events.reduce((max, event) => Math.max(max, event.id), vehicle.gpsLastEventId ?? 0);
+
+    let sent = 0;
+    let failed = 0;
+    for (const event of newEvents) {
+      const enriched = await this.enrichTraccarEvent(settings, event);
+      const results = await this.sendVehicleWhatsApp(vehicle, this.buildEventWhatsAppMessage(vehicle, event, enriched), {
+        onlyIfEnabled: true,
+        context: {
+          eventType: event.type,
+          eventId: event.id,
+          traccarDeviceId: vehicle.traccarDeviceId,
+          geofenceId: event.geofenceId,
+          geofenceName: enriched.geofenceName,
+          positionId: event.positionId,
+          latitude: enriched.latitude,
+          longitude: enriched.longitude,
+          mapUrl: enriched.mapUrl,
+          eventTime: event.eventTime ?? event.serverTime,
+        },
+      });
+      sent += results.filter((result) => result.sent !== false).length;
+      failed += results.filter((result) => result.sent === false).length;
+    }
+
+    if (!newEvents.length || sent > 0) {
+      await this.prisma.vehicle.update({
+        where: { id: vehicle.id },
+        data: {
+          gpsLastEventId: latestId || vehicle.gpsLastEventId,
+          gpsLastAlertAt: new Date(),
+        },
+      });
+    }
+    await this.audit.record({
+      module: "VEHICLES",
+      action: "TRACCAR_ALERTS_SYNCED",
+      entityType: "Vehicle",
+      entityId: vehicle.id,
+      severity: failed ? AuditSeverity.WARNING : AuditSeverity.INFO,
+      summary: `Sincronizacion Traccar de ${vehicle.name}: ${newEvents.length} evento(s), ${sent} alerta(s), ${failed} falla(s)`,
+      metadata: {
+        traccarDeviceId: vehicle.traccarDeviceId,
+        from: from.toISOString(),
+        to: to.toISOString(),
+        latestId,
+        eventIds: newEvents.map((event) => event.id),
+        sent,
+        failed,
+      },
+    });
+
+    return {
+      sent,
+      failed,
+      events: newEvents,
+      message: sent
+        ? `Alertas enviadas: ${sent}${failed ? `, fallidas: ${failed}` : ""}.`
+        : failed
+          ? `No se pudo enviar WhatsApp (${failed} intento/s fallidos).`
+          : "Sin alertas nuevas.",
+    };
+  }
+
+  private async syncAllVehicleAlerts() {
+    if (this.alertSyncRunning) {
+      return;
+    }
+
+    this.alertSyncRunning = true;
+    try {
+      const vehicles = await this.prisma.vehicle.findMany({
+        where: {
+          active: true,
+          gpsMonitoringEnabled: true,
+          gpsWhatsappAlerts: true,
+          traccarDeviceId: { not: null },
+        },
+        select: { id: true },
+      });
+
+      for (const vehicle of vehicles) {
+        try {
+          await this.syncVehicleAlerts(vehicle.id);
+        } catch (error) {
+          this.logger.warn(`No se pudieron sincronizar alertas GPS del vehiculo ${vehicle.id}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    } finally {
+      this.alertSyncRunning = false;
+    }
+  }
+
   async syncCustomerGeofenceById(customerId: string) {
     const settings = await this.prisma.traccarSettings.findUnique({ where: { id: "default" } });
     if (!settings?.baseUrl || (!settings.token && (!settings.username || !settings.password))) {
@@ -439,6 +921,261 @@ export class VehiclesService {
     return { configured: true, ...result, linked };
   }
 
+  private async fetchTraccarEvents(settings: TraccarSettingsShape, deviceId: string, from: Date, to: Date) {
+    const baseUrl = settings.baseUrl?.replace(/\/+$/, "");
+    if (!baseUrl) {
+      throw new Error("Configura la URL de Traccar.");
+    }
+
+    const url = new URL(`${baseUrl}/api/reports/events`);
+    url.searchParams.set("deviceId", deviceId);
+    url.searchParams.set("from", from.toISOString());
+    url.searchParams.set("to", to.toISOString());
+
+    const response = await fetch(url, { headers: this.traccarHeaders(settings) });
+    if (!response.ok) {
+      throw new Error(`Traccar respondio ${response.status} al consultar eventos.`);
+    }
+
+    return ((await response.json()) as TraccarEvent[]).sort((left, right) => left.id - right.id);
+  }
+
+  private vehiclePhones(vehicle: { monitoringPhones?: string | null }) {
+    return (vehicle.monitoringPhones ?? "")
+      .split(/[\n,;]+/)
+      .map((phone) => phone.trim())
+      .filter(Boolean);
+  }
+
+  private async sendVehicleWhatsApp(
+    vehicle: { id: string; monitoringPhones?: string | null; gpsWhatsappAlerts?: boolean },
+    message: string,
+    options: { onlyIfEnabled: boolean; context?: VehicleAlertContext },
+  ) {
+    if (options.onlyIfEnabled && !vehicle.gpsWhatsappAlerts) {
+      return [];
+    }
+
+    const phones = this.vehiclePhones(vehicle);
+    const results = [];
+    for (const phone of phones) {
+      try {
+        const result = await this.withTimeout(this.whatsAppService.send({ to: phone, message }), 25000);
+        results.push(result);
+        await this.logVehicleAlert(vehicle.id, phone, message, result.sent === false ? "FAILED" : "SENT", options.context, null);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        results.push({ to: phone, sent: false, error: errorMessage });
+        await this.logVehicleAlert(vehicle.id, phone, message, "FAILED", options.context, errorMessage);
+      }
+    }
+
+    return results;
+  }
+
+  private async logVehicleAlert(
+    vehicleId: string,
+    phone: string,
+    message: string,
+    status: "SENT" | "FAILED",
+    context?: VehicleAlertContext,
+    error?: string | null,
+  ) {
+    try {
+      await this.prisma.vehicleAlertLog.create({
+        data: {
+          vehicleId,
+          phone,
+          message,
+          status,
+          eventType: context?.eventType ?? "whatsapp",
+          eventId: context?.eventId ?? undefined,
+          traccarDeviceId: context?.traccarDeviceId ?? undefined,
+          geofenceId: context?.geofenceId ?? undefined,
+          geofenceName: context?.geofenceName ?? undefined,
+          positionId: context?.positionId ?? undefined,
+          latitude: context?.latitude ?? undefined,
+          longitude: context?.longitude ?? undefined,
+          mapUrl: context?.mapUrl ?? undefined,
+          eventTime: context?.eventTime ? new Date(context.eventTime) : undefined,
+          error: error || undefined,
+        },
+      });
+    } catch (logError) {
+      this.logger.warn(`No se pudo registrar alerta WhatsApp: ${logError instanceof Error ? logError.message : String(logError)}`);
+    }
+  }
+
+  private traccarCommandLabel(command: SendTraccarCommandDto["command"]) {
+    const labels = {
+      status: "Consultar estado",
+      engineStop: "Bloquear motor",
+      engineResume: "Restaurar motor",
+    };
+    return labels[command];
+  }
+
+  private buildTraccarCommandPayload(
+    vehicle: {
+      gpsStatusCommand?: string | null;
+      gpsEngineStopCommand?: string | null;
+      gpsEngineResumeCommand?: string | null;
+    },
+    command: SendTraccarCommandDto["command"],
+  ) {
+    const customCommands: Record<SendTraccarCommandDto["command"], string | null | undefined> = {
+      status: vehicle.gpsStatusCommand || "STATUS#",
+      engineStop: vehicle.gpsEngineStopCommand,
+      engineResume: vehicle.gpsEngineResumeCommand,
+    };
+    const customCommand = customCommands[command]?.trim();
+
+    if (customCommand) {
+      return { type: "custom", attributes: { data: customCommand } };
+    }
+
+    return { type: command, attributes: {} };
+  }
+
+  private buildCommandWhatsAppMessage(vehicle: { name: string; plate?: string | null }, command: SendTraccarCommandDto["command"]) {
+    return [
+      "Security Solutions - comando GPS",
+      `Vehiculo: ${vehicle.name}${vehicle.plate ? ` (${vehicle.plate})` : ""}`,
+      `Comando: ${this.traccarCommandLabel(command)}`,
+      `Fecha: ${new Date().toLocaleString("es-UY", { timeZone: "America/Montevideo" })}`,
+    ].join("\n");
+  }
+
+  private buildEventWhatsAppMessage(vehicle: { name: string; plate?: string | null }, event: TraccarEvent, enriched: EnrichedTraccarEvent = {}) {
+    const details = this.traccarEventDetails(event);
+    return [
+      "Security Solutions - alerta GPS",
+      `Vehiculo: ${vehicle.name}${vehicle.plate ? ` (${vehicle.plate})` : ""}`,
+      `Evento: ${this.traccarEventLabel(event.type)}`,
+      event.eventTime ? `Hora: ${new Date(event.eventTime).toLocaleString("es-UY", { timeZone: "America/Montevideo" })}` : "",
+      enriched.geofenceName ? `Geozona: ${enriched.geofenceName}` : "",
+      details ? `Detalle: ${details}` : "",
+      enriched.latitude !== undefined && enriched.longitude !== undefined ? `Ubicacion: ${this.roundNumber(enriched.latitude ?? 0, 6)}, ${this.roundNumber(enriched.longitude ?? 0, 6)}` : "",
+      enriched.mapUrl ? `Mapa: ${enriched.mapUrl}` : "",
+      event.positionId ? `Posicion ID: ${event.positionId}` : "",
+      event.geofenceId && !enriched.geofenceName ? `Geozona ID: ${event.geofenceId}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  private async enrichTraccarEvent(settings: TraccarSettingsShape, event: TraccarEvent): Promise<EnrichedTraccarEvent> {
+    const [position, geofenceName] = await Promise.all([
+      event.positionId ? this.fetchTraccarPositionById(settings, event.positionId).catch(() => null) : Promise.resolve(null),
+      event.geofenceId ? this.resolveGeofenceName(settings, event.geofenceId).catch(() => null) : Promise.resolve(null),
+    ]);
+    const latitude = Number(position?.latitude);
+    const longitude = Number(position?.longitude);
+    const hasPosition = Number.isFinite(latitude) && Number.isFinite(longitude);
+
+    return {
+      position,
+      geofenceName,
+      latitude: hasPosition ? latitude : null,
+      longitude: hasPosition ? longitude : null,
+      mapUrl: hasPosition ? this.googleMapsSearchUrl(latitude, longitude) : null,
+    };
+  }
+
+  private async fetchTraccarPositionById(settings: TraccarSettingsShape, positionId: number) {
+    const response = await this.traccarRequest(settings, `/api/positions?id=${encodeURIComponent(String(positionId))}`, {
+      method: "GET",
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as TraccarPosition[] | TraccarPosition;
+    return Array.isArray(data) ? data[0] ?? null : data;
+  }
+
+  private async resolveGeofenceName(settings: TraccarSettingsShape, geofenceId: number) {
+    const [customer, site] = await Promise.all([
+      this.prisma.customer.findFirst({
+        where: { traccarGeofenceId: geofenceId },
+        select: { name: true },
+      }),
+      this.prisma.site.findFirst({
+        where: { traccarGeofenceId: geofenceId },
+        select: { name: true, customer: { select: { name: true } } },
+      }),
+    ]);
+
+    if (site) {
+      return `${site.customer.name} - ${site.name}`;
+    }
+    if (customer) {
+      return customer.name;
+    }
+
+    const response = await this.traccarRequest(settings, `/api/geofences/${geofenceId}`, { method: "GET" });
+    if (!response.ok) {
+      return null;
+    }
+    const data = (await response.json()) as { name?: string };
+    return data.name ?? null;
+  }
+
+  private googleMapsSearchUrl(latitude: number, longitude: number) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latitude},${longitude}`)}`;
+  }
+
+  private traccarEventDetails(event: TraccarEvent) {
+    const attributes = event.attributes ?? {};
+    const alarm = attributes.alarm ? `alarma ${String(attributes.alarm)}` : "";
+    const speed = attributes.speed ? `velocidad ${String(attributes.speed)}` : "";
+    const result = attributes.result ? `resultado ${String(attributes.result)}` : "";
+    const ignition = attributes.ignition !== undefined ? `contacto ${attributes.ignition ? "encendido" : "apagado"}` : "";
+    return [alarm, speed, ignition, result].filter(Boolean).join(" - ");
+  }
+
+  private traccarEventLabel(type: string) {
+    const labels: Record<string, string> = {
+      alarm: "Alarma / panico",
+      deviceOffline: "GPS desconectado",
+      deviceOnline: "GPS conectado",
+      deviceOverspeed: "Exceso de velocidad",
+      deviceMoving: "Vehiculo en movimiento",
+      deviceStopped: "Vehiculo detenido",
+      geofenceEnter: "Entrada a geozona",
+      geofenceExit: "Salida de geozona",
+      ignitionOn: "Ignicion encendida",
+      ignitionOff: "Ignicion apagada",
+      commandResult: "Resultado de comando",
+    };
+    return labels[type] ?? type;
+  }
+
+  private isCriticalTraccarEvent(event: TraccarEvent) {
+    return [
+      "alarm",
+      "deviceOffline",
+      "deviceOnline",
+      "deviceOverspeed",
+      "deviceMoving",
+      "deviceStopped",
+      "geofenceEnter",
+      "geofenceExit",
+      "ignitionOn",
+      "ignitionOff",
+      "commandResult",
+    ].includes(event.type);
+  }
+
+  private withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        setTimeout(() => reject(new Error("Tiempo agotado esperando WhatsApp.")), timeoutMs);
+      }),
+    ]);
+  }
+
   private async fetchTraccarPositions(settings: TraccarSettingsShape, deviceId: string, from: Date, to: Date) {
     const baseUrl = settings.baseUrl?.replace(/\/+$/, "");
     if (!baseUrl) {
@@ -458,6 +1195,29 @@ export class VehiclesService {
     }
 
     return (await response.json()) as TraccarPosition[];
+  }
+
+  private async fetchTraccarCurrentPosition(settings: TraccarSettingsShape, deviceId: string) {
+    const response = await this.traccarRequest(settings, `/api/positions?deviceId=${encodeURIComponent(deviceId)}`, {
+      method: "GET",
+    });
+    if (!response.ok) {
+      throw new Error(`Traccar respondio ${response.status}. No se pudo leer la posicion actual.`);
+    }
+
+    const data = (await response.json()) as TraccarPosition[] | TraccarPosition;
+    return Array.isArray(data) ? data[0] ?? null : data;
+  }
+
+  private async fetchTraccarDevice(settings: TraccarSettingsShape, deviceId: string) {
+    const response = await this.traccarRequest(settings, `/api/devices/${encodeURIComponent(deviceId)}`, {
+      method: "GET",
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as TraccarDevice;
   }
 
   private async upsertTraccarGeofence(
@@ -692,6 +1452,170 @@ export class VehiclesService {
     }, 0);
   }
 
+  private cleanRoutePositions(positions: TraccarPosition[]) {
+    const clean: TraccarPosition[] = [];
+
+    for (const position of positions) {
+      if (position.valid === false || position.outdated) {
+        continue;
+      }
+
+      const accuracy = this.positionAccuracyMeters(position);
+      if (accuracy !== null && accuracy > GPS_MAX_ACCURACY_METERS) {
+        continue;
+      }
+
+      const previous = clean.at(-1);
+      if (!previous) {
+        clean.push(position);
+        continue;
+      }
+
+      const deltaMs = this.positionTime(position).getTime() - this.positionTime(previous).getTime();
+      if (deltaMs <= 0) {
+        continue;
+      }
+
+      const distanceMeters = this.haversineKm(previous.latitude, previous.longitude, position.latitude, position.longitude) * 1000;
+      if (distanceMeters < GPS_MIN_POINT_DISTANCE_METERS) {
+        continue;
+      }
+
+      const segmentSpeedKmh = (distanceMeters / 1000 / (deltaMs / 3600000));
+      const reportedSpeedKmh = this.positionSpeedKmh(position);
+      if (segmentSpeedKmh > GPS_MAX_SEGMENT_SPEED_KMH && reportedSpeedKmh < 90) {
+        continue;
+      }
+
+      clean.push(position);
+    }
+
+    return clean.length >= 2 ? clean : positions;
+  }
+
+  private async matchRouteToRoads(positions: TraccarPosition[]): Promise<MatchedRouteResult> {
+    const fallbackDistanceKm = this.roundNumber(this.calculateMovingDistanceKm(positions), 2);
+    const fallbackRoute = this.serializeRoute(positions);
+    const osrmBaseUrl = this.config.get<string>("OSRM_BASE_URL")?.replace(/\/+$/, "");
+
+    if (!osrmBaseUrl || this.config.get<string>("OSRM_MAP_MATCHING") === "false" || positions.length < 2) {
+      return { mode: "GPS_FILTERED", distanceKm: fallbackDistanceKm, route: fallbackRoute };
+    }
+
+    if (osrmBaseUrl.includes("router.project-osrm.org") && this.config.get<string>("OSRM_ALLOW_PUBLIC") !== "true") {
+      return {
+        mode: "GPS_FILTERED",
+        distanceKm: fallbackDistanceKm,
+        route: fallbackRoute,
+        message: "Ruta filtrada por GPS. Map matching publico desactivado para proteger ubicaciones reales.",
+      };
+    }
+
+    const sample = this.sampleRoutePositions(positions, OSRM_MAX_MATCH_POINTS);
+    try {
+      let response = await this.fetchWithTimeout(this.buildOsrmMatchUrl(osrmBaseUrl, sample, true), 8000);
+      if (!response.ok) {
+        response = await this.fetchWithTimeout(this.buildOsrmMatchUrl(osrmBaseUrl, sample, false), 8000);
+      }
+
+      if (!response.ok) {
+        return {
+          mode: "GPS_FILTERED",
+          distanceKm: fallbackDistanceKm,
+          route: fallbackRoute,
+          message: `Ruta filtrada por GPS. OSRM respondio ${response.status}.`,
+        };
+      }
+
+      const data = (await response.json()) as {
+        code?: string;
+        matchings?: Array<{
+          distance?: number;
+          geometry?: { coordinates?: Array<[number, number]> };
+        }>;
+      };
+      const matching = data.matchings?.[0];
+      const coordinatesMatched = matching?.geometry?.coordinates ?? [];
+      if (data.code !== "Ok" || coordinatesMatched.length < 2) {
+        return {
+          mode: "GPS_FILTERED",
+          distanceKm: fallbackDistanceKm,
+          route: fallbackRoute,
+          message: "Ruta filtrada por GPS. OSRM no pudo ajustar el recorrido a calles.",
+        };
+      }
+
+      const distanceKm = this.roundNumber((matching?.distance ?? 0) / 1000, 2) || fallbackDistanceKm;
+      return {
+        mode: "MATCHED",
+        distanceKm,
+        route: coordinatesMatched.map(([longitude, latitude]) => ({ latitude, longitude })),
+      };
+    } catch (error) {
+      return {
+        mode: "GPS_FILTERED",
+        distanceKm: fallbackDistanceKm,
+        route: fallbackRoute,
+        message: `Ruta filtrada por GPS. No se pudo conectar con OSRM: ${error instanceof Error ? error.message : String(error)}.`,
+      };
+    }
+  }
+
+  private sampleRoutePositions(positions: TraccarPosition[], maxPoints: number) {
+    if (positions.length <= maxPoints) {
+      return positions;
+    }
+
+    const result: TraccarPosition[] = [];
+    const step = (positions.length - 1) / (maxPoints - 1);
+    for (let index = 0; index < maxPoints; index += 1) {
+      result.push(positions[Math.round(index * step)]);
+    }
+
+    return result;
+  }
+
+  private buildOsrmMatchUrl(baseUrl: string, positions: TraccarPosition[], includeTimestamps: boolean) {
+    const coordinates = positions.map((position) => `${position.longitude},${position.latitude}`).join(";");
+    const radiuses = positions.map((position) => Math.max(15, Math.min(this.positionAccuracyMeters(position) ?? 35, 80))).join(";");
+    const url = new URL(`${baseUrl}/match/v1/driving/${coordinates}`);
+    url.searchParams.set("geometries", "geojson");
+    url.searchParams.set("overview", "full");
+    url.searchParams.set("tidy", "true");
+    url.searchParams.set("radiuses", radiuses);
+    if (includeTimestamps) {
+      url.searchParams.set("timestamps", positions.map((position) => Math.floor(this.positionTime(position).getTime() / 1000)).join(";"));
+    }
+
+    return url.toString();
+  }
+
+  private serializeRoute(positions: TraccarPosition[]) {
+    return positions.map((position) => ({
+      time: this.positionTime(position).toISOString(),
+      latitude: position.latitude,
+      longitude: position.longitude,
+      speedKmh: this.roundNumber(this.positionSpeedKmh(position), 1),
+      accuracyMeters: this.positionAccuracyMeters(position),
+    }));
+  }
+
+  private positionAccuracyMeters(position: TraccarPosition) {
+    const raw = position.attributes?.accuracy ?? position.attributes?.hdop ?? position.attributes?.pdop;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  private async fetchWithTimeout(url: string, timeoutMs: number) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private calculateMovingMinutes(positions: TraccarPosition[], speedThresholdKmh: number) {
     if (positions.length < 2) {
       return 0;
@@ -758,7 +1682,52 @@ export class VehiclesService {
   }
 
   private positionTime(position: TraccarPosition) {
-    return new Date(position.fixTime || position.deviceTime || position.serverTime || Date.now());
+    const serverTime = this.parsePositionDate(position.serverTime);
+    const fixTime = this.parsePositionDate(position.fixTime);
+    const deviceTime = this.parsePositionDate(position.deviceTime);
+    const gpsTime = fixTime ?? deviceTime;
+
+    if (serverTime && gpsTime) {
+      const driftMs = Math.abs(gpsTime.getTime() - serverTime.getTime());
+      if (driftMs > 30 * 60 * 1000) {
+        return serverTime;
+      }
+    }
+
+    return gpsTime ?? serverTime ?? new Date();
+  }
+
+  private parsePositionDate(value?: string | null) {
+    if (!value) {
+      return null;
+    }
+
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  private toNullableNumber(value: unknown) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  private toNullableBoolean(value: unknown) {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["true", "1", "on", "yes"].includes(normalized)) {
+        return true;
+      }
+      if (["false", "0", "off", "no"].includes(normalized)) {
+        return false;
+      }
+    }
+    if (typeof value === "number") {
+      return value !== 0;
+    }
+    return null;
   }
 
   private matchesText(left?: string | null, right?: string | null) {

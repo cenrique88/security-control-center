@@ -16,6 +16,8 @@ exports.WorkOrdersController = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const roles_decorator_1 = require("../auth/roles.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 const add_work_order_material_dto_1 = require("./dto/add-work-order-material.dto");
 const create_work_order_dto_1 = require("./dto/create-work-order.dto");
 const return_work_order_material_dto_1 = require("./dto/return-work-order-material.dto");
@@ -97,7 +99,8 @@ __decorate([
 ], WorkOrdersController.prototype, "update", null);
 exports.WorkOrdersController = WorkOrdersController = __decorate([
     (0, common_1.Controller)("work-orders"),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.OWNER, client_1.UserRole.ADMIN, client_1.UserRole.TECHNICIAN, client_1.UserRole.MONITORING),
     __metadata("design:paramtypes", [work_orders_service_1.WorkOrdersService])
 ], WorkOrdersController);
 //# sourceMappingURL=work-orders.controller.js.map

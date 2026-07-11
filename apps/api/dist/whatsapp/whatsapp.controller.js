@@ -14,7 +14,10 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WhatsAppController = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const roles_decorator_1 = require("../auth/roles.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 const send_whatsapp_message_dto_1 = require("./dto/send-whatsapp-message.dto");
 const update_daily_summary_dto_1 = require("./dto/update-daily-summary.dto");
 const whatsapp_service_1 = require("./whatsapp.service");
@@ -83,7 +86,8 @@ __decorate([
 ], WhatsAppController.prototype, "sendDailyMeetingSummary", null);
 exports.WhatsAppController = WhatsAppController = __decorate([
     (0, common_1.Controller)("whatsapp"),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.OWNER, client_1.UserRole.ADMIN, client_1.UserRole.SALES, client_1.UserRole.MONITORING),
     __metadata("design:paramtypes", [whatsapp_service_1.WhatsAppService])
 ], WhatsAppController);
 //# sourceMappingURL=whatsapp.controller.js.map

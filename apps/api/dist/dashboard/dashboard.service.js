@@ -222,7 +222,7 @@ let DashboardService = class DashboardService {
         try {
             return {
                 connected: true,
-                data: await callback(),
+                data: await this.withTimeout(callback(), 1500),
             };
         }
         catch {
@@ -242,6 +242,14 @@ let DashboardService = class DashboardService {
             important: Number(result.data?.important ?? fallback.important),
             activeChats: Number(result.data?.activeChats ?? fallback.activeChats),
         };
+    }
+    withTimeout(promise, timeoutMs) {
+        return Promise.race([
+            promise,
+            new Promise((_, reject) => {
+                setTimeout(() => reject(new Error("Integration timeout")), timeoutMs);
+            }),
+        ]);
     }
     toUyu(amount, currency, exchangeRateUsdUyu = 40) {
         return currency === "USD" ? amount * exchangeRateUsdUyu : amount;

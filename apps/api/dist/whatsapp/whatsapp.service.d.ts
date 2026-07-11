@@ -100,16 +100,16 @@ export declare class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             meetingsCount: number;
             meetings: ({
                 customer: {
-                    email: string | null;
                     name: string;
                     phone: string | null;
+                    email: string | null;
                 };
             } & {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
-                type: import(".prisma/client").$Enums.MeetingType;
                 status: import(".prisma/client").$Enums.MeetingStatus;
+                type: import(".prisma/client").$Enums.MeetingType;
                 notes: string | null;
                 customerId: string;
                 dateTime: Date;
@@ -149,16 +149,16 @@ export declare class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             meetingsCount: number;
             meetings: ({
                 customer: {
-                    email: string | null;
                     name: string;
                     phone: string | null;
+                    email: string | null;
                 };
             } & {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
-                type: import(".prisma/client").$Enums.MeetingType;
                 status: import(".prisma/client").$Enums.MeetingStatus;
+                type: import(".prisma/client").$Enums.MeetingType;
                 notes: string | null;
                 customerId: string;
                 dateTime: Date;
@@ -198,16 +198,16 @@ export declare class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             meetingsCount: number;
             meetings: ({
                 customer: {
-                    email: string | null;
                     name: string;
                     phone: string | null;
+                    email: string | null;
                 };
             } & {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
-                type: import(".prisma/client").$Enums.MeetingType;
                 status: import(".prisma/client").$Enums.MeetingStatus;
+                type: import(".prisma/client").$Enums.MeetingType;
                 notes: string | null;
                 customerId: string;
                 dateTime: Date;
@@ -238,8 +238,12 @@ export declare class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     private openWaRequest;
     private safeOpenWaRequest;
     private openWaSend;
+    private tryOpenWaSend;
+    private restartOpenWaSession;
+    private sleep;
     private responseFailureDetail;
     private safeJson;
+    private fetchWithTimeout;
     private normalizePhone;
     private cleanNullable;
 }

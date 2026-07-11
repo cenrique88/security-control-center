@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const API_URL = process.env.INTERNAL_API_URL ?? "http://localhost:3001";
+const API_URL = process.env.INTERNAL_API_URL ?? "http://127.0.0.1:3001";
 
 type RouteContext = {
   params: Promise<{
@@ -17,6 +17,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
+  return proxyRequest(request, context);
+}
+
+export async function DELETE(request: NextRequest, context: RouteContext) {
   return proxyRequest(request, context);
 }
 
@@ -47,7 +51,8 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
     );
   }
 
-  return new NextResponse(response.body, {
+  const body = await response.arrayBuffer();
+  return new NextResponse(body, {
     status: response.status,
     headers: {
       "Content-Type": response.headers.get("Content-Type") ?? "application/json",

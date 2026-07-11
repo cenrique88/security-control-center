@@ -14,7 +14,10 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DispatchController = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const roles_decorator_1 = require("../auth/roles.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 const dispatch_service_1 = require("./dispatch.service");
 const save_dispatch_stops_dto_1 = require("./dto/save-dispatch-stops.dto");
 let DispatchController = class DispatchController {
@@ -76,7 +79,8 @@ __decorate([
 ], DispatchController.prototype, "suppliers", null);
 exports.DispatchController = DispatchController = __decorate([
     (0, common_1.Controller)("dispatch"),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.OWNER, client_1.UserRole.ADMIN, client_1.UserRole.TECHNICIAN, client_1.UserRole.MONITORING),
     __metadata("design:paramtypes", [dispatch_service_1.DispatchService])
 ], DispatchController);
 //# sourceMappingURL=dispatch.controller.js.map

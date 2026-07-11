@@ -1,12 +1,15 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { MeetingStatus, MeetingType } from "@prisma/client";
+import { MeetingStatus, MeetingType, UserRole } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Roles } from "../auth/roles.decorator";
+import { RolesGuard } from "../auth/roles.guard";
 import { CreateMeetingDto } from "./dto/create-meeting.dto";
 import { UpdateMeetingDto } from "./dto/update-meeting.dto";
 import { MeetingsService } from "./meetings.service";
 
 @Controller("meetings")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.SALES)
 export class MeetingsController {
   constructor(private readonly meetingsService: MeetingsService) {}
 

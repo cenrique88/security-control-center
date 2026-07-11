@@ -16,6 +16,8 @@ exports.InventoryController = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const roles_decorator_1 = require("../auth/roles.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 const create_inventory_item_dto_1 = require("./dto/create-inventory-item.dto");
 const create_inventory_movement_dto_1 = require("./dto/create-inventory-movement.dto");
 const import_invoice_dto_1 = require("./dto/import-invoice.dto");
@@ -135,7 +137,8 @@ __decorate([
 ], InventoryController.prototype, "deleteItem", null);
 exports.InventoryController = InventoryController = __decorate([
     (0, common_1.Controller)("inventory"),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.OWNER, client_1.UserRole.ADMIN, client_1.UserRole.TECHNICIAN),
     __metadata("design:paramtypes", [inventory_service_1.InventoryService])
 ], InventoryController);
 //# sourceMappingURL=inventory.controller.js.map

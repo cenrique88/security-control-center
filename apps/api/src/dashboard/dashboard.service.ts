@@ -243,7 +243,7 @@ export class DashboardService {
     try {
       return {
         connected: true,
-        data: await callback(),
+        data: await this.withTimeout(callback(), 1500),
       };
     } catch {
       return {
@@ -272,6 +272,15 @@ export class DashboardService {
       important: Number(result.data?.important ?? fallback.important),
       activeChats: Number(result.data?.activeChats ?? fallback.activeChats),
     };
+  }
+
+  private withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        setTimeout(() => reject(new Error("Integration timeout")), timeoutMs);
+      }),
+    ]);
   }
 
   private toUyu(amount: number, currency?: string | null, exchangeRateUsdUyu = 40) {

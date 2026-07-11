@@ -22,6 +22,10 @@ let AuthService = class AuthService {
         this.jwtService = jwtService;
     }
     async register(dto) {
+        const existingUsers = await this.prisma.user.count();
+        if (existingUsers > 0) {
+            throw new common_1.ConflictException("El registro publico esta cerrado. Crea usuarios desde Administracion.");
+        }
         const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
         if (existing) {
             throw new common_1.ConflictException("Email already registered");
@@ -31,7 +35,7 @@ let AuthService = class AuthService {
                 name: dto.name,
                 email: dto.email,
                 passwordHash: await (0, bcryptjs_1.hash)(dto.password, 12),
-                role: dto.role ?? "ADMIN",
+                role: "OWNER",
             },
             select: { id: true, name: true, email: true, role: true },
         });

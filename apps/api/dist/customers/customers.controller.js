@@ -16,6 +16,8 @@ exports.CustomersController = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const roles_decorator_1 = require("../auth/roles.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 const customers_service_1 = require("./customers.service");
 const create_customer_document_dto_1 = require("./dto/create-customer-document.dto");
 const create_customer_dto_1 = require("./dto/create-customer.dto");
@@ -126,7 +128,8 @@ __decorate([
 ], CustomersController.prototype, "deleteDocument", null);
 exports.CustomersController = CustomersController = __decorate([
     (0, common_1.Controller)("customers"),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.OWNER, client_1.UserRole.ADMIN, client_1.UserRole.SALES, client_1.UserRole.MONITORING),
     __metadata("design:paramtypes", [customers_service_1.CustomersService])
 ], CustomersController);
 //# sourceMappingURL=customers.controller.js.map

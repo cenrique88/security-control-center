@@ -16,6 +16,8 @@ exports.DevicesController = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const roles_decorator_1 = require("../auth/roles.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 const devices_service_1 = require("./devices.service");
 const create_device_dto_1 = require("./dto/create-device.dto");
 let DevicesController = class DevicesController {
@@ -50,7 +52,8 @@ __decorate([
 ], DevicesController.prototype, "create", null);
 exports.DevicesController = DevicesController = __decorate([
     (0, common_1.Controller)("devices"),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.OWNER, client_1.UserRole.ADMIN, client_1.UserRole.TECHNICIAN),
     __metadata("design:paramtypes", [devices_service_1.DevicesService])
 ], DevicesController);
 //# sourceMappingURL=devices.controller.js.map

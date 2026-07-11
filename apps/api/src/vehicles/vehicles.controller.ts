@@ -1,12 +1,17 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { UserRole } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Roles } from "../auth/roles.decorator";
+import { RolesGuard } from "../auth/roles.guard";
 import { CreateVehicleDto } from "./dto/create-vehicle.dto";
+import { SendTraccarCommandDto } from "./dto/send-traccar-command.dto";
 import { UpdateTraccarSettingsDto } from "./dto/update-traccar-settings.dto";
 import { UpdateVehicleDto } from "./dto/update-vehicle.dto";
 import { VehiclesService } from "./vehicles.service";
 
 @Controller("vehicles")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.MONITORING)
 export class VehiclesController {
   constructor(private readonly vehiclesService: VehiclesService) {}
 
@@ -36,6 +41,36 @@ export class VehiclesController {
   @Get(":id/traccar/daily")
   traccarDaily(@Param("id") id: string, @Query("date") date?: string) {
     return this.vehiclesService.traccarDailySummary(id, date);
+  }
+
+  @Get(":id/traccar/live")
+  traccarLive(@Param("id") id: string) {
+    return this.vehiclesService.traccarLivePosition(id);
+  }
+
+  @Get(":id/traccar/events")
+  traccarEvents(@Param("id") id: string, @Query("date") date?: string) {
+    return this.vehiclesService.traccarEvents(id, date);
+  }
+
+  @Get(":id/traccar/alerts")
+  traccarAlertLogs(@Param("id") id: string) {
+    return this.vehiclesService.traccarAlertLogs(id);
+  }
+
+  @Post(":id/traccar/command")
+  sendTraccarCommand(@Param("id") id: string, @Body() dto: SendTraccarCommandDto) {
+    return this.vehiclesService.sendTraccarCommand(id, dto);
+  }
+
+  @Post(":id/traccar/test-whatsapp")
+  sendVehicleTestWhatsApp(@Param("id") id: string) {
+    return this.vehiclesService.sendVehicleTestWhatsApp(id);
+  }
+
+  @Post(":id/traccar/sync-alerts")
+  syncVehicleAlerts(@Param("id") id: string) {
+    return this.vehiclesService.syncVehicleAlerts(id);
   }
 
   @Post()

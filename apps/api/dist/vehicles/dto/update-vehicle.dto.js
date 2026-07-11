@@ -14,9 +14,25 @@ const class_validator_1 = require("class-validator");
 class UpdateVehicleDto {
     name;
     plate;
+    make;
+    model;
+    color;
+    colorHex;
+    icon;
+    logoUrl;
     traccarDeviceId;
     fuelKmPerLiter;
     active;
+    monitoringPhones;
+    clientShareUrl;
+    gpsMonitoringEnabled;
+    gpsWhatsappAlerts;
+    gpsEngineCommandsEnabled;
+    gpsAutoEngineStopOnAlarm;
+    gpsCommandTextChannel;
+    gpsStatusCommand;
+    gpsEngineStopCommand;
+    gpsEngineResumeCommand;
 }
 exports.UpdateVehicleDto = UpdateVehicleDto;
 __decorate([
@@ -33,6 +49,36 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
+], UpdateVehicleDto.prototype, "make", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateVehicleDto.prototype, "model", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateVehicleDto.prototype, "color", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateVehicleDto.prototype, "colorHex", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateVehicleDto.prototype, "icon", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateVehicleDto.prototype, "logoUrl", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
 ], UpdateVehicleDto.prototype, "traccarDeviceId", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
@@ -45,4 +91,54 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], UpdateVehicleDto.prototype, "active", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateVehicleDto.prototype, "monitoringPhones", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateVehicleDto.prototype, "clientShareUrl", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], UpdateVehicleDto.prototype, "gpsMonitoringEnabled", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], UpdateVehicleDto.prototype, "gpsWhatsappAlerts", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], UpdateVehicleDto.prototype, "gpsEngineCommandsEnabled", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], UpdateVehicleDto.prototype, "gpsAutoEngineStopOnAlarm", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], UpdateVehicleDto.prototype, "gpsCommandTextChannel", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateVehicleDto.prototype, "gpsStatusCommand", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateVehicleDto.prototype, "gpsEngineStopCommand", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateVehicleDto.prototype, "gpsEngineResumeCommand", void 0);
 //# sourceMappingURL=update-vehicle.dto.js.map

@@ -77,6 +77,12 @@ enum InventoryMovementType {
   ADJUST
 }
 
+enum AuditSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
 enum DispatchPlaceType {
   CLIENT
   FUTURE_CLIENT
@@ -107,6 +113,29 @@ model User {
   role         UserRole @default(ADMIN)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  auditLogs    AuditLog[]
+}
+
+model AuditLog {
+  id          String        @id @default(cuid())
+  module      String
+  action      String
+  entityType  String
+  entityId    String?
+  severity    AuditSeverity @default(INFO)
+  actorId     String?
+  actorName   String?
+  summary     String
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+  actor       User?         @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([module])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([severity])
+  @@index([actorId])
+  @@index([createdAt])
 }
 
 model Customer {
@@ -539,16 +568,60 @@ model WhatsAppDailySummarySettings {
 }
 
 model Vehicle {
+  id                         String   @id @default(cuid())
+  name                       String
+  plate                      String?  @unique
+  make                       String?
+  model                      String?
+  color                      String?
+  colorHex                   String?
+  icon                       String?
+  logoUrl                    String?
+  traccarDeviceId            String?
+  fuelKmPerLiter             Decimal? @db.Decimal(8, 2)
+  active                     Boolean  @default(true)
+  monitoringPhones           String?
+  clientShareUrl             String?
+  gpsMonitoringEnabled       Boolean  @default(false)
+  gpsWhatsappAlerts          Boolean  @default(false)
+  gpsEngineCommandsEnabled   Boolean  @default(false)
+  gpsAutoEngineStopOnAlarm   Boolean  @default(false)
+  gpsCommandTextChannel      Boolean  @default(false)
+  gpsStatusCommand           String?
+  gpsEngineStopCommand       String?
+  gpsEngineResumeCommand     String?
+  gpsLastEventId             Int?
+  gpsLastAlertAt             DateTime?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  dispatchStops              DispatchStop[]
+  payments                   Payment[]
+  alertLogs                  VehicleAlertLog[]
+}
+
+model VehicleAlertLog {
   id              String   @id @default(cuid())
-  name            String
-  plate           String?  @unique
+  vehicleId       String
+  eventId         Int?
+  eventType       String
+  phone           String
+  status          String
+  message         String   @db.Text
+  error           String?  @db.Text
   traccarDeviceId String?
-  fuelKmPerLiter  Decimal? @db.Decimal(8, 2)
-  active          Boolean  @default(true)
+  geofenceId      Int?
+  geofenceName    String?
+  positionId      Int?
+  latitude        Decimal? @db.Decimal(10, 7)
+  longitude       Decimal? @db.Decimal(10, 7)
+  mapUrl          String?
+  eventTime       DateTime?
   createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  dispatchStops   DispatchStop[]
-  payments        Payment[]
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, createdAt])
+  @@index([eventId])
+  @@index([eventType])
 }
 
 model DispatchStop {

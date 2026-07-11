@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
+const audit_module_1 = require("./audit/audit.module");
 const auth_module_1 = require("./auth/auth.module");
 const customers_module_1 = require("./customers/customers.module");
 const dashboard_module_1 = require("./dashboard/dashboard.module");
@@ -22,6 +23,7 @@ const payments_module_1 = require("./payments/payments.module");
 const price_book_module_1 = require("./price-book/price-book.module");
 const prisma_module_1 = require("./prisma/prisma.module");
 const quotes_module_1 = require("./quotes/quotes.module");
+const users_module_1 = require("./users/users.module");
 const vehicles_module_1 = require("./vehicles/vehicles.module");
 const whatsapp_module_1 = require("./whatsapp/whatsapp.module");
 const work_orders_module_1 = require("./work-orders/work-orders.module");
@@ -33,6 +35,7 @@ exports.AppModule = AppModule = __decorate([
         imports: [
             config_1.ConfigModule.forRoot({ isGlobal: true }),
             prisma_module_1.PrismaModule,
+            audit_module_1.AuditModule,
             auth_module_1.AuthModule,
             dashboard_module_1.DashboardModule,
             customers_module_1.CustomersModule,
@@ -42,6 +45,7 @@ exports.AppModule = AppModule = __decorate([
             work_orders_module_1.WorkOrdersModule,
             quotes_module_1.QuotesModule,
             payments_module_1.PaymentsModule,
+            users_module_1.UsersModule,
             vehicles_module_1.VehiclesModule,
             inventory_module_1.InventoryModule,
             price_book_module_1.PriceBookModule,

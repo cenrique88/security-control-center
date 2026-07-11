@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, QuoteItemType, QuotePricingMode, QuoteStatus, ServiceType } from "@prisma/client";
+import { AuditSeverity, Prisma, QuoteItemType, QuotePricingMode, QuoteStatus, ServiceType } from "@prisma/client";
+import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateQuoteDto, CreateQuoteItemDto } from "./dto/create-quote.dto";
 import { UpdateQuoteDto } from "./dto/update-quote.dto";
@@ -41,7 +42,10 @@ type QuoteItemInput = {
 
 @Injectable()
 export class QuotesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async list(filters: QuoteFilters) {
     const where: Prisma.QuoteWhereInput = {};
@@ -99,7 +103,7 @@ export class QuotesService {
       refreshLaborItem: true,
     });
 
-    return this.prisma.$transaction(async (tx) => {
+    const quote = await this.prisma.$transaction(async (tx) => {
       const quote = await tx.quote.create({
         data: {
           customerId: dto.customerId,
@@ -154,6 +158,25 @@ export class QuotesService {
 
       return quote;
     });
+    await this.audit.record({
+      module: "QUOTES",
+      action: "QUOTE_CREATED",
+      entityType: "Quote",
+      entityId: quote.id,
+      severity: quote.status === "APPROVED" ? AuditSeverity.WARNING : AuditSeverity.INFO,
+      summary: `Presupuesto creado: ${quote.number} - ${quote.title}`,
+      metadata: {
+        customerId: quote.customerId,
+        customerName: quote.customer.name,
+        status: quote.status,
+        total: Number(quote.total),
+        currency: quote.currency,
+        costTotal: Number(quote.costTotal),
+        estimatedProfit: Number(quote.estimatedProfit),
+      },
+    });
+
+    return quote;
   }
 
   async update(id: string, dto: UpdateQuoteDto) {
@@ -210,7 +233,7 @@ export class QuotesService {
             ? new Date()
             : undefined;
 
-    return this.prisma.$transaction(async (tx) => {
+    const quote = await this.prisma.$transaction(async (tx) => {
       if (dto.items) {
         await tx.quoteItem.deleteMany({ where: { quoteId: id } });
       }
@@ -272,6 +295,30 @@ export class QuotesService {
 
       return quote;
     });
+    await this.audit.record({
+      module: "QUOTES",
+      action: quote.status === "APPROVED" && current.status !== "APPROVED" ? "QUOTE_APPROVED" : "QUOTE_UPDATED",
+      entityType: "Quote",
+      entityId: quote.id,
+      severity: quote.status === "APPROVED" && current.status !== "APPROVED" ? AuditSeverity.CRITICAL : AuditSeverity.WARNING,
+      summary:
+        quote.status === "APPROVED" && current.status !== "APPROVED"
+          ? `Presupuesto aprobado: ${quote.number} - ${quote.title}`
+          : `Presupuesto actualizado: ${quote.number} - ${quote.title}`,
+      metadata: {
+        customerId: quote.customerId,
+        customerName: quote.customer.name,
+        previousStatus: current.status,
+        status: quote.status,
+        total: Number(quote.total),
+        currency: quote.currency,
+        costTotal: Number(quote.costTotal),
+        estimatedProfit: Number(quote.estimatedProfit),
+        itemsUpdated: Boolean(dto.items),
+      },
+    });
+
+    return quote;
   }
 
   async remove(id: string) {
@@ -283,7 +330,7 @@ export class QuotesService {
       throw new NotFoundException("Quote not found");
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const deleted = await this.prisma.$transaction(async (tx) => {
       await tx.payment.updateMany({
         where: { quoteId: id },
         data: { quoteId: null },
@@ -294,6 +341,23 @@ export class QuotesService {
         include: this.includeCustomer(),
       });
     });
+    await this.audit.record({
+      module: "QUOTES",
+      action: "QUOTE_DELETED",
+      entityType: "Quote",
+      entityId: deleted.id,
+      severity: AuditSeverity.CRITICAL,
+      summary: `Presupuesto eliminado: ${deleted.number} - ${deleted.title}`,
+      metadata: {
+        customerId: deleted.customerId,
+        customerName: deleted.customer.name,
+        status: deleted.status,
+        total: Number(deleted.total),
+        currency: deleted.currency,
+      },
+    });
+
+    return deleted;
   }
 
   private includeCustomer() {
@@ -352,8 +416,21 @@ export class QuotesService {
   }
 
   private async nextNumber() {
-    const count = await this.prisma.quote.count();
-    return `P-${String(count + 1).padStart(5, "0")}`;
+    const quotes = await this.prisma.quote.findMany({
+      where: {
+        number: {
+          startsWith: "P-",
+        },
+      },
+      select: {
+        number: true,
+      },
+    });
+    const lastNumber = quotes.reduce((max, quote) => {
+      const value = Number(quote.number?.replace(/\D/g, "")) || 0;
+      return Math.max(max, value);
+    }, 0);
+    return `P-${String(lastNumber + 1).padStart(5, "0")}`;
   }
 
   private roundMoney(value: number) {

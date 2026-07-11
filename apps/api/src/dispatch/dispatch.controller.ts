@@ -1,10 +1,14 @@
 import { Body, Controller, Get, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { UserRole } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Roles } from "../auth/roles.decorator";
+import { RolesGuard } from "../auth/roles.guard";
 import { DispatchService } from "./dispatch.service";
 import { SaveDispatchStopsDto } from "./dto/save-dispatch-stops.dto";
 
 @Controller("dispatch")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.TECHNICIAN, UserRole.MONITORING)
 export class DispatchController {
   constructor(private readonly dispatchService: DispatchService) {}
 

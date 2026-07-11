@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { UpdatePaymentDto } from "./dto/update-payment.dto";
@@ -13,46 +14,27 @@ type PaymentFilters = {
 };
 export declare class PaymentsService {
     private readonly prisma;
-    constructor(prisma: PrismaService);
+    private readonly audit;
+    constructor(prisma: PrismaService, audit: AuditService);
     list(filters: PaymentFilters): Promise<({
-        customer: {
-            id: string;
-            name: string;
-            email: string | null;
-            phone: string | null;
-            type: import(".prisma/client").$Enums.CustomerType;
-        };
-        quote: {
-            number: string;
-            id: string;
-            title: string;
-            total: Prisma.Decimal;
-        } | null;
-        workOrder: {
-            id: string;
-            status: import(".prisma/client").$Enums.WorkOrderStatus;
-            title: string;
-        } | null;
         vehicle: {
             id: string;
             name: string;
             plate: string | null;
         } | null;
-        inventoryItem: {
+        customer: {
             id: string;
-            reference: string;
             name: string;
-            sku: string | null;
-            unit: string;
-            stock: number;
-            sourceType: string;
-        } | null;
+            phone: string | null;
+            email: string | null;
+            type: import(".prisma/client").$Enums.CustomerType;
+        };
         inventoryMovements: {
             id: string;
-            quantity: number;
-            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
+            currency: string | null;
+            quantity: number;
             stockAfter: number;
             unitCost: Prisma.Decimal | null;
             totalCost: Prisma.Decimal | null;
@@ -63,67 +45,67 @@ export declare class PaymentsService {
                 unit: string;
             };
         }[];
+        workOrder: {
+            id: string;
+            status: import(".prisma/client").$Enums.WorkOrderStatus;
+            title: string;
+        } | null;
+        inventoryItem: {
+            id: string;
+            name: string;
+            reference: string;
+            sku: string | null;
+            unit: string;
+            stock: number;
+            sourceType: string;
+        } | null;
+        quote: {
+            number: string;
+            id: string;
+            title: string;
+            total: Prisma.Decimal;
+        } | null;
     } & {
         id: string;
-        customerId: string;
-        quoteId: string | null;
-        workOrderId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         vehicleId: string | null;
-        inventoryItemId: string | null;
-        transactionType: string;
+        reference: string | null;
+        notes: string | null;
+        customerId: string;
+        method: string | null;
+        workOrderId: string | null;
         category: string;
+        currency: string;
+        quoteId: string | null;
+        transactionType: string;
         concept: string;
         amount: Prisma.Decimal;
         quantity: number | null;
         unitPrice: Prisma.Decimal | null;
-        currency: string;
-        method: string | null;
-        reference: string | null;
-        notes: string | null;
         dueDate: Date | null;
         paidAt: Date | null;
-        createdAt: Date;
-        updatedAt: Date;
+        inventoryItemId: string | null;
     })[]>;
     create(dto: CreatePaymentDto): Promise<{
-        customer: {
-            id: string;
-            name: string;
-            email: string | null;
-            phone: string | null;
-            type: import(".prisma/client").$Enums.CustomerType;
-        };
-        quote: {
-            number: string;
-            id: string;
-            title: string;
-            total: Prisma.Decimal;
-        } | null;
-        workOrder: {
-            id: string;
-            status: import(".prisma/client").$Enums.WorkOrderStatus;
-            title: string;
-        } | null;
         vehicle: {
             id: string;
             name: string;
             plate: string | null;
         } | null;
-        inventoryItem: {
+        customer: {
             id: string;
-            reference: string;
             name: string;
-            sku: string | null;
-            unit: string;
-            stock: number;
-            sourceType: string;
-        } | null;
+            phone: string | null;
+            email: string | null;
+            type: import(".prisma/client").$Enums.CustomerType;
+        };
         inventoryMovements: {
             id: string;
-            quantity: number;
-            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
+            currency: string | null;
+            quantity: number;
             stockAfter: number;
             unitCost: Prisma.Decimal | null;
             totalCost: Prisma.Decimal | null;
@@ -134,67 +116,67 @@ export declare class PaymentsService {
                 unit: string;
             };
         }[];
+        workOrder: {
+            id: string;
+            status: import(".prisma/client").$Enums.WorkOrderStatus;
+            title: string;
+        } | null;
+        inventoryItem: {
+            id: string;
+            name: string;
+            reference: string;
+            sku: string | null;
+            unit: string;
+            stock: number;
+            sourceType: string;
+        } | null;
+        quote: {
+            number: string;
+            id: string;
+            title: string;
+            total: Prisma.Decimal;
+        } | null;
     } & {
         id: string;
-        customerId: string;
-        quoteId: string | null;
-        workOrderId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         vehicleId: string | null;
-        inventoryItemId: string | null;
-        transactionType: string;
+        reference: string | null;
+        notes: string | null;
+        customerId: string;
+        method: string | null;
+        workOrderId: string | null;
         category: string;
+        currency: string;
+        quoteId: string | null;
+        transactionType: string;
         concept: string;
         amount: Prisma.Decimal;
         quantity: number | null;
         unitPrice: Prisma.Decimal | null;
-        currency: string;
-        method: string | null;
-        reference: string | null;
-        notes: string | null;
         dueDate: Date | null;
         paidAt: Date | null;
-        createdAt: Date;
-        updatedAt: Date;
+        inventoryItemId: string | null;
     }>;
     update(id: string, dto: UpdatePaymentDto): Promise<{
-        customer: {
-            id: string;
-            name: string;
-            email: string | null;
-            phone: string | null;
-            type: import(".prisma/client").$Enums.CustomerType;
-        };
-        quote: {
-            number: string;
-            id: string;
-            title: string;
-            total: Prisma.Decimal;
-        } | null;
-        workOrder: {
-            id: string;
-            status: import(".prisma/client").$Enums.WorkOrderStatus;
-            title: string;
-        } | null;
         vehicle: {
             id: string;
             name: string;
             plate: string | null;
         } | null;
-        inventoryItem: {
+        customer: {
             id: string;
-            reference: string;
             name: string;
-            sku: string | null;
-            unit: string;
-            stock: number;
-            sourceType: string;
-        } | null;
+            phone: string | null;
+            email: string | null;
+            type: import(".prisma/client").$Enums.CustomerType;
+        };
         inventoryMovements: {
             id: string;
-            quantity: number;
-            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
+            currency: string | null;
+            quantity: number;
             stockAfter: number;
             unitCost: Prisma.Decimal | null;
             totalCost: Prisma.Decimal | null;
@@ -205,67 +187,67 @@ export declare class PaymentsService {
                 unit: string;
             };
         }[];
+        workOrder: {
+            id: string;
+            status: import(".prisma/client").$Enums.WorkOrderStatus;
+            title: string;
+        } | null;
+        inventoryItem: {
+            id: string;
+            name: string;
+            reference: string;
+            sku: string | null;
+            unit: string;
+            stock: number;
+            sourceType: string;
+        } | null;
+        quote: {
+            number: string;
+            id: string;
+            title: string;
+            total: Prisma.Decimal;
+        } | null;
     } & {
         id: string;
-        customerId: string;
-        quoteId: string | null;
-        workOrderId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         vehicleId: string | null;
-        inventoryItemId: string | null;
-        transactionType: string;
+        reference: string | null;
+        notes: string | null;
+        customerId: string;
+        method: string | null;
+        workOrderId: string | null;
         category: string;
+        currency: string;
+        quoteId: string | null;
+        transactionType: string;
         concept: string;
         amount: Prisma.Decimal;
         quantity: number | null;
         unitPrice: Prisma.Decimal | null;
-        currency: string;
-        method: string | null;
-        reference: string | null;
-        notes: string | null;
         dueDate: Date | null;
         paidAt: Date | null;
-        createdAt: Date;
-        updatedAt: Date;
+        inventoryItemId: string | null;
     }>;
     remove(id: string): Promise<{
-        customer: {
-            id: string;
-            name: string;
-            email: string | null;
-            phone: string | null;
-            type: import(".prisma/client").$Enums.CustomerType;
-        };
-        quote: {
-            number: string;
-            id: string;
-            title: string;
-            total: Prisma.Decimal;
-        } | null;
-        workOrder: {
-            id: string;
-            status: import(".prisma/client").$Enums.WorkOrderStatus;
-            title: string;
-        } | null;
         vehicle: {
             id: string;
             name: string;
             plate: string | null;
         } | null;
-        inventoryItem: {
+        customer: {
             id: string;
-            reference: string;
             name: string;
-            sku: string | null;
-            unit: string;
-            stock: number;
-            sourceType: string;
-        } | null;
+            phone: string | null;
+            email: string | null;
+            type: import(".prisma/client").$Enums.CustomerType;
+        };
         inventoryMovements: {
             id: string;
-            quantity: number;
-            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
+            currency: string | null;
+            quantity: number;
             stockAfter: number;
             unitCost: Prisma.Decimal | null;
             totalCost: Prisma.Decimal | null;
@@ -276,27 +258,47 @@ export declare class PaymentsService {
                 unit: string;
             };
         }[];
+        workOrder: {
+            id: string;
+            status: import(".prisma/client").$Enums.WorkOrderStatus;
+            title: string;
+        } | null;
+        inventoryItem: {
+            id: string;
+            name: string;
+            reference: string;
+            sku: string | null;
+            unit: string;
+            stock: number;
+            sourceType: string;
+        } | null;
+        quote: {
+            number: string;
+            id: string;
+            title: string;
+            total: Prisma.Decimal;
+        } | null;
     } & {
         id: string;
-        customerId: string;
-        quoteId: string | null;
-        workOrderId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         vehicleId: string | null;
-        inventoryItemId: string | null;
-        transactionType: string;
+        reference: string | null;
+        notes: string | null;
+        customerId: string;
+        method: string | null;
+        workOrderId: string | null;
         category: string;
+        currency: string;
+        quoteId: string | null;
+        transactionType: string;
         concept: string;
         amount: Prisma.Decimal;
         quantity: number | null;
         unitPrice: Prisma.Decimal | null;
-        currency: string;
-        method: string | null;
-        reference: string | null;
-        notes: string | null;
         dueDate: Date | null;
         paidAt: Date | null;
-        createdAt: Date;
-        updatedAt: Date;
+        inventoryItemId: string | null;
     }>;
     private includeCustomer;
     private ensureCustomer;

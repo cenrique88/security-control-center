@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { CustomerType } from "@prisma/client";
+import { CustomerType, UserRole } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Roles } from "../auth/roles.decorator";
+import { RolesGuard } from "../auth/roles.guard";
 import { CustomersService } from "./customers.service";
 import { CreateCustomerDocumentDto } from "./dto/create-customer-document.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
@@ -8,7 +10,8 @@ import { CreateSiteDto } from "./dto/create-site.dto";
 import { UpdateCustomerDto } from "./dto/update-customer.dto";
 
 @Controller("customers")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.SALES, UserRole.MONITORING)
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 

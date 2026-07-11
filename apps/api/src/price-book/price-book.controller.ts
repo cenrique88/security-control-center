@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { QuoteItemType, ServiceType } from "@prisma/client";
+import { QuoteItemType, ServiceType, UserRole } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Roles } from "../auth/roles.decorator";
+import { RolesGuard } from "../auth/roles.guard";
 import { UpdateLaborPointRateDto } from "./dto/update-labor-point-rate.dto";
 import { UpsertCustomerLaborPointRateDto } from "./dto/upsert-customer-labor-point-rate.dto";
 import { UpsertCustomerPriceOverrideDto } from "./dto/upsert-customer-price-override.dto";
@@ -8,7 +10,8 @@ import { UpsertPriceBookItemDto } from "./dto/upsert-price-book-item.dto";
 import { PriceBookService } from "./price-book.service";
 
 @Controller("price-book")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.SALES)
 export class PriceBookController {
   constructor(private readonly priceBookService: PriceBookService) {}
 

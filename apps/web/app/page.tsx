@@ -2,8 +2,10 @@
 
 import {
   Bell,
+  BatteryCharging,
   CalendarDays,
   Car,
+  Gauge,
   Handshake,
   ClipboardList,
   Copy,
@@ -14,20 +16,29 @@ import {
   LogOut,
   Mail,
   MapPin,
+  Maximize2,
   Menu,
   MessageSquare,
+  Minimize2,
+  Navigation,
   Package,
   PackagePlus,
   Paperclip,
   PhoneCall,
   Plus,
+  Power,
+  PowerOff,
   Printer,
   RefreshCw,
   Save,
   Search,
   ShieldCheck,
+  ShieldAlert,
+  Signal,
   Trash2,
+  Truck,
   Users,
+  UserCog,
   Video,
   Wrench,
   X,
@@ -35,9 +46,12 @@ import {
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { ChangeEvent, CSSProperties, FormEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import maplibregl, { type LngLatLike, type Map as MapLibreMap, type Marker as MapLibreMarker, type Popup as MapLibrePopup, type StyleSpecification } from "maplibre-gl";
 import {
   ApiError,
   apiRequest,
+  AuditLog,
+  AuditLogResponse,
   AuthUser,
   Customer,
   CustomerDocument,
@@ -78,9 +92,16 @@ import {
   SitePayload,
   TraccarGeofenceSync,
   TraccarSettings,
+  UserAccount,
+  UserPayload,
+  UserRole,
   Vehicle,
+  VehicleAlertLogsResponse,
   VehicleDailySummary,
+  VehicleLivePosition,
   VehiclePayload,
+  VehicleTraccarCommandResponse,
+  VehicleTraccarEventsResponse,
   WhatsAppChat,
   WhatsAppDailyMeetingSummary,
   WhatsAppDailyMeetingSummaryPayload,
@@ -105,9 +126,30 @@ const modules = [
   { name: "Almacen", icon: Package },
   { name: "Equipos", icon: Video },
   { name: "Vehiculos", icon: Car },
+  { name: "Auditoria", icon: ShieldAlert },
+  { name: "Usuarios", icon: UserCog },
   { name: "Gmail", icon: Mail },
   { name: "WhatsApp", icon: MessageSquare },
 ];
+
+const moduleRoleAccess: Record<string, UserRole[]> = {
+  Dashboard: ["OWNER", "ADMIN", "TECHNICIAN", "SALES", "MONITORING"],
+  Clientes: ["OWNER", "ADMIN", "SALES", "MONITORING"],
+  Tercerizados: ["OWNER", "ADMIN", "SALES"],
+  Trabajos: ["OWNER", "ADMIN", "TECHNICIAN", "MONITORING"],
+  Agenda: ["OWNER", "ADMIN", "TECHNICIAN", "SALES", "MONITORING"],
+  Despachador: ["OWNER", "ADMIN", "TECHNICIAN", "MONITORING"],
+  Reuniones: ["OWNER", "ADMIN", "SALES"],
+  Presupuestos: ["OWNER", "ADMIN", "SALES"],
+  "Gastos e Ingresos": ["OWNER", "ADMIN"],
+  Almacen: ["OWNER", "ADMIN", "TECHNICIAN"],
+  Equipos: ["OWNER", "ADMIN", "TECHNICIAN"],
+  Vehiculos: ["OWNER", "ADMIN", "MONITORING"],
+  Auditoria: ["OWNER", "ADMIN"],
+  Usuarios: ["OWNER", "ADMIN"],
+  Gmail: ["OWNER", "ADMIN", "SALES", "MONITORING"],
+  WhatsApp: ["OWNER", "ADMIN", "SALES", "MONITORING"],
+};
 
 const statusLabels: Record<CustomerStatus, string> = {
   ACTIVE: "Activo",
@@ -463,9 +505,32 @@ const emptyPaymentForm: PaymentPayload = {
 const emptyVehicleForm: VehiclePayload = {
   name: "",
   plate: "",
+  make: "",
+  model: "",
+  color: "",
+  colorHex: "#19a89b",
+  icon: "car",
+  logoUrl: "",
   traccarDeviceId: "",
   fuelKmPerLiter: 10,
   active: true,
+  monitoringPhones: "",
+  clientShareUrl: "",
+  gpsMonitoringEnabled: false,
+  gpsWhatsappAlerts: false,
+  gpsEngineCommandsEnabled: false,
+  gpsAutoEngineStopOnAlarm: false,
+  gpsCommandTextChannel: false,
+  gpsStatusCommand: "STATUS#",
+  gpsEngineStopCommand: "",
+  gpsEngineResumeCommand: "",
+};
+
+const emptyUserForm: UserPayload = {
+  name: "",
+  email: "",
+  password: "",
+  role: "TECHNICIAN",
 };
 
 const emptyInventoryForm: InventoryItemPayload = {
@@ -659,8 +724,10 @@ export default function Home() {
   const [priceBookItems, setPriceBookItems] = useState<PriceBookItem[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [users, setUsers] = useState<UserAccount[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [inventoryCatalogMatches, setInventoryCatalogMatches] = useState<InventoryItem[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [gmailStatus, setGmailStatus] = useState<GmailStatus>(fallbackGmailStatus);
   const [gmailSync, setGmailSync] = useState<GmailSync>(emptyGmailSync);
   const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus>(fallbackWhatsAppStatus);
@@ -682,6 +749,7 @@ export default function Home() {
   const [quoteLaborPreview, setQuoteLaborPreview] = useState<LaborPointCalculation | null>(null);
   const [paymentForm, setPaymentForm] = useState<PaymentPayload>(emptyPaymentForm);
   const [vehicleForm, setVehicleForm] = useState<VehiclePayload>(emptyVehicleForm);
+  const [userForm, setUserForm] = useState<UserPayload>(emptyUserForm);
   const [inventoryForm, setInventoryForm] = useState<InventoryItemPayload>(emptyInventoryForm);
   const [inventoryMovementForm, setInventoryMovementForm] =
     useState<InventoryMovementPayload>(emptyInventoryMovementForm);
@@ -689,6 +757,8 @@ export default function Home() {
   const [editingWorkOrderId, setEditingWorkOrderId] = useState<string | null>(null);
   const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null);
   const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editingInventoryItemId, setEditingInventoryItemId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [deviceSearch, setDeviceSearch] = useState("");
@@ -708,6 +778,10 @@ export default function Home() {
   const [paymentPeriod, setPaymentPeriod] = useState<"ALL" | "CURRENT_MONTH">("ALL");
   const [vehicleSearch, setVehicleSearch] = useState("");
   const [vehicleStatus, setVehicleStatus] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
+  const [userSearch, setUserSearch] = useState("");
+  const [auditModule, setAuditModule] = useState("ALL");
+  const [auditAction, setAuditAction] = useState("");
+  const [auditEntity, setAuditEntity] = useState("");
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryCategory, setInventoryCategory] = useState<DeviceType | "ALL">("ALL");
   const [inventorySupplier, setInventorySupplier] = useState("ALL");
@@ -729,7 +803,9 @@ export default function Home() {
   const [quotesLoading, setQuotesLoading] = useState(false);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [vehiclesLoading, setVehiclesLoading] = useState(false);
+  const [usersLoading, setUsersLoading] = useState(false);
   const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
   const [gmailLoading, setGmailLoading] = useState(false);
   const [whatsAppLoading, setWhatsAppLoading] = useState(false);
   const [whatsAppSummarySaving, setWhatsAppSummarySaving] = useState(false);
@@ -742,7 +818,9 @@ export default function Home() {
   const [quoteError, setQuoteError] = useState("");
   const [paymentError, setPaymentError] = useState("");
   const [vehicleError, setVehicleError] = useState("");
+  const [userError, setUserError] = useState("");
   const [inventoryError, setInventoryError] = useState("");
+  const [auditError, setAuditError] = useState("");
   const [gmailError, setGmailError] = useState("");
   const [whatsAppError, setWhatsAppError] = useState("");
   const [locating, setLocating] = useState(false);
@@ -760,6 +838,16 @@ export default function Home() {
   const [messageSending, setMessageSending] = useState(false);
   const [messageError, setMessageError] = useState("");
   const notificationsMenuRef = useRef<HTMLDivElement | null>(null);
+  const visibleModules = useMemo(
+    () => modules.filter((module) => (user ? moduleRoleAccess[module.name]?.includes(user.role) : module.name === "Dashboard")),
+    [user],
+  );
+
+  useEffect(() => {
+    if (user && !moduleRoleAccess[activeModule]?.includes(user.role)) {
+      setActiveModule("Dashboard");
+    }
+  }, [activeModule, user]);
 
   useEffect(() => {
     const locked = Boolean(
@@ -1235,6 +1323,18 @@ export default function Home() {
   }, [router]);
 
   useEffect(() => {
+    if (authChecked) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      redirectToLogin();
+    }, 2500);
+
+    return () => window.clearTimeout(timeout);
+  }, [authChecked]);
+
+  useEffect(() => {
     if (!token) {
       return;
     }
@@ -1250,12 +1350,15 @@ export default function Home() {
     void loadPayments(token);
     void loadInventory(token);
     void loadVehicles(token);
+    if (user?.role === "OWNER" || user?.role === "ADMIN") {
+      void loadUsers(token);
+    }
     void loadGmailStatus(token);
     void syncGmail(token, true);
     void loadWhatsAppStatus(token);
     void loadWhatsAppDailySummary(token);
     void syncWhatsApp(token);
-  }, [token]);
+  }, [token, user?.role]);
 
   useEffect(() => {
     if (!token) {
@@ -1307,6 +1410,12 @@ export default function Home() {
         break;
       case "Vehiculos":
         void loadVehicles(token);
+        break;
+      case "Auditoria":
+        void loadAuditLogs(token);
+        break;
+      case "Usuarios":
+        void loadUsers(token);
         break;
       case "Gmail":
         void syncGmail(token, true);
@@ -1457,6 +1566,53 @@ export default function Home() {
       if (!silent) {
         setLoading(false);
       }
+    }
+  }
+
+  async function loadAuditLogs(activeToken = token) {
+    if (!activeToken) {
+      return;
+    }
+
+    setAuditLoading(true);
+    setAuditError("");
+    try {
+      const params = new URLSearchParams({ limit: "120" });
+      if (auditModule !== "ALL") {
+        params.set("module", auditModule);
+      }
+      if (auditAction.trim()) {
+        params.set("action", auditAction.trim());
+      }
+      if (auditEntity.trim()) {
+        params.set("entityId", auditEntity.trim());
+      }
+
+      const data = await apiRequest<AuditLogResponse>(`/api/audit?${params.toString()}`, { token: activeToken });
+      setAuditLogs(data.logs);
+      setStatus(`Auditoria actualizada: ${data.logs.length} registro(s)`);
+    } catch (error) {
+      setAuditError(`No se pudo cargar auditoria: ${getErrorMessage(error)}`);
+    } finally {
+      setAuditLoading(false);
+    }
+  }
+
+  async function loadUsers(activeToken = token) {
+    if (!activeToken) {
+      return;
+    }
+
+    setUsersLoading(true);
+    setUserError("");
+    try {
+      const data = await apiRequest<UserAccount[]>("/api/users", { token: activeToken });
+      setUsers(data);
+      setStatus(`Usuarios actualizados: ${data.length}`);
+    } catch (error) {
+      setUserError(`No se pudieron cargar usuarios: ${getErrorMessage(error)}`);
+    } finally {
+      setUsersLoading(false);
     }
   }
 
@@ -2439,17 +2595,120 @@ export default function Home() {
     setVehiclesLoading(true);
     setVehicleError("");
     try {
-      await apiRequest<Vehicle>("/api/vehicles", {
+      await apiRequest<Vehicle>(editingVehicleId ? `/api/vehicles/${editingVehicleId}` : "/api/vehicles", {
         token,
-        method: "POST",
+        method: editingVehicleId ? "PATCH" : "POST",
         body: JSON.stringify(cleanVehiclePayload(vehicleForm)),
       });
+      setEditingVehicleId(null);
       setVehicleForm(emptyVehicleForm);
       await Promise.all([loadVehicles(token), loadSummary(token)]);
-    } catch {
-      setVehicleError("No se pudo guardar el vehiculo");
+    } catch (error) {
+      setVehicleError(`No se pudo guardar el vehiculo: ${getErrorMessage(error)}`);
     } finally {
       setVehiclesLoading(false);
+    }
+  }
+
+  function editVehicle(vehicle: Vehicle) {
+    setEditingVehicleId(vehicle.id);
+    setVehicleForm({
+      name: vehicle.name,
+      plate: vehicle.plate ?? "",
+      make: vehicle.make ?? "",
+      model: vehicle.model ?? "",
+      color: vehicle.color ?? "",
+      colorHex: vehicle.colorHex ?? "#19a89b",
+      icon: vehicle.icon ?? "car",
+      logoUrl: vehicle.logoUrl ?? "",
+      traccarDeviceId: vehicle.traccarDeviceId ?? "",
+      fuelKmPerLiter: vehicle.fuelKmPerLiter ? Number(vehicle.fuelKmPerLiter) : 10,
+      active: vehicle.active,
+      monitoringPhones: vehicle.monitoringPhones ?? "",
+      clientShareUrl: vehicle.clientShareUrl ?? "",
+      gpsMonitoringEnabled: Boolean(vehicle.gpsMonitoringEnabled),
+      gpsWhatsappAlerts: Boolean(vehicle.gpsWhatsappAlerts),
+      gpsEngineCommandsEnabled: Boolean(vehicle.gpsEngineCommandsEnabled),
+      gpsAutoEngineStopOnAlarm: Boolean(vehicle.gpsAutoEngineStopOnAlarm),
+      gpsCommandTextChannel: Boolean(vehicle.gpsCommandTextChannel),
+      gpsStatusCommand: vehicle.gpsStatusCommand ?? "STATUS#",
+      gpsEngineStopCommand: vehicle.gpsEngineStopCommand ?? "",
+      gpsEngineResumeCommand: vehicle.gpsEngineResumeCommand ?? "",
+    });
+  }
+
+  async function saveUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) {
+      return;
+    }
+
+    if (!userForm.name?.trim() || !userForm.email?.trim()) {
+      setUserError("Nombre y email son obligatorios");
+      return;
+    }
+
+    if (!editingUserId && !userForm.password?.trim()) {
+      setUserError("La clave inicial es obligatoria para crear usuario");
+      return;
+    }
+
+    setUsersLoading(true);
+    setUserError("");
+    try {
+      const payload: UserPayload = {
+        name: userForm.name,
+        email: userForm.email,
+        role: userForm.role,
+        password: userForm.password?.trim() || undefined,
+      };
+      await apiRequest<UserAccount>(editingUserId ? `/api/users/${editingUserId}` : "/api/users", {
+        token,
+        method: editingUserId ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      });
+      setEditingUserId(null);
+      setUserForm(emptyUserForm);
+      await loadUsers(token);
+    } catch (error) {
+      setUserError(`${editingUserId ? "No se pudo actualizar" : "No se pudo crear"} el usuario: ${getErrorMessage(error)}`);
+    } finally {
+      setUsersLoading(false);
+    }
+  }
+
+  function editUser(account: UserAccount) {
+    setEditingUserId(account.id);
+    setUserForm({
+      name: account.name,
+      email: account.email,
+      password: "",
+      role: account.role,
+    });
+    setUserError("");
+  }
+
+  async function deleteUser(account: UserAccount) {
+    if (!token || !window.confirm(`Eliminar usuario ${account.name}?`)) {
+      return;
+    }
+
+    setUsersLoading(true);
+    setUserError("");
+    try {
+      await apiRequest<UserAccount>(`/api/users/${account.id}`, {
+        token,
+        method: "DELETE",
+      });
+      if (editingUserId === account.id) {
+        setEditingUserId(null);
+        setUserForm(emptyUserForm);
+      }
+      await loadUsers(token);
+    } catch (error) {
+      setUserError(`No se pudo eliminar el usuario: ${getErrorMessage(error)}`);
+    } finally {
+      setUsersLoading(false);
     }
   }
 
@@ -3547,7 +3806,7 @@ export default function Home() {
           </div>
         </div>
         <nav className="nav">
-          {modules.map((module) => {
+          {visibleModules.map((module) => {
             const Icon = module.icon;
             return (
               <button
@@ -3998,6 +4257,7 @@ export default function Home() {
           />
         ) : activeModule === "Vehiculos" ? (
           <VehiclesView
+            editingVehicleId={editingVehicleId}
             loading={vehiclesLoading}
             token={token}
             vehicleError={vehicleError}
@@ -4006,6 +4266,11 @@ export default function Home() {
             vehicleStats={vehicleStats}
             vehicleStatus={vehicleStatus}
             vehicles={vehicles}
+            onCancelEdit={() => {
+              setEditingVehicleId(null);
+              setVehicleForm(emptyVehicleForm);
+            }}
+            onEdit={editVehicle}
             onFormChange={setVehicleForm}
             onRefresh={() => loadVehicles()}
             onSave={saveVehicle}
@@ -4013,6 +4278,39 @@ export default function Home() {
             onStatusChange={setVehicleStatus}
             onDelete={deleteVehicle}
             onToggleActive={toggleVehicleActive}
+          />
+        ) : activeModule === "Auditoria" ? (
+          <AuditView
+            actionFilter={auditAction}
+            entityFilter={auditEntity}
+            error={auditError}
+            loading={auditLoading}
+            logs={auditLogs}
+            moduleFilter={auditModule}
+            onActionChange={setAuditAction}
+            onEntityChange={setAuditEntity}
+            onModuleChange={setAuditModule}
+            onRefresh={() => loadAuditLogs()}
+          />
+        ) : activeModule === "Usuarios" ? (
+          <UsersView
+            editingUserId={editingUserId}
+            error={userError}
+            form={userForm}
+            loading={usersLoading}
+            search={userSearch}
+            users={users}
+            onCancelEdit={() => {
+              setEditingUserId(null);
+              setUserForm(emptyUserForm);
+              setUserError("");
+            }}
+            onDelete={deleteUser}
+            onEdit={editUser}
+            onFormChange={setUserForm}
+            onRefresh={() => loadUsers()}
+            onSave={saveUser}
+            onSearchChange={setUserSearch}
           />
         ) : activeModule === "Gmail" ? (
           <GmailView
@@ -4562,6 +4860,276 @@ function GeoZoneButton({ target, compact = false }: { target: GeoZoneTarget; com
       <span>{geo.active ? "Geozona activa" : "Geozona desactivada"}</span>
       {geo.synced ? <small>Traccar</small> : null}
     </button>
+  );
+}
+
+const auditModuleOptions = ["ALL", "VEHICLES", "QUOTES", "WORK_ORDERS", "INVENTORY", "PAYMENTS", "TRACCAR", "WHATSAPP"];
+
+const userRoleLabels: Record<UserRole, string> = {
+  OWNER: "Dueño",
+  ADMIN: "Administrador",
+  TECHNICIAN: "Tecnico",
+  SALES: "Ventas",
+  MONITORING: "Monitoreo",
+};
+
+const auditSeverityLabels: Record<string, string> = {
+  INFO: "Info",
+  WARNING: "Atencion",
+  CRITICAL: "Critico",
+};
+
+const auditActionLabels: Record<string, string> = {
+  WHATSAPP_TEST_SENT: "Prueba WhatsApp",
+  TRACCAR_ALERTS_SYNCED: "Alertas Traccar",
+  TRACCAR_COMMAND_SENT: "Comando Traccar",
+};
+
+function UsersView({
+  editingUserId,
+  error,
+  form,
+  loading,
+  search,
+  users,
+  onCancelEdit,
+  onDelete,
+  onEdit,
+  onFormChange,
+  onRefresh,
+  onSave,
+  onSearchChange,
+}: {
+  editingUserId: string | null;
+  error: string;
+  form: UserPayload;
+  loading: boolean;
+  search: string;
+  users: UserAccount[];
+  onCancelEdit: () => void;
+  onDelete: (user: UserAccount) => void;
+  onEdit: (user: UserAccount) => void;
+  onFormChange: (form: UserPayload) => void;
+  onRefresh: () => void;
+  onSave: (event: FormEvent<HTMLFormElement>) => void;
+  onSearchChange: (value: string) => void;
+}) {
+  const filteredUsers = users.filter((account) => {
+    const query = search.trim().toLowerCase();
+    if (!query) {
+      return true;
+    }
+    return [account.name, account.email, account.role].some((value) => value.toLowerCase().includes(query));
+  });
+
+  return (
+    <section className="usersLayout">
+      <form className="customerForm userAdminForm" onSubmit={onSave}>
+        <div className="formHeader">
+          <span>Administracion</span>
+          <h2>{editingUserId ? "Editar usuario" : "Nuevo usuario"}</h2>
+        </div>
+        <label>
+          Nombre
+          <input value={form.name ?? ""} onChange={(event) => onFormChange({ ...form, name: event.target.value })} required />
+        </label>
+        <label>
+          Email
+          <input type="email" value={form.email ?? ""} onChange={(event) => onFormChange({ ...form, email: event.target.value })} required />
+        </label>
+        <label>
+          Rol
+          <select value={form.role ?? "TECHNICIAN"} onChange={(event) => onFormChange({ ...form, role: event.target.value as UserRole })}>
+            {(Object.keys(userRoleLabels) as UserRole[]).map((role) => (
+              <option key={role} value={role}>
+                {userRoleLabels[role]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {editingUserId ? "Nueva clave" : "Clave inicial"}
+          <input
+            type="password"
+            value={form.password ?? ""}
+            onChange={(event) => onFormChange({ ...form, password: event.target.value })}
+            minLength={8}
+            required={!editingUserId}
+            placeholder={editingUserId ? "Dejar vacio para no cambiar" : "Minimo 8 caracteres"}
+          />
+        </label>
+        {error ? <p className="formError">{error}</p> : null}
+        <button type="submit" className="primaryButton" disabled={loading}>
+          <Save size={18} />
+          {editingUserId ? "Guardar usuario" : "Crear usuario"}
+        </button>
+        {editingUserId ? (
+          <button type="button" className="secondaryButton" onClick={onCancelEdit}>
+            Cancelar edicion
+          </button>
+        ) : null}
+      </form>
+
+      <section className="customerList usersPanel">
+        <div className="sectionToolbar">
+          <div>
+            <span>Permisos</span>
+            <h2>Usuarios del CRM</h2>
+          </div>
+          <button type="button" onClick={onRefresh} disabled={loading}>
+            <RefreshCw size={18} className={loading ? "spin" : ""} />
+            Actualizar
+          </button>
+        </div>
+        <div className="listFilters">
+          <div className="searchBox">
+            <Search size={18} />
+            <input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Buscar por nombre, email o rol" />
+          </div>
+        </div>
+        <div className="userList">
+          {filteredUsers.map((account) => (
+            <article key={account.id}>
+              <div>
+                <strong>{account.name}</strong>
+                <span>{account.email}</span>
+                <small>Actualizado {formatShortDate(account.updatedAt)}</small>
+              </div>
+              <span className={`statusPill ${account.role === "OWNER" || account.role === "ADMIN" ? "completed" : "scheduled"}`}>
+                {userRoleLabels[account.role]}
+              </span>
+              <button type="button" className="iconButton" onClick={() => onEdit(account)} title="Editar usuario" aria-label="Editar usuario">
+                <Edit3 size={17} />
+              </button>
+              <button type="button" className="iconButton dangerIconButton" onClick={() => onDelete(account)} title="Eliminar usuario" aria-label="Eliminar usuario">
+                <Trash2 size={17} />
+              </button>
+            </article>
+          ))}
+          {!filteredUsers.length ? <p className="emptyPanel">No hay usuarios para esos filtros.</p> : null}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function AuditView({
+  actionFilter,
+  entityFilter,
+  error,
+  loading,
+  logs,
+  moduleFilter,
+  onActionChange,
+  onEntityChange,
+  onModuleChange,
+  onRefresh,
+}: {
+  actionFilter: string;
+  entityFilter: string;
+  error: string;
+  loading: boolean;
+  logs: AuditLog[];
+  moduleFilter: string;
+  onActionChange: (value: string) => void;
+  onEntityChange: (value: string) => void;
+  onModuleChange: (value: string) => void;
+  onRefresh: () => void;
+}) {
+  const stats = useMemo(
+    () => ({
+      total: logs.length,
+      critical: logs.filter((log) => log.severity === "CRITICAL").length,
+      warnings: logs.filter((log) => log.severity === "WARNING").length,
+      vehicles: logs.filter((log) => log.module === "VEHICLES").length,
+    }),
+    [logs],
+  );
+
+  return (
+    <section className="auditLayout">
+      <div className="customerProfileSection auditToolbar">
+        <div className="customerProfileSectionHeader">
+          <div>
+            <h3>Auditoria operativa</h3>
+            <small>Registro de acciones sensibles del CRM</small>
+          </div>
+          <button type="button" className="secondaryButton" onClick={onRefresh} disabled={loading}>
+            <RefreshCw size={18} className={loading ? "spin" : ""} />
+            Actualizar
+          </button>
+        </div>
+
+        <div className="auditFilters">
+          <label>
+            Modulo
+            <select value={moduleFilter} onChange={(event) => onModuleChange(event.target.value)}>
+              {auditModuleOptions.map((module) => (
+                <option key={module} value={module}>
+                  {module === "ALL" ? "Todos" : module}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Accion
+            <input value={actionFilter} onChange={(event) => onActionChange(event.target.value)} placeholder="Ej: TRACCAR_COMMAND_SENT" />
+          </label>
+          <label>
+            Entidad
+            <input value={entityFilter} onChange={(event) => onEntityChange(event.target.value)} placeholder="ID de vehiculo, trabajo o pago" />
+          </label>
+          <button type="button" className="primaryButton" onClick={onRefresh} disabled={loading}>
+            <Search size={18} />
+            Filtrar
+          </button>
+        </div>
+        {error ? <p className="formError">{error}</p> : null}
+      </div>
+
+      <div className="auditStats">
+        <article>
+          <span>Registros</span>
+          <strong>{stats.total}</strong>
+        </article>
+        <article className={stats.critical ? "negative" : ""}>
+          <span>Criticos</span>
+          <strong>{stats.critical}</strong>
+        </article>
+        <article className={stats.warnings ? "warning" : ""}>
+          <span>Atencion</span>
+          <strong>{stats.warnings}</strong>
+        </article>
+        <article>
+          <span>Vehiculos</span>
+          <strong>{stats.vehicles}</strong>
+        </article>
+      </div>
+
+      <div className="auditList">
+        {logs.map((log) => {
+          const statusClass = log.severity === "CRITICAL" ? "cancelled" : log.severity === "WARNING" ? "scheduled" : "completed";
+          return (
+            <article key={log.id} className={`auditLogCard ${log.severity.toLowerCase()}`}>
+              <div>
+                <strong>{auditActionLabels[log.action] ?? log.action}</strong>
+                <span>
+                  {log.module} - {log.entityType}
+                  {log.entityId ? ` ${log.entityId}` : ""}
+                </span>
+                <p>{log.summary}</p>
+              </div>
+              <div className="auditLogMeta">
+                <span className={`statusPill ${statusClass}`}>{auditSeverityLabels[log.severity] ?? log.severity}</span>
+                <small>{formatDateTime(log.createdAt)}</small>
+                <small>{log.actor?.name ?? log.actorName ?? "Sistema"}</small>
+              </div>
+            </article>
+          );
+        })}
+        {!logs.length ? <p className="emptyPanel">Todavia no hay registros para esos filtros.</p> : null}
+      </div>
+    </section>
   );
 }
 
@@ -6783,6 +7351,7 @@ function DispatcherView({
                 const key = stop.id;
                 const costs = stopCosts[key] ?? { parking: 0, tolls: 0 };
                 const isEditing = Boolean(editingDispatchStops[key]);
+                const isUnknownGpsStop = !stop.customerName && !stop.learnedPlaceId && !stop.isBaseStop;
                 const defaultPlaceType =
                   stop.learnedPlaceType ?? (stop.isBaseStop ? "WAREHOUSE" : stop.customerType === "IMPORTER" ? "IMPORTER" : stop.customerName ? "CLIENT" : "OTHER");
                 const placeType = stopPlaceTypes[key] ?? defaultPlaceType;
@@ -6799,6 +7368,16 @@ function DispatcherView({
                         </div>
                         <div className="dispatchStopActions">
                           <span className="statusPill completed">GPS real</span>
+                          {isUnknownGpsStop ? (
+                            <button
+                              type="button"
+                              className="iconTextButton"
+                              onClick={() => window.open(buildGoogleMapsPlaceSearchUrl(stop.latitude, stop.longitude), "_blank", "noopener,noreferrer")}
+                            >
+                              <MapPin size={16} />
+                              Identificar en Maps
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="iconTextButton"
@@ -6956,8 +7535,13 @@ function DispatcherView({
                           disabled={savingDispatchStopKey === key}
                         >
                           <Save size={16} />
-                          {savingDispatchStopKey === key ? "Guardando" : "Guardar parada"}
+                          {savingDispatchStopKey === key ? "Guardando" : isUnknownGpsStop ? "Guardar lugar conocido" : "Guardar parada"}
                         </button>
+                        {isUnknownGpsStop ? (
+                          <small className="wideControl">
+                            Abri Maps, revisa el nombre del lugar y escribilo en Nombre / notas del lugar para que el despachador lo reconozca la proxima vez.
+                          </small>
+                        ) : null}
                       </div>
                       ) : null}
                     </div>
@@ -8978,12 +9562,15 @@ function QuotesView({
   onStatusChange: (value: "ALL" | QuoteStatus) => void;
 }) {
   const quoteItems = quoteForm.items ?? [];
-  const catalogSubtotal = quoteItems.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0);
-  const manualSubtotal = quoteForm.pricingMode === "MANUAL" ? Number(quoteForm.subtotal) || 0 : 0;
+  const catalogSubtotal = quoteItems.reduce(
+    (sum, item) => sum + (parseLocaleNumber(item.quantity) || 0) * (parseLocaleNumber(item.unitPrice) || 0),
+    0,
+  );
+  const manualSubtotal = quoteForm.pricingMode === "MANUAL" ? parseLocaleNumber(quoteForm.subtotal) || 0 : 0;
   const laborSubtotal = quoteForm.pricingMode === "THIRD_PARTY" ? quoteLaborPreview?.subtotal ?? 0 : 0;
   const subtotal = catalogSubtotal + manualSubtotal + laborSubtotal;
-  const normalizedDiscountPercent = Math.min(100, Math.max(0, Number(quoteForm.discountPercent) || 0));
-  const rawDiscountAmount = Number(quoteForm.discountAmount);
+  const normalizedDiscountPercent = Math.min(100, Math.max(0, parseLocaleNumber(quoteForm.discountPercent) || 0));
+  const rawDiscountAmount = parseLocaleNumber(quoteForm.discountAmount);
   const discount = Math.min(
     subtotal,
     Math.max(0, Number.isFinite(rawDiscountAmount) ? rawDiscountAmount : subtotal * (normalizedDiscountPercent / 100)),
@@ -9060,7 +9647,7 @@ function QuotesView({
     }
 
     const roundedDiscount = Math.round(discount * 100) / 100;
-    setDiscountAmountValue(String(roundedDiscount));
+    setDiscountAmountValue(formatDecimalInput(roundedDiscount));
   }, [discount, editingDiscountAmount]);
 
   useEffect(() => {
@@ -9135,24 +9722,20 @@ function QuotesView({
   }
 
   function normalizeDecimalInput(value: string) {
-    const clean = value.replace(",", ".").replace(/[^\d.]/g, "");
-    const [integer = "", ...decimalParts] = clean.split(".");
-    const integerWithoutLeadingZeros = integer.replace(/^0+(?=\d)/, "");
-    const decimal = decimalParts.join("");
-    return decimalParts.length ? `${integerWithoutLeadingZeros || "0"}.${decimal}` : integerWithoutLeadingZeros;
+    return value.replace(/[^\d,.]/g, "").replace(/^0+(?=\d)/, "");
   }
 
   function updateDiscountPercent(value: string) {
-    const nextPercent = Math.min(100, Math.max(0, Number(value) || 0));
+    const nextPercent = Math.min(100, Math.max(0, parseLocaleNumber(value) || 0));
     const nextAmount = Math.round(subtotal * (nextPercent / 100) * 100) / 100;
-    setDiscountAmountValue(String(nextAmount));
+    setDiscountAmountValue(formatDecimalInput(nextAmount));
     onFormChange({ ...quoteForm, discountPercent: nextPercent, discountAmount: nextAmount });
   }
 
   function updateDiscountAmount(value: string) {
     const normalizedValue = normalizeDecimalInput(value);
     setDiscountAmountValue(normalizedValue);
-    const nextAmount = Math.min(subtotal, Math.max(0, Number(normalizedValue) || 0));
+    const nextAmount = Math.min(subtotal, Math.max(0, parseLocaleNumber(normalizedValue) || 0));
     const nextPercent = subtotal > 0 ? (nextAmount / subtotal) * 100 : 0;
     onFormChange({ ...quoteForm, discountPercent: nextPercent, discountAmount: nextAmount });
   }
@@ -9160,10 +9743,10 @@ function QuotesView({
   function finishDiscountAmountEdit() {
     setEditingDiscountAmount(false);
     const normalizedValue = normalizeDecimalInput(discountAmountValue);
-    const nextAmount = Math.min(subtotal, Math.max(0, Number(normalizedValue) || 0));
+    const nextAmount = Math.min(subtotal, Math.max(0, parseLocaleNumber(normalizedValue) || 0));
     const roundedAmount = Math.round(nextAmount * 100) / 100;
     const nextPercent = subtotal > 0 ? (roundedAmount / subtotal) * 100 : 0;
-    setDiscountAmountValue(String(roundedAmount));
+    setDiscountAmountValue(formatDecimalInput(roundedAmount));
     onFormChange({ ...quoteForm, discountPercent: nextPercent, discountAmount: roundedAmount });
   }
 
@@ -11531,6 +12114,7 @@ function FinanceGroupDetailModal({
 }
 
 function VehiclesView({
+  editingVehicleId,
   loading,
   token,
   vehicleError,
@@ -11539,6 +12123,8 @@ function VehiclesView({
   vehicleStats,
   vehicleStatus,
   vehicles,
+  onCancelEdit,
+  onEdit,
   onFormChange,
   onRefresh,
   onSave,
@@ -11547,6 +12133,7 @@ function VehiclesView({
   onDelete,
   onToggleActive,
 }: {
+  editingVehicleId: string | null;
   loading: boolean;
   token?: string | null;
   vehicleError: string;
@@ -11555,6 +12142,8 @@ function VehiclesView({
   vehicleStats: Array<{ label: string; value: number }>;
   vehicleStatus: "ALL" | "ACTIVE" | "INACTIVE";
   vehicles: Vehicle[];
+  onCancelEdit: () => void;
+  onEdit: (vehicle: Vehicle) => void;
   onFormChange: (form: VehiclePayload) => void;
   onRefresh: () => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
@@ -11581,9 +12170,15 @@ function VehiclesView({
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
   const [selectedVehicleDetailId, setSelectedVehicleDetailId] = useState<string | null>(null);
   const [vehicleDaily, setVehicleDaily] = useState<VehicleDailySummary | null>(null);
+  const [vehicleEvents, setVehicleEvents] = useState<VehicleTraccarEventsResponse | null>(null);
+  const [vehicleAlertLogs, setVehicleAlertLogs] = useState<VehicleAlertLogsResponse | null>(null);
+  const [vehicleLive, setVehicleLive] = useState<VehicleLivePosition | null>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveAutoRefresh, setLiveAutoRefresh] = useState(true);
   const [geofenceSync, setGeofenceSync] = useState<TraccarGeofenceSync | null>(null);
   const [traccarLoading, setTraccarLoading] = useState(false);
   const [traccarError, setTraccarError] = useState("");
+  const vehicleLogoInputRef = useRef<HTMLInputElement>(null);
   const selectedVehicleDetail = vehicles.find((vehicle) => vehicle.id === selectedVehicleDetailId) ?? null;
 
   useEffect(() => {
@@ -11627,6 +12222,26 @@ function VehiclesView({
       setSelectedVehicleId(vehicles[0].id);
     }
   }, [selectedVehicleId, vehicles]);
+
+  useEffect(() => {
+    if (!selectedVehicleDetailId || !token) {
+      return;
+    }
+
+    void loadVehicleLive(selectedVehicleDetailId, { silent: true });
+  }, [selectedVehicleDetailId, token]);
+
+  useEffect(() => {
+    if (!selectedVehicleDetailId || !token || !liveAutoRefresh) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void loadVehicleLive(selectedVehicleDetailId, { silent: true });
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [liveAutoRefresh, selectedVehicleDetailId, token]);
 
   async function saveTraccarSettings() {
     if (!token) {
@@ -11694,6 +12309,145 @@ function VehiclesView({
     }
   }
 
+  async function loadVehicleEvents(vehicleId = selectedVehicleId) {
+    if (!token || !vehicleId) {
+      return;
+    }
+
+    setSelectedVehicleId(vehicleId);
+    setTraccarLoading(true);
+    setTraccarError("");
+    try {
+      const data = await apiRequest<VehicleTraccarEventsResponse>(
+        `/api/vehicles/${vehicleId}/traccar/events?date=${encodeURIComponent(traccarDate)}`,
+        { token },
+      );
+      setVehicleEvents(data);
+    } catch (error) {
+      setTraccarError(`No se pudieron cargar eventos GPS: ${getErrorMessage(error)}`);
+    } finally {
+      setTraccarLoading(false);
+    }
+  }
+
+  async function loadVehicleAlertLogs(vehicleId = selectedVehicleId) {
+    if (!token || !vehicleId) {
+      return;
+    }
+
+    setSelectedVehicleId(vehicleId);
+    setTraccarLoading(true);
+    setTraccarError("");
+    try {
+      const data = await apiRequest<VehicleAlertLogsResponse>(`/api/vehicles/${vehicleId}/traccar/alerts`, { token });
+      setVehicleAlertLogs(data);
+    } catch (error) {
+      setTraccarError(`No se pudieron cargar alertas enviadas: ${getErrorMessage(error)}`);
+    } finally {
+      setTraccarLoading(false);
+    }
+  }
+
+  async function loadVehicleLive(vehicleId = selectedVehicleId, options?: { silent?: boolean }) {
+    if (!token || !vehicleId) {
+      return;
+    }
+
+    setSelectedVehicleId(vehicleId);
+    if (!options?.silent) {
+      setLiveLoading(true);
+    }
+    try {
+      const data = await apiRequest<VehicleLivePosition>(`/api/vehicles/${vehicleId}/traccar/live`, { token });
+      setVehicleLive(data);
+    } catch (error) {
+      const fallbackVehicle = vehicles.find((vehicle) => vehicle.id === vehicleId) ?? selectedVehicleDetail;
+      if (fallbackVehicle) {
+        setVehicleLive((current) => ({
+          configured: current?.configured ?? false,
+          vehicle: current?.vehicle ?? fallbackVehicle,
+          online: false,
+          moving: false,
+          message: `No se pudo cargar seguimiento en vivo: ${getErrorMessage(error)}`,
+        }));
+      }
+    } finally {
+      if (!options?.silent) {
+        setLiveLoading(false);
+      }
+    }
+  }
+
+  async function sendVehicleCommand(vehicle: Vehicle, command: "status" | "engineStop" | "engineResume") {
+    if (!token) {
+      return;
+    }
+
+    const confirmation = command === "engineStop" ? "BLOQUEAR" : command === "engineResume" ? "RESTAURAR" : "";
+
+    setTraccarLoading(true);
+    setTraccarError("");
+    try {
+      const result = await apiRequest<VehicleTraccarCommandResponse>(`/api/vehicles/${vehicle.id}/traccar/command`, {
+        token,
+        method: "POST",
+        body: JSON.stringify({ command, confirmation }),
+      });
+      setTraccarError(result.message);
+      await loadVehicleAlertLogs(vehicle.id);
+    } catch (error) {
+      setTraccarError(`No se pudo enviar el comando: ${getErrorMessage(error)}`);
+    } finally {
+      setTraccarLoading(false);
+    }
+  }
+
+  async function sendVehicleTestWhatsApp(vehicle: Vehicle) {
+    if (!token) {
+      return;
+    }
+
+    setTraccarLoading(true);
+    setTraccarError("");
+    try {
+      const result = await apiRequest<{ sent: boolean; message: string }>(`/api/vehicles/${vehicle.id}/traccar/test-whatsapp`, {
+        token,
+        method: "POST",
+      });
+      setTraccarError(result.message);
+      await loadVehicleAlertLogs(vehicle.id);
+    } catch (error) {
+      setTraccarError(`No se pudo enviar WhatsApp: ${getErrorMessage(error)}`);
+    } finally {
+      setTraccarLoading(false);
+    }
+  }
+
+  async function syncVehicleAlerts(vehicle: Vehicle) {
+    if (!token) {
+      return;
+    }
+
+    setTraccarLoading(true);
+    setTraccarError("");
+    try {
+      const result = await apiRequest<{ sent: number; lastEventId?: number; message: string }>(
+        `/api/vehicles/${vehicle.id}/traccar/sync-alerts`,
+        {
+          token,
+          method: "POST",
+        },
+      );
+      setTraccarError(result.message);
+      await loadVehicleAlertLogs(vehicle.id);
+      await onRefresh();
+    } catch (error) {
+      setTraccarError(`No se pudieron sincronizar alertas: ${getErrorMessage(error)}`);
+    } finally {
+      setTraccarLoading(false);
+    }
+  }
+
   async function syncGeofences() {
     if (!token) {
       return;
@@ -11714,6 +12468,35 @@ function VehiclesView({
     }
   }
 
+  async function selectVehicleLogoFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      window.alert("Selecciona una imagen PNG, JPG o WEBP.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      window.alert("La imagen no puede superar los 5 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const compressed = await compressImageDataUrl(dataUrl, 720, 0.82);
+      onFormChange({ ...vehicleForm, logoUrl: compressed });
+    } catch (error) {
+      setTraccarError(`No se pudo cargar la imagen: ${getErrorMessage(error)}`);
+    } finally {
+      event.target.value = "";
+    }
+  }
+
   return (
     <section className="vehiclesModule">
       <div className="summaryGrid customerStats" aria-label="Resumen de vehiculos">
@@ -11730,8 +12513,14 @@ function VehiclesView({
           <div className="sectionHeader compactHeader">
             <div>
               <p>Flota</p>
-              <h2>Nuevo vehiculo</h2>
+              <h2>{editingVehicleId ? "Editar vehiculo" : "Nuevo vehiculo"}</h2>
             </div>
+            {editingVehicleId ? (
+              <button type="button" className="secondaryButton" onClick={onCancelEdit}>
+                <X size={17} />
+                Cancelar
+              </button>
+            ) : null}
           </div>
 
           <div className="formGrid">
@@ -11749,6 +12538,92 @@ function VehiclesView({
                 value={vehicleForm.plate}
                 onChange={(event) => onFormChange({ ...vehicleForm, plate: event.target.value })}
                 placeholder="ABC 1234"
+              />
+            </label>
+            <label>
+              Marca
+              <input
+                value={vehicleForm.make ?? ""}
+                onChange={(event) => onFormChange({ ...vehicleForm, make: event.target.value })}
+                placeholder="Renault, Fiat, Chevrolet"
+              />
+            </label>
+            <label>
+              Modelo
+              <input
+                value={vehicleForm.model ?? ""}
+                onChange={(event) => onFormChange({ ...vehicleForm, model: event.target.value })}
+                placeholder="Kangoo, Oroch, Partner"
+              />
+            </label>
+            <label>
+              Color
+              <input
+                value={vehicleForm.color ?? ""}
+                onChange={(event) => onFormChange({ ...vehicleForm, color: event.target.value })}
+                placeholder="Blanco, gris, negro"
+              />
+            </label>
+            <label>
+              Color visual
+              <span className="vehicleColorInput">
+                <input
+                  type="color"
+                  value={vehicleForm.colorHex ?? "#19a89b"}
+                  onChange={(event) => onFormChange({ ...vehicleForm, colorHex: event.target.value })}
+                  aria-label="Color visual del vehiculo"
+                />
+                <input
+                  value={vehicleForm.colorHex ?? ""}
+                  onChange={(event) => onFormChange({ ...vehicleForm, colorHex: event.target.value })}
+                  placeholder="#19a89b"
+                />
+              </span>
+            </label>
+            <label>
+              Icono
+              <select
+                value={vehicleForm.icon ?? "car"}
+                onChange={(event) => onFormChange({ ...vehicleForm, icon: event.target.value })}
+              >
+                <option value="car">Auto</option>
+                <option value="van">Camioneta</option>
+                <option value="truck">Camion</option>
+                <option value="shield">Custodia</option>
+              </select>
+            </label>
+            <label className="wideField">
+              <span className="fieldLabelRow">
+                Imagen del vehiculo
+                <button type="button" className="geoButton" onClick={() => vehicleLogoInputRef.current?.click()}>
+                  <FileText size={16} />
+                  Seleccionar
+                </button>
+              </span>
+              <div className="vehicleLogoPicker">
+                <span className="vehicleLogoPreview" style={{ backgroundColor: vehicleForm.colorHex || "#19a89b" }}>
+                  {vehicleForm.logoUrl ? <img src={vehicleForm.logoUrl} alt="Vista previa del vehiculo" /> : <Car size={22} />}
+                </span>
+                <div>
+                  <input
+                    value={vehicleForm.logoUrl?.startsWith("data:") ? "Imagen cargada desde archivo" : vehicleForm.logoUrl ?? ""}
+                    onChange={(event) => onFormChange({ ...vehicleForm, logoUrl: event.target.value })}
+                    placeholder="Selecciona imagen o pega una URL"
+                  />
+                  <small>Se visualiza en el mapa, lista y portal del cliente.</small>
+                </div>
+                {vehicleForm.logoUrl ? (
+                  <button type="button" className="secondaryButton" onClick={() => onFormChange({ ...vehicleForm, logoUrl: "" })}>
+                    Quitar
+                  </button>
+                ) : null}
+              </div>
+              <input
+                ref={vehicleLogoInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hiddenFileInput"
+                onChange={selectVehicleLogoFile}
               />
             </label>
             <label>
@@ -11776,15 +12651,117 @@ function VehiclesView({
                 checked={Boolean(vehicleForm.active)}
                 onChange={(event) => onFormChange({ ...vehicleForm, active: event.target.checked })}
               />
-              Vehiculo activo
+              <span>
+                <strong>Vehiculo activo</strong>
+                <small>Disponible para monitoreo y gastos operativos</small>
+              </span>
             </label>
+            <label className="wideField">
+              Celulares de alerta WhatsApp
+              <textarea
+                value={vehicleForm.monitoringPhones ?? ""}
+                onChange={(event) => onFormChange({ ...vehicleForm, monitoringPhones: event.target.value })}
+                placeholder="Un celular por linea o separados por coma. Ej: 097684200"
+              />
+            </label>
+            <label className="wideField">
+              Enlace para cliente
+              <input
+                value={vehicleForm.clientShareUrl ?? ""}
+                onChange={(event) => onFormChange({ ...vehicleForm, clientShareUrl: event.target.value })}
+                placeholder="Link de Traccar cliente o portal compartido"
+              />
+            </label>
+            <div className="gpsToggleGrid wideField">
+              <label className="toggleField">
+                <input
+                  type="checkbox"
+                  checked={Boolean(vehicleForm.gpsMonitoringEnabled)}
+                  onChange={(event) => onFormChange({ ...vehicleForm, gpsMonitoringEnabled: event.target.checked })}
+                />
+                <span>
+                  <strong>Monitoreo GPS</strong>
+                  <small>Seguimiento y resumen diario</small>
+                </span>
+              </label>
+              <label className="toggleField">
+                <input
+                  type="checkbox"
+                  checked={Boolean(vehicleForm.gpsWhatsappAlerts)}
+                  onChange={(event) => onFormChange({ ...vehicleForm, gpsWhatsappAlerts: event.target.checked })}
+                />
+                <span>
+                  <strong>Alertas WhatsApp</strong>
+                  <small>Eventos enviados al responsable</small>
+                </span>
+              </label>
+              <label className="toggleField">
+                <input
+                  type="checkbox"
+                  checked={Boolean(vehicleForm.gpsEngineCommandsEnabled)}
+                  onChange={(event) => onFormChange({ ...vehicleForm, gpsEngineCommandsEnabled: event.target.checked })}
+                />
+                <span>
+                  <strong>Comandos motor</strong>
+                  <small>Bloqueo y restauracion manual</small>
+                </span>
+              </label>
+              <label className="toggleField">
+                <input
+                  type="checkbox"
+                  checked={Boolean(vehicleForm.gpsAutoEngineStopOnAlarm)}
+                  onChange={(event) => onFormChange({ ...vehicleForm, gpsAutoEngineStopOnAlarm: event.target.checked })}
+                />
+                <span>
+                  <strong>Corte automatico armado</strong>
+                  <small>Accion de seguridad por alarma</small>
+                </span>
+              </label>
+              <label className="toggleField">
+                <input
+                  type="checkbox"
+                  checked={Boolean(vehicleForm.gpsCommandTextChannel)}
+                  onChange={(event) => onFormChange({ ...vehicleForm, gpsCommandTextChannel: event.target.checked })}
+                />
+                <span>
+                  <strong>Canal texto</strong>
+                  <small>Enviar como SMS si el equipo lo requiere</small>
+                </span>
+              </label>
+            </div>
+            <div className="commandTemplateGrid wideField">
+              <label>
+                Comando estado
+                <input
+                  value={vehicleForm.gpsStatusCommand ?? ""}
+                  onChange={(event) => onFormChange({ ...vehicleForm, gpsStatusCommand: event.target.value })}
+                  placeholder="Ej: STATUS#"
+                />
+              </label>
+              <label>
+                Comando cortar motor
+                <input
+                  value={vehicleForm.gpsEngineStopCommand ?? ""}
+                  onChange={(event) => onFormChange({ ...vehicleForm, gpsEngineStopCommand: event.target.value })}
+                  placeholder="Comando exacto del GPS"
+                />
+              </label>
+              <label>
+                Comando restablecer motor
+                <input
+                  value={vehicleForm.gpsEngineResumeCommand ?? ""}
+                  onChange={(event) => onFormChange({ ...vehicleForm, gpsEngineResumeCommand: event.target.value })}
+                  placeholder="Comando exacto del GPS"
+                />
+              </label>
+            </div>
           </div>
 
           {vehicleError ? <p className="formError">{vehicleError}</p> : null}
 
           <button type="submit" className="primaryButton" disabled={loading}>
-            <Plus size={18} />
-            Registrar vehiculo
+            {editingVehicleId ? <Save size={18} /> : <Plus size={18} />}
+            {editingVehicleId ? "Guardar vehiculo" : "Registrar vehiculo"}
           </button>
         </form>
 
@@ -11833,18 +12810,32 @@ function VehiclesView({
                   setSelectedVehicleDetailId(vehicle.id);
                   setSelectedVehicleId(vehicle.id);
                   setVehicleDaily(null);
+                  setVehicleEvents(null);
+                  setVehicleAlertLogs(null);
                   setTraccarError("");
+                  void loadVehicleAlertLogs(vehicle.id);
                 }}
               >
                 <span className="vehicleListCell" data-label="Vehiculo">
-                  <strong>{vehicle.name}</strong>
-                  <small>{vehicle.traccarDeviceId ? "GPS vinculado" : "Sin GPS vinculado"}</small>
+                  <span className="vehicleIdentityCell">
+                    <span className="vehicleVisualBadge" style={{ backgroundColor: vehicle.colorHex || "#19a89b" }}>
+                      {vehicle.logoUrl ? <img src={vehicle.logoUrl} alt="" /> : <Car size={18} />}
+                    </span>
+                    <span>
+                      <strong>{vehicle.name}</strong>
+                      <small>
+                        {[vehicle.make, vehicle.model, vehicle.color].filter(Boolean).join(" - ") ||
+                          (vehicle.traccarDeviceId ? "GPS vinculado" : "Sin GPS vinculado")}
+                      </small>
+                    </span>
+                  </span>
                 </span>
                 <span className="vehicleListCell" data-label="Matricula">
                   <strong>{vehicle.plate || "Sin matricula"}</strong>
                 </span>
                 <span className="vehicleListCell" data-label="Traccar">
                   <strong>{vehicle.traccarDeviceId || "Sin vincular"}</strong>
+                  <small>{vehicle.gpsMonitoringEnabled ? "Monitoreo activo" : "Monitoreo pendiente"}</small>
                 </span>
                 <span className="vehicleListCell" data-label="Consumo">
                   <strong>{vehicle.fuelKmPerLiter ? `${formatNumber(Number(vehicle.fuelKmPerLiter))} km/l` : "Sin dato"}</strong>
@@ -11876,112 +12867,124 @@ function VehiclesView({
         </div>
 
         <div className="traccarConfigGrid">
-          <label className="wideField">
-            URL Traccar
-            <input
-              value={traccarForm.baseUrl}
-              onChange={(event) => setTraccarForm((form) => ({ ...form, baseUrl: event.target.value }))}
-              placeholder="https://tu-traccar.com"
-            />
-          </label>
-          <label>
-            Token
-            <input
-              value={traccarForm.token}
-              onChange={(event) => setTraccarForm((form) => ({ ...form, token: event.target.value }))}
-              placeholder="Token o ********"
-            />
-          </label>
-          <label>
-            Usuario
-            <input
-              value={traccarForm.username}
-              onChange={(event) => setTraccarForm((form) => ({ ...form, username: event.target.value }))}
-              placeholder="Opcional"
-            />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              value={traccarForm.password}
-              onChange={(event) => setTraccarForm((form) => ({ ...form, password: event.target.value }))}
-              placeholder="Opcional"
-            />
-          </label>
-          <label>
-            Radio visita (m)
-            <input
-              type="number"
-              min="20"
-              value={traccarForm.matchRadiusMeters}
-              onChange={(event) => setTraccarForm((form) => ({ ...form, matchRadiusMeters: Number(event.target.value) || 120 }))}
-            />
-          </label>
-          <label>
-            Min. parada
-            <input
-              type="number"
-              min="1"
-              value={traccarForm.minStopMinutes}
-              onChange={(event) => setTraccarForm((form) => ({ ...form, minStopMinutes: Number(event.target.value) || 5 }))}
-            />
-          </label>
-          <label>
-            Empresa / base
-            <input
-              value={traccarForm.companyName}
-              onChange={(event) => setTraccarForm((form) => ({ ...form, companyName: event.target.value }))}
-              placeholder="Security Solutions"
-            />
-          </label>
-          <label className="wideField">
-            Ubicacion de salida
-            <input
-              value={traccarForm.companyAddress}
-              onChange={(event) => {
-                const companyAddress = event.target.value;
-                const coords = parseCoordinatesFromText(companyAddress);
-                setTraccarForm((form) => ({
-                  ...form,
-                  companyAddress,
-                  companyLatitude: coords?.latitude ?? form.companyLatitude,
-                  companyLongitude: coords?.longitude ?? form.companyLongitude,
-                }));
-              }}
-              placeholder="Direccion o enlace de Google Maps de la empresa"
-            />
-          </label>
-          <label>
-            Latitud base
-            <input
-              type="number"
-              step="0.000001"
-              value={traccarForm.companyLatitude ?? ""}
-              onChange={(event) =>
-                setTraccarForm((form) => ({
-                  ...form,
-                  companyLatitude: event.target.value === "" ? undefined : Number(event.target.value),
-                }))
-              }
-              placeholder="-34.901112"
-            />
-          </label>
-          <label>
-            Longitud base
-            <input
-              type="number"
-              step="0.000001"
-              value={traccarForm.companyLongitude ?? ""}
-              onChange={(event) =>
-                setTraccarForm((form) => ({
-                  ...form,
-                  companyLongitude: event.target.value === "" ? undefined : Number(event.target.value),
-                }))
-              }
-              placeholder="-56.164532"
-            />
-          </label>
+          <fieldset className="traccarConfigGroup traccarConnectionGroup">
+            <legend>Conexion</legend>
+            <label className="wideField">
+              URL Traccar
+              <input
+                value={traccarForm.baseUrl}
+                onChange={(event) => setTraccarForm((form) => ({ ...form, baseUrl: event.target.value }))}
+                placeholder="https://tu-traccar.com"
+              />
+            </label>
+            <label>
+              Token
+              <input
+                value={traccarForm.token}
+                onChange={(event) => setTraccarForm((form) => ({ ...form, token: event.target.value }))}
+                placeholder="Token o ********"
+              />
+            </label>
+            <label>
+              Usuario
+              <input
+                value={traccarForm.username}
+                onChange={(event) => setTraccarForm((form) => ({ ...form, username: event.target.value }))}
+                placeholder="Opcional"
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={traccarForm.password}
+                onChange={(event) => setTraccarForm((form) => ({ ...form, password: event.target.value }))}
+                placeholder="Opcional"
+              />
+            </label>
+          </fieldset>
+
+          <fieldset className="traccarConfigGroup traccarTuningGroup">
+            <legend>Precision operativa</legend>
+            <label>
+              Radio visita (m)
+              <input
+                type="number"
+                min="20"
+                value={traccarForm.matchRadiusMeters}
+                onChange={(event) => setTraccarForm((form) => ({ ...form, matchRadiusMeters: Number(event.target.value) || 120 }))}
+              />
+            </label>
+            <label>
+              Min. parada
+              <input
+                type="number"
+                min="1"
+                value={traccarForm.minStopMinutes}
+                onChange={(event) => setTraccarForm((form) => ({ ...form, minStopMinutes: Number(event.target.value) || 5 }))}
+              />
+            </label>
+            <p>El CRM limpia saltos GPS y usa la hora del servidor cuando el equipo viene desfasado.</p>
+          </fieldset>
+
+          <fieldset className="traccarConfigGroup traccarBaseGroup">
+            <legend>Base operativa</legend>
+            <label>
+              Empresa / base
+              <input
+                value={traccarForm.companyName}
+                onChange={(event) => setTraccarForm((form) => ({ ...form, companyName: event.target.value }))}
+                placeholder="Security Solutions"
+              />
+            </label>
+            <label className="wideField">
+              Ubicacion de salida
+              <input
+                value={traccarForm.companyAddress}
+                onChange={(event) => {
+                  const companyAddress = event.target.value;
+                  const coords = parseCoordinatesFromText(companyAddress);
+                  setTraccarForm((form) => ({
+                    ...form,
+                    companyAddress,
+                    companyLatitude: coords?.latitude ?? form.companyLatitude,
+                    companyLongitude: coords?.longitude ?? form.companyLongitude,
+                  }));
+                }}
+                placeholder="Direccion o enlace de Google Maps de la empresa"
+              />
+            </label>
+            <label>
+              Latitud base
+              <input
+                type="number"
+                step="0.000001"
+                value={traccarForm.companyLatitude ?? ""}
+                onChange={(event) =>
+                  setTraccarForm((form) => ({
+                    ...form,
+                    companyLatitude: event.target.value === "" ? undefined : Number(event.target.value),
+                  }))
+                }
+                placeholder="-34.901112"
+              />
+            </label>
+            <label>
+              Longitud base
+              <input
+                type="number"
+                step="0.000001"
+                value={traccarForm.companyLongitude ?? ""}
+                onChange={(event) =>
+                  setTraccarForm((form) => ({
+                    ...form,
+                    companyLongitude: event.target.value === "" ? undefined : Number(event.target.value),
+                  }))
+                }
+                placeholder="-56.164532"
+              />
+            </label>
+          </fieldset>
           <button type="button" className="primaryButton" onClick={saveTraccarSettings} disabled={traccarLoading}>
             <Save size={18} />
             Guardar Traccar
@@ -12023,6 +13026,11 @@ function VehiclesView({
               date={traccarDate}
               error={traccarError}
               loading={traccarLoading}
+              live={vehicleLive}
+              liveAutoRefresh={liveAutoRefresh}
+              liveLoading={liveLoading}
+              events={vehicleEvents}
+              alertLogs={vehicleAlertLogs}
               summary={vehicleDaily}
               vehicle={selectedVehicleDetail}
               onClose={() => setSelectedVehicleDetailId(null)}
@@ -12031,7 +13039,18 @@ function VehiclesView({
                 setSelectedVehicleDetailId(null);
                 onDelete(selectedVehicleDetail);
               }}
+              onEdit={() => {
+                onEdit(selectedVehicleDetail);
+                setSelectedVehicleDetailId(null);
+              }}
+              onLoadEvents={() => loadVehicleEvents(selectedVehicleDetail.id)}
+              onLoadAlertLogs={() => loadVehicleAlertLogs(selectedVehicleDetail.id)}
+              onLoadLive={() => loadVehicleLive(selectedVehicleDetail.id)}
               onLoadSummary={() => loadVehicleDaily(selectedVehicleDetail.id)}
+              onSendCommand={(command) => sendVehicleCommand(selectedVehicleDetail, command)}
+              onSendTestWhatsApp={() => sendVehicleTestWhatsApp(selectedVehicleDetail)}
+              onSyncAlerts={() => syncVehicleAlerts(selectedVehicleDetail)}
+              onToggleLiveAutoRefresh={() => setLiveAutoRefresh((value) => !value)}
               onToggleActive={() => onToggleActive(selectedVehicleDetail)}
             />,
             document.body,
@@ -12045,25 +13064,65 @@ function VehicleDetailModal({
   date,
   error,
   loading,
+  live,
+  liveAutoRefresh,
+  liveLoading,
+  events,
+  alertLogs,
   summary,
   vehicle,
   onClose,
   onDateChange,
   onDelete,
+  onEdit,
+  onLoadEvents,
+  onLoadAlertLogs,
+  onLoadLive,
   onLoadSummary,
+  onSendCommand,
+  onSendTestWhatsApp,
+  onSyncAlerts,
+  onToggleLiveAutoRefresh,
   onToggleActive,
 }: {
   date: string;
   error: string;
   loading: boolean;
+  live: VehicleLivePosition | null;
+  liveAutoRefresh: boolean;
+  liveLoading: boolean;
+  events: VehicleTraccarEventsResponse | null;
+  alertLogs: VehicleAlertLogsResponse | null;
   summary: VehicleDailySummary | null;
   vehicle: Vehicle;
   onClose: () => void;
   onDateChange: (value: string) => void;
   onDelete: () => void;
+  onEdit: () => void;
+  onLoadEvents: () => void;
+  onLoadAlertLogs: () => void;
+  onLoadLive: () => void;
   onLoadSummary: () => void;
+  onSendCommand: (command: "status" | "engineStop" | "engineResume") => void;
+  onSendTestWhatsApp: () => void;
+  onSyncAlerts: () => void;
+  onToggleLiveAutoRefresh: () => void;
   onToggleActive: () => void;
 }) {
+  const monitoringPhones = (vehicle.monitoringPhones ?? "")
+    .split(/[\n,;]+/)
+    .map((phone) => phone.trim())
+    .filter(Boolean);
+  const sortedAlertLogs = useMemo(
+    () =>
+      alertLogs
+        ? [...alertLogs.logs].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+        : [],
+    [alertLogs],
+  );
+  const latestAlert = sortedAlertLogs[0];
+  const hasEngineCommandTemplates = Boolean(vehicle.gpsEngineStopCommand?.trim() && vehicle.gpsEngineResumeCommand?.trim());
+
   return (
     <div className="deviceDetailOverlay customerProfileOverlay" onClick={onClose}>
       <section className="customerProfileModal vehicleDetailModal" aria-label="Detalle del vehiculo" onClick={(event) => event.stopPropagation()}>
@@ -12093,13 +13152,63 @@ function VehicleDetailModal({
             <span>Actualizado</span>
             <strong>{formatShortDate(vehicle.updatedAt)}</strong>
           </article>
+          <article>
+            <span>Monitoreo</span>
+            <strong>{vehicle.gpsMonitoringEnabled ? "Activo" : "Pendiente"}</strong>
+          </article>
+          <article>
+            <span>WhatsApp</span>
+            <strong>{vehicle.gpsWhatsappAlerts ? "Alertas activas" : "Sin alertas"}</strong>
+          </article>
+          <article>
+            <span>Comandos</span>
+            <strong>{vehicle.gpsEngineCommandsEnabled ? (hasEngineCommandTemplates ? "Especificos GPS" : "Genericos Traccar") : "Bloqueados"}</strong>
+          </article>
         </div>
+
+        {vehicle.gpsEngineCommandsEnabled && !hasEngineCommandTemplates ? (
+          <p className="vehicleCommandNotice">
+            Los botones de motor estan activos, pero este vehiculo todavia no tiene cargado el comando exacto del GPS. El CRM usara el tipo generico de Traccar hasta que se configure.
+          </p>
+        ) : null}
 
         <div className="vehicleDetailActions">
           <input type="date" value={date} onChange={(event) => onDateChange(event.target.value)} />
+          <button type="button" className="secondaryButton" onClick={onEdit}>
+            <Edit3 size={18} />
+            Editar monitoreo
+          </button>
           <button type="button" className="secondaryButton" onClick={onLoadSummary} disabled={loading || !vehicle.traccarDeviceId}>
             <RefreshCw size={18} className={loading ? "spin" : ""} />
             Generar resumen GPS
+          </button>
+          <button type="button" className="secondaryButton" onClick={onLoadEvents} disabled={loading || !vehicle.traccarDeviceId}>
+            <Bell size={18} />
+            Ver eventos
+          </button>
+          <button type="button" className="secondaryButton" onClick={onLoadAlertLogs} disabled={loading}>
+            <MessageSquare size={18} />
+            Alertas enviadas
+          </button>
+          <button type="button" className="secondaryButton" onClick={onSyncAlerts} disabled={loading || !vehicle.gpsMonitoringEnabled}>
+            <MessageSquare size={18} />
+            Sincronizar alertas
+          </button>
+          <button type="button" className="secondaryButton" onClick={onSendTestWhatsApp} disabled={loading || !vehicle.monitoringPhones}>
+            <PhoneCall size={18} />
+            Probar WhatsApp
+          </button>
+          <button type="button" className="secondaryButton" onClick={() => onSendCommand("status")} disabled={loading || !vehicle.traccarDeviceId}>
+            <ShieldCheck size={18} />
+            Estado GPS
+          </button>
+          <button type="button" className="secondaryButton engineCommandButton engineStopButton" onClick={() => onSendCommand("engineStop")} disabled={loading || !vehicle.gpsEngineCommandsEnabled}>
+            <PowerOff size={18} />
+            Cortar motor
+          </button>
+          <button type="button" className="secondaryButton engineCommandButton engineResumeButton" onClick={() => onSendCommand("engineResume")} disabled={loading || !vehicle.gpsEngineCommandsEnabled}>
+            <Power size={18} />
+            Restablecer motor
           </button>
           <button type="button" className="secondaryButton" onClick={onToggleActive}>
             {vehicle.active ? "Desactivar" : "Activar"}
@@ -12113,13 +13222,117 @@ function VehicleDetailModal({
         {error ? <p className="formError">{error}</p> : null}
         {summary?.message ? <p className="emptyPanel">{summary.message}</p> : null}
 
+        <VehicleLiveTrackingPanel
+          live={live}
+          vehicle={vehicle}
+          loading={liveLoading}
+          autoRefresh={liveAutoRefresh}
+          onRefresh={onLoadLive}
+          onToggleAutoRefresh={onToggleLiveAutoRefresh}
+        />
+
+        <section className="customerProfileSection">
+          <div className="customerProfileSectionHeader">
+            <h3>Monitoreo Security Solutions</h3>
+          </div>
+          <div className="meetingDetailBlocks">
+            <section>
+              <span>Celulares WhatsApp</span>
+              <p>{monitoringPhones.length ? monitoringPhones.join(" / ") : "Sin celulares configurados"}</p>
+            </section>
+            <section>
+              <span>Compartir con cliente</span>
+              <p>{vehicle.clientShareUrl || "Sin enlace de cliente"}</p>
+            </section>
+            <section>
+              <span>Corte automatico</span>
+              <p>{vehicle.gpsAutoEngineStopOnAlarm ? "Configurado en CRM, pendiente de pruebas seguras" : "Desactivado"}</p>
+            </section>
+          </div>
+        </section>
+
+        {events ? (
+          <section className="customerProfileSection">
+            <div className="customerProfileSectionHeader">
+              <h3>Eventos GPS</h3>
+              <span>{events.events.length} evento(s)</span>
+            </div>
+            <div className="vehicleStopList">
+              {events.events.slice(0, 12).map((event) => (
+                <article key={event.id}>
+                  <strong>{traccarEventUiLabel(event.type)}</strong>
+                  <span>{event.eventTime ? formatShortDateTime(event.eventTime) : event.serverTime ? formatShortDateTime(event.serverTime) : "Sin fecha"}</span>
+                  <small>{formatTraccarAttributes(event.attributes)}</small>
+                </article>
+              ))}
+              {!events.events.length ? <p className="emptyPanel">{events.message || "No hay eventos GPS para el dia seleccionado."}</p> : null}
+            </div>
+          </section>
+        ) : null}
+
+        {alertLogs ? (
+          <section className="customerProfileSection">
+            <div className="customerProfileSectionHeader">
+              <div>
+                <h3>Alertas WhatsApp enviadas</h3>
+                {latestAlert ? (
+                  <small>
+                    Ultima: {latestAlert.status === "SENT" ? "enviada" : "fallida"} - {formatShortDateTime(latestAlert.createdAt)}
+                  </small>
+                ) : null}
+              </div>
+              <div className="sectionHeaderActions">
+                <span>{alertLogs.logs.length} registro(s)</span>
+                <button type="button" className="secondaryButton compactActionButton" onClick={onLoadAlertLogs} disabled={loading}>
+                  <RefreshCw size={15} className={loading ? "spin" : ""} />
+                  Actualizar
+                </button>
+              </div>
+            </div>
+            <div className="vehicleAlertLogList">
+              {sortedAlertLogs.slice(0, 14).map((log) => (
+                <article key={log.id} className={log.status === "SENT" ? "sent" : "failed"}>
+                  <div>
+                    <strong>{traccarEventUiLabel(log.eventType.replace("command:", ""))}</strong>
+                    <span>{[log.phone, log.geofenceName].filter(Boolean).join(" - ")}</span>
+                    {log.latitude && log.longitude ? (
+                      <small>
+                        {formatNumber(Number(log.latitude), 6)}, {formatNumber(Number(log.longitude), 6)}
+                      </small>
+                    ) : null}
+                  </div>
+                  <small>{formatShortDateTime(log.createdAt)}</small>
+                  <span className={`statusPill ${log.status === "SENT" ? "completed" : "cancelled"}`}>
+                    {log.status === "SENT" ? "Enviado" : "Fallido"}
+                  </span>
+                  {log.mapUrl ? (
+                    <button
+                      type="button"
+                      className="secondaryButton compactActionButton"
+                      onClick={() => window.open(log.mapUrl!, "_blank", "noopener,noreferrer")}
+                    >
+                      <MapPin size={15} />
+                      Mapa
+                    </button>
+                  ) : null}
+                  {log.error ? <p>{log.error}</p> : null}
+                </article>
+              ))}
+              {!alertLogs.logs.length ? <p className="emptyPanel">Todavia no hay alertas WhatsApp registradas para este vehiculo.</p> : null}
+            </div>
+          </section>
+        ) : null}
+
         {summary ? (
           <>
             <div className="vehicleTrackingSummary">
               <article>
-                <span>Kilometros</span>
+                <span>{summary.routeMode === "MATCHED" ? "Ruta corregida" : "Kilometros"}</span>
                 <strong>{formatNumber(summary.distanceKm)} km</strong>
-                <small>{summary.positions} puntos GPS</small>
+                <small>
+                  {summary.routePositions ?? summary.positions} puntos utiles
+                  {summary.filteredPositions ? ` / ${summary.filteredPositions} filtrados` : ""}
+                </small>
               </article>
               <article>
                 <span>Velocidad min.</span>
@@ -12142,6 +13355,8 @@ function VehicleDetailModal({
                 <small>{formatCurrency(summary.estimatedFuelCost)} aprox.</small>
               </article>
             </div>
+
+            <VehicleMonitoringMap summary={summary} vehicle={vehicle} />
 
             <div className="traccarLists">
               <section>
@@ -12184,6 +13399,587 @@ function VehicleDetailModal({
       </section>
     </div>
   );
+}
+
+function VehicleLiveTrackingPanel({
+  live,
+  vehicle,
+  loading,
+  autoRefresh,
+  onRefresh,
+  onToggleAutoRefresh,
+}: {
+  live: VehicleLivePosition | null;
+  vehicle: Vehicle;
+  loading: boolean;
+  autoRefresh: boolean;
+  onRefresh: () => void;
+  onToggleAutoRefresh: () => void;
+}) {
+  const panelRef = useRef<HTMLElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const hasPosition = Number.isFinite(Number(live?.latitude)) && Number.isFinite(Number(live?.longitude));
+  const speed = Number(live?.speedKmh ?? 0);
+  const online = Boolean(live?.online);
+  const stale = Boolean(live?.stale);
+  const statusTone = online && !stale ? "completed" : stale ? "pending" : "cancelled";
+  const statusLabel = online ? (stale ? "Senal atrasada" : live?.moving ? "En movimiento" : "En linea") : "Sin conexion";
+  const isPickup = isPickupLikeVehicle(vehicle);
+  const VehicleIcon = isPickup ? Truck : Car;
+  const signalBars = getLiveSignalBars(live);
+  const signalLabel = getLiveSignalLabel(live);
+  const coordinateLabel = hasPosition ? `${formatNumber(Number(live?.latitude), 6)}, ${formatNumber(Number(live?.longitude), 6)}` : "Sin coordenadas";
+  const headingLabel = live?.course === null || live?.course === undefined ? "Sin rumbo" : `${formatNumber(live.course, 0)} deg`;
+  const batteryLabel = live?.batteryLevel === null || live?.batteryLevel === undefined ? "Sin dato" : `${formatNumber(live.batteryLevel, 0)}%`;
+  const powerLabel = live?.power === null || live?.power === undefined ? "Sin dato" : `${formatNumber(live.power, 1)} V`;
+
+  useEffect(() => {
+    function syncFullscreenState() {
+      setIsFullscreen(document.fullscreenElement === panelRef.current);
+    }
+
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreenState);
+  }, []);
+
+  async function toggleFullscreen() {
+    const panel = panelRef.current;
+    if (!panel) {
+      return;
+    }
+
+    try {
+      if (document.fullscreenElement === panel) {
+        await document.exitFullscreen();
+      } else {
+        await panel.requestFullscreen();
+      }
+    } catch {
+      setIsFullscreen(false);
+    }
+  }
+
+  return (
+    <section ref={panelRef} className="vehicleLivePanel" style={{ "--vehicle-color": vehicle.colorHex || "#19a89b" } as CSSProperties}>
+      <div className="customerProfileSectionHeader">
+        <div>
+          <h3>Seguimiento en vivo</h3>
+          <small>{live?.positionTime ? `Ultima posicion ${formatShortDateTime(live.positionTime)}` : "Esperando posicion actual de Traccar"}</small>
+        </div>
+        <div className="sectionHeaderActions">
+          <span className={`statusPill ${statusTone}`}>{statusLabel}</span>
+          <button type="button" className="secondaryButton compactActionButton" onClick={onToggleAutoRefresh}>
+            <RefreshCw size={15} className={autoRefresh ? "spinSlow" : ""} />
+            {autoRefresh ? "Auto 1s" : "Manual"}
+          </button>
+          <button type="button" className="secondaryButton compactActionButton" onClick={onRefresh} disabled={loading || !vehicle.traccarDeviceId}>
+            <RefreshCw size={15} className={loading ? "spin" : ""} />
+            Actualizar
+          </button>
+          <button type="button" className="secondaryButton compactActionButton" onClick={toggleFullscreen}>
+            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            {isFullscreen ? "Salir" : "Pantalla completa"}
+          </button>
+        </div>
+      </div>
+
+      <div className="vehicleLiveGrid">
+        <div className="vehicleLiveMap">
+          {live && hasPosition ? (
+            <>
+              <PremiumLiveMap live={live} vehicle={vehicle} isPickup={isPickup} />
+              <div className="vehicleLiveMapTop">
+                <div className="vehicleLiveIdentity">
+                  <span className={`vehicleLiveAvatar ${isPickup ? "pickup" : "car"}`}>
+                    <VehicleIcon size={22} strokeWidth={2.7} />
+                  </span>
+                  <div>
+                    <strong>{vehicle.name}</strong>
+                    <small>{vehicle.plate || "Sin matricula"} - {vehicle.make || "Security"} {vehicle.model || "Solutions"}</small>
+                  </div>
+                </div>
+                <div className="vehicleLiveSignal">
+                  <Signal size={16} />
+                  <span>{signalLabel}</span>
+                  <div className="signalBars" aria-label={`Senal ${signalBars} de 4`}>
+                    {[1, 2, 3, 4].map((bar) => (
+                      <i key={bar} className={bar <= signalBars ? "active" : ""} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="vehicleLiveSpeedPod">
+                <Gauge size={18} />
+                <strong>{formatNumber(speed, 1)}</strong>
+                <span>km/h</span>
+              </div>
+
+              <div className="vehicleLiveMapBottom">
+                <span>
+                  <MapPin size={14} />
+                  {live?.address || coordinateLabel}
+                </span>
+                <span>
+                  <Navigation size={14} />
+                  {headingLabel}
+                </span>
+                <span>
+                  <BatteryCharging size={14} />
+                  {batteryLabel} / {powerLabel}
+                </span>
+              </div>
+
+            </>
+          ) : (
+            <div className="vehicleMapEmpty">
+              <MapPin size={22} />
+              <p>{live?.message || "Todavia no hay posicion actual."}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="vehicleLiveStats">
+          <article className="primary">
+            <span>Velocidad</span>
+            <strong>{formatNumber(speed, 1)} km/h</strong>
+            <small>{live?.moving ? "Seguimiento activo" : "Sin desplazamiento"}</small>
+          </article>
+          <article>
+            <span>Contacto</span>
+            <strong>{live?.ignition === null || live?.ignition === undefined ? "Sin dato" : live.ignition ? "Encendido" : "Apagado"}</strong>
+            <small>{live?.alarm ? `Alarma: ${live.alarm}` : "Sin alarma activa"}</small>
+          </article>
+          <article>
+            <span>Movimiento</span>
+            <strong>{live?.moving ? "Moviendose" : "Detenido"}</strong>
+            <small>{statusLabel}</small>
+          </article>
+          <article>
+            <span>Bateria GPS</span>
+            <strong>{batteryLabel}</strong>
+            <small>{live?.charge === null || live?.charge === undefined ? "Carga sin dato" : live.charge ? "Cargando" : "No cargando"}</small>
+          </article>
+          <article>
+            <span>Alimentacion</span>
+            <strong>{powerLabel}</strong>
+            <small>Precision {live?.accuracyMeters ? `${formatNumber(live.accuracyMeters, 0)} m` : "sin dato"}</small>
+          </article>
+          <article>
+            <span>Antiguedad</span>
+            <strong>{formatGpsAge(live?.ageSeconds)}</strong>
+            <small>{live?.positionTime ? formatShortDateTime(live.positionTime) : "Sin hora GPS"}</small>
+          </article>
+        </div>
+      </div>
+
+      <div className="vehicleLiveFooter">
+        <span>{hasPosition ? live?.address || `${formatNumber(Number(live?.latitude), 6)}, ${formatNumber(Number(live?.longitude), 6)}` : live?.message || "Sin posicion"}</span>
+        <div>
+          <button type="button" className="secondaryButton compactActionButton" onClick={() => live?.mapUrl && window.open(live.mapUrl, "_blank", "noopener,noreferrer")} disabled={!live?.mapUrl}>
+            <MapPin size={15} />
+            Abrir mapa
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PremiumLiveMap({ live, vehicle, isPickup }: { live: VehicleLivePosition; vehicle: Vehicle; isPickup: boolean }) {
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const markerRef = useRef<MapLibreMarker | null>(null);
+  const popupRef = useRef<MapLibrePopup | null>(null);
+  const longitude = Number(live.longitude);
+  const latitude = Number(live.latitude);
+  const speed = Number(live.speedKmh ?? 0);
+  const color = vehicle.colorHex || "#19a89b";
+  const course = Number(live.course ?? 0);
+  const moving = Boolean(live.moving);
+  const vehicleLabel = [vehicle.make, vehicle.model, vehicle.color].filter(Boolean).join(" - ") || "Vehiculo Security Solutions";
+  const address = live.address || `${formatNumber(latitude, 6)}, ${formatNumber(longitude, 6)}`;
+
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    if (!container || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return;
+    }
+
+    const center: LngLatLike = [longitude, latitude];
+    if (!mapRef.current) {
+      mapRef.current = new maplibregl.Map({
+        container,
+        style: buildSecurityMapStyle(),
+        center,
+        zoom: 16,
+        pitch: 54,
+        bearing: Number.isFinite(course) ? course - 18 : -18,
+        attributionControl: false,
+      });
+      mapRef.current.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
+    } else {
+      mapRef.current.easeTo({
+        center,
+        zoom: Math.max(mapRef.current.getZoom(), moving ? 16.8 : 16),
+        bearing: Number.isFinite(course) ? course - 18 : mapRef.current.getBearing(),
+        duration: 850,
+      });
+    }
+
+    const markerElement = buildVehicleMapMarkerElement({ vehicle, isPickup, moving, color, course, speed });
+    const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 28, className: "securityMapPopup" }).setHTML(
+      [
+        `<strong>${escapeHtml(vehicle.name)}</strong>`,
+        `<span>${escapeHtml(vehicle.plate || "Sin matricula registrada")}</span>`,
+        `<span>${escapeHtml(vehicleLabel)}</span>`,
+        `<span>${escapeHtml(address)}</span>`,
+        `<b>${formatNumber(speed, 1)} km/h - ${moving ? "en movimiento" : "detenido"}</b>`,
+      ].join(""),
+    );
+
+    markerRef.current?.remove();
+    popupRef.current?.remove();
+    popupRef.current = popup;
+    markerRef.current = new maplibregl.Marker({ element: markerElement, anchor: "center", rotationAlignment: "map" }).setLngLat(center).setPopup(popup).addTo(mapRef.current);
+
+    const showPopup = () => markerRef.current?.togglePopup();
+    const hidePopup = () => popup.remove();
+    markerElement.addEventListener("mouseenter", showPopup);
+    markerElement.addEventListener("mouseleave", hidePopup);
+
+    return () => {
+      markerElement.removeEventListener("mouseenter", showPopup);
+      markerElement.removeEventListener("mouseleave", hidePopup);
+    };
+  }, [address, color, course, isPickup, latitude, longitude, moving, speed, vehicle, vehicleLabel]);
+
+  useEffect(() => {
+    return () => {
+      markerRef.current?.remove();
+      popupRef.current?.remove();
+      mapRef.current?.remove();
+      mapRef.current = null;
+      markerRef.current = null;
+      popupRef.current = null;
+    };
+  }, []);
+
+  return (
+    <>
+      <div ref={mapContainerRef} className="securityLiveMapCanvas" aria-label={`Mapa propio en vivo de ${vehicle.name}`} />
+      <div className="vehicleLiveMapShade" />
+      <div className="securityMapBrand">
+        <span>SS Live</span>
+        <strong>{moving ? "tracking activo" : "custodia activa"}</strong>
+      </div>
+    </>
+  );
+}
+
+function buildVehicleMapMarkerElement({
+  vehicle,
+  isPickup,
+  moving,
+  color,
+  course,
+  speed,
+}: {
+  vehicle: Vehicle;
+  isPickup: boolean;
+  moving: boolean;
+  color: string;
+  course: number;
+  speed: number;
+}) {
+  const marker = document.createElement("button");
+  marker.type = "button";
+  marker.className = `securityVehicleMarker ${isPickup ? "pickup" : "car"} ${moving ? "moving" : "stopped"}`;
+  marker.style.setProperty("--vehicle-color", color);
+  marker.style.setProperty("--vehicle-bearing", `${Number.isFinite(course) ? course : 0}deg`);
+  marker.title = `${vehicle.name} ${vehicle.plate || ""} - ${formatNumber(speed, 1)} km/h`;
+  marker.innerHTML = `
+    <span class="securityVehiclePulse"></span>
+    <span class="securityVehicleBody">
+      <span class="securityVehicleRoof"></span>
+      <span class="securityVehicleGlass"></span>
+      <span class="securityVehicleHood"></span>
+      <span class="securityVehicleWheel front"></span>
+      <span class="securityVehicleWheel rear"></span>
+    </span>
+    <span class="securityVehiclePlate">${escapeHtml(vehicle.plate || vehicle.name)}</span>
+  `;
+  return marker;
+}
+
+function buildSecurityMapStyle(): StyleSpecification {
+  return {
+    version: 8,
+    sources: {
+      osm: {
+        type: "raster",
+        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tileSize: 256,
+        attribution: "OpenStreetMap",
+      },
+    },
+    layers: [
+      {
+        id: "security-base",
+        type: "raster",
+        source: "osm",
+        paint: {
+          "raster-saturation": -0.72,
+          "raster-contrast": 0.08,
+          "raster-brightness-min": 0.05,
+          "raster-brightness-max": 0.82,
+        },
+      },
+    ],
+  };
+}
+
+function VehicleMonitoringMap({ summary, vehicle }: { summary: VehicleDailySummary; vehicle: Vehicle }) {
+  const route = (summary.route ?? []).filter((point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude));
+  const stopPoints = summary.stops.filter((stop) => Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude));
+  const finish = route[route.length - 1];
+  const lastSpeed = Number(finish?.speedKmh ?? 0);
+  const moving = lastSpeed >= 5 || (summary.movingMinutes > 0 && summary.stoppedMinutes === 0);
+  const isPickup = isPickupLikeVehicle(vehicle);
+  const VehicleIcon = isPickup ? Truck : Car;
+  const googleRouteUrl = buildGoogleMapsRouteFromGpsPoints(route);
+  const finishUrl = finish ? buildGoogleMapsPlaceSearchUrl(finish.latitude, finish.longitude) : "";
+  const statusLabel = moving ? "En movimiento" : finish ? "Ultima posicion" : "Sin recorrido";
+  const statusDetail =
+    summary.routeMode === "MATCHED"
+      ? "Recorrido corregido sobre calles con OSRM"
+      : summary.routeMode === "GPS_FILTERED"
+        ? "Recorrido filtrado por calidad GPS"
+        : "Esperando resumen GPS";
+
+  return (
+    <section className="vehicleMonitoringMap" style={{ "--vehicle-color": vehicle.colorHex || "#19a89b" } as CSSProperties}>
+      <div className="vehicleMonitoringHeader">
+        <div className="vehicleMonitoringTitle">
+          <span className={`vehicleMapMarker ${isPickup ? "pickup" : "car"}`}>
+            <VehicleIcon size={23} strokeWidth={2.6} />
+          </span>
+          <div>
+            <p>Centro de monitoreo</p>
+            <h3>{vehicle.name}</h3>
+            <small>{[vehicle.make, vehicle.model, vehicle.color].filter(Boolean).join(" - ") || vehicle.plate || "Vehiculo operativo"}</small>
+          </div>
+        </div>
+        <div className="vehicleMonitoringStatus">
+          <span className={`statusPill ${moving ? "completed" : "pending"}`}>{statusLabel}</span>
+          <small>{statusDetail}</small>
+        </div>
+      </div>
+
+      <div className="vehicleMapCanvas">
+        {route.length >= 2 ? (
+          <SecurityRouteMap route={route} stopPoints={stopPoints} vehicle={vehicle} summary={summary} moving={moving} isPickup={isPickup} />
+        ) : (
+          <div className="vehicleMapEmpty">
+            <MapPin size={22} />
+            <p>Genera el resumen GPS para ver el recorrido del dia.</p>
+          </div>
+        )}
+      </div>
+
+      <div className="vehicleMapFooter">
+        <span>
+          {route.length} punto(s) en ruta - {summary.stops.length} parada(s) - {summary.visits.length} visita(s)
+        </span>
+        <div>
+          <button type="button" className="secondaryButton" onClick={() => finishUrl && window.open(finishUrl, "_blank", "noopener,noreferrer")} disabled={!finishUrl}>
+            <MapPin size={17} />
+            Ver ubicacion
+          </button>
+          <button type="button" className="secondaryButton" onClick={() => googleRouteUrl && window.open(googleRouteUrl, "_blank", "noopener,noreferrer")} disabled={!googleRouteUrl}>
+            <MapPin size={17} />
+            Abrir recorrido
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SecurityRouteMap({
+  route,
+  stopPoints,
+  vehicle,
+  summary,
+  moving,
+  isPickup,
+}: {
+  route: NonNullable<VehicleDailySummary["route"]>;
+  stopPoints: VehicleDailySummary["stops"];
+  vehicle: Vehicle;
+  summary: VehicleDailySummary;
+  moving: boolean;
+  isPickup: boolean;
+}) {
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const markerRefs = useRef<MapLibreMarker[]>([]);
+  const color = vehicle.colorHex || "#19a89b";
+  const lastPoint = route[route.length - 1];
+  const lastSpeed = Number(lastPoint?.speedKmh ?? 0);
+  const lastCourse = 0;
+
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    if (!container || route.length < 2) {
+      return;
+    }
+
+    const coordinates = route.map((point) => [point.longitude, point.latitude]);
+    const center = coordinates[coordinates.length - 1] as LngLatLike;
+
+    function drawRoute(map: MapLibreMap) {
+      const routeData = {
+        type: "Feature",
+        properties: {},
+        geometry: { type: "LineString", coordinates },
+      };
+      const existingSource = map.getSource("security-route") as maplibregl.GeoJSONSource | undefined;
+      if (existingSource) {
+        existingSource.setData(routeData as never);
+      } else {
+        map.addSource("security-route", { type: "geojson", data: routeData as never });
+        map.addLayer({
+          id: "security-route-glow",
+          type: "line",
+          source: "security-route",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: { "line-color": color, "line-width": 13, "line-opacity": 0.24, "line-blur": 6 },
+        });
+        map.addLayer({
+          id: "security-route-line",
+          type: "line",
+          source: "security-route",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: { "line-color": color, "line-width": 5, "line-opacity": 0.96 },
+        });
+      }
+
+      const bounds = coordinates.reduce((currentBounds, coordinate) => currentBounds.extend(coordinate as [number, number]), new maplibregl.LngLatBounds(coordinates[0] as [number, number], coordinates[0] as [number, number]));
+      map.fitBounds(bounds, { padding: 76, maxZoom: 17.2, duration: 900 });
+
+      markerRefs.current.forEach((marker) => marker.remove());
+      markerRefs.current = [];
+      const startMarker = buildRoutePointMarker("Salida", "start");
+      markerRefs.current.push(new maplibregl.Marker({ element: startMarker, anchor: "center" }).setLngLat(coordinates[0] as LngLatLike).addTo(map));
+
+      stopPoints.slice(0, 20).forEach((stop) => {
+        const stopMarker = buildRoutePointMarker(formatDuration(stop.durationMinutes), "stop");
+        markerRefs.current.push(new maplibregl.Marker({ element: stopMarker, anchor: "center" }).setLngLat([stop.longitude, stop.latitude]).addTo(map));
+      });
+
+      const vehicleMarker = buildVehicleMapMarkerElement({ vehicle, isPickup, moving, color, course: lastCourse, speed: lastSpeed });
+      markerRefs.current.push(new maplibregl.Marker({ element: vehicleMarker, anchor: "center", rotationAlignment: "map" }).setLngLat(center).addTo(map));
+    }
+
+    if (!mapRef.current) {
+      mapRef.current = new maplibregl.Map({
+        container,
+        style: buildSecurityMapStyle(),
+        center,
+        zoom: 14,
+        pitch: 42,
+        bearing: -14,
+        attributionControl: false,
+      });
+      mapRef.current.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
+      mapRef.current.on("load", () => drawRoute(mapRef.current as MapLibreMap));
+    } else if (mapRef.current.isStyleLoaded()) {
+      drawRoute(mapRef.current);
+    }
+
+    return () => {
+      markerRefs.current.forEach((marker) => marker.remove());
+      markerRefs.current = [];
+    };
+  }, [color, isPickup, lastCourse, lastSpeed, moving, route, stopPoints, vehicle]);
+
+  useEffect(() => {
+    return () => {
+      markerRefs.current.forEach((marker) => marker.remove());
+      markerRefs.current = [];
+      mapRef.current?.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  return (
+    <>
+      <div ref={mapContainerRef} className="securityRouteMapCanvas" aria-label={`Recorrido profesional de ${vehicle.name}`} />
+      <div className="vehicleLiveMapShade" />
+      <div className="securityRouteMetrics">
+        <strong>{formatNumber(summary.distanceKm)} km</strong>
+        <span>{summary.stops.length} paradas</span>
+        <span>{summary.visits.length} visitas</span>
+      </div>
+    </>
+  );
+}
+
+function buildRoutePointMarker(label: string, variant: "start" | "stop") {
+  const marker = document.createElement("span");
+  marker.className = `securityRoutePoint ${variant}`;
+  marker.innerHTML = `<i></i><b>${escapeHtml(label)}</b>`;
+  return marker;
+}
+
+function VehicleLiveMarker({
+  vehicle,
+  summary,
+  point,
+  moving,
+  speedKmh,
+  isPickup,
+}: {
+  vehicle: Vehicle;
+  summary: VehicleDailySummary;
+  point: { x: number; y: number };
+  moving: boolean;
+  speedKmh: number;
+  isPickup: boolean;
+}) {
+  const VehicleIcon = isPickup ? Truck : Car;
+  const markerStyle = {
+    left: `${(point.x / 1000) * 100}%`,
+    top: `${(point.y / 460) * 100}%`,
+  } as CSSProperties;
+  const technicalLabel = [vehicle.make, vehicle.model, vehicle.color].filter(Boolean).join(" - ") || "Ficha tecnica pendiente";
+
+  return (
+    <span className={`vehicleLiveMarker ${isPickup ? "pickup" : "car"} ${moving ? "moving" : "stopped"}`} style={markerStyle} tabIndex={0}>
+      <span className="vehicleLiveMarkerHalo" />
+      <span className="vehicleLiveMarkerIcon">
+        <VehicleIcon size={21} strokeWidth={2.8} />
+      </span>
+      <span className="vehicleLiveMarkerPlate">{vehicle.plate || vehicle.name}</span>
+      <span className="vehicleLiveTooltip" role="tooltip">
+        <strong>{vehicle.name}</strong>
+        <span>{vehicle.plate || "Sin matricula registrada"}</span>
+        <span>{technicalLabel}</span>
+        <span>
+          {moving ? "En movimiento" : "Detenido"} - {formatNumber(speedKmh, 1)} km/h
+        </span>
+        <span>
+          {formatNumber(summary.distanceKm)} km - {summary.stops.length} parada(s) - {summary.visits.length} visita(s)
+        </span>
+      </span>
+    </span>
+  );
+}
+
+function isPickupLikeVehicle(vehicle: Vehicle) {
+  const text = [vehicle.icon, vehicle.name, vehicle.make, vehicle.model].filter(Boolean).join(" ").toLowerCase();
+  return /camioneta|pickup|pick-up|truck|utilitario|furgon|van|kangoo|oroch|hilux|ranger|frontier|saveiro|strada|partner|berlingo|fiorino|doblo|master|express/.test(text);
 }
 
 function InventoryView({
@@ -14630,18 +16426,18 @@ function compressImageDataUrl(dataUrl: string, maxSide = 1600, quality = 0.78): 
 }
 
 function cleanQuotePayload(form: QuotePayload): QuotePayload {
-  const cleanDiscountPercent = Math.min(100, Math.max(0, Number(form.discountPercent) || 0));
+  const cleanDiscountPercent = Math.min(100, Math.max(0, parseLocaleNumber(form.discountPercent) || 0));
   const cleanItems = form.items?.map((item) => ({
     priceBookItemId: item.priceBookItemId || undefined,
     inventoryItemId: item.inventoryItemId || undefined,
     type: item.type,
     category: item.category,
     description: item.description,
-    quantity: Number(item.quantity) || 0,
+    quantity: parseLocaleNumber(item.quantity) || 0,
     unit: item.unit,
-    unitPrice: Number(item.unitPrice) || 0,
-    taxRate: Number(item.taxRate) || 0,
-    unitCost: Number(item.unitCost) || 0,
+    unitPrice: parseLocaleNumber(item.unitPrice) || 0,
+    taxRate: parseLocaleNumber(item.taxRate) || 0,
+    unitCost: parseLocaleNumber(item.unitCost) || 0,
   }));
 
   return {
@@ -14657,10 +16453,10 @@ function cleanQuotePayload(form: QuotePayload): QuotePayload {
     validUntil: form.validUntil || undefined,
     taxIncluded: form.taxIncluded ?? true,
     discountPercent: cleanDiscountPercent,
-    discountAmount: Math.max(0, Number(form.discountAmount) || 0),
-    profitMarginPercent: Number(form.profitMarginPercent) || 0,
-    laborPoints: Number(form.laborPoints) || 0,
-    subtotal: Number(form.subtotal) || 0,
+    discountAmount: Math.max(0, parseLocaleNumber(form.discountAmount) || 0),
+    profitMarginPercent: parseLocaleNumber(form.profitMarginPercent) || 0,
+    laborPoints: parseLocaleNumber(form.laborPoints) || 0,
+    subtotal: parseLocaleNumber(form.subtotal) || 0,
     tax: form.taxIncluded === false ? 0 : undefined,
     internalNotes: form.internalNotes?.trim() || undefined,
     commercialTerms: form.commercialTerms?.trim() || undefined,
@@ -14739,9 +16535,25 @@ function cleanVehiclePayload(form: VehiclePayload): VehiclePayload {
   return {
     name: form.name.trim(),
     plate: form.plate?.trim() || undefined,
+    make: form.make?.trim() || undefined,
+    model: form.model?.trim() || undefined,
+    color: form.color?.trim() || undefined,
+    colorHex: form.colorHex?.trim() || undefined,
+    icon: form.icon?.trim() || undefined,
+    logoUrl: form.logoUrl?.trim() || undefined,
     traccarDeviceId: form.traccarDeviceId?.trim() || undefined,
     fuelKmPerLiter: Number(form.fuelKmPerLiter) || undefined,
     active: form.active,
+    monitoringPhones: form.monitoringPhones?.trim() || undefined,
+    clientShareUrl: form.clientShareUrl?.trim() || undefined,
+    gpsMonitoringEnabled: Boolean(form.gpsMonitoringEnabled),
+    gpsWhatsappAlerts: Boolean(form.gpsWhatsappAlerts),
+    gpsEngineCommandsEnabled: Boolean(form.gpsEngineCommandsEnabled),
+    gpsAutoEngineStopOnAlarm: Boolean(form.gpsAutoEngineStopOnAlarm),
+    gpsCommandTextChannel: Boolean(form.gpsCommandTextChannel),
+    gpsStatusCommand: form.gpsStatusCommand?.trim() || undefined,
+    gpsEngineStopCommand: form.gpsEngineStopCommand?.trim() || undefined,
+    gpsEngineResumeCommand: form.gpsEngineResumeCommand?.trim() || undefined,
   };
 }
 
@@ -14888,7 +16700,36 @@ function readMeetingAttachment(file: File): Promise<NonNullable<MeetingPayload["
 }
 
 function toMoneyNumber(value: string | number) {
-  return typeof value === "number" ? value : Number(value);
+  return parseLocaleNumber(value);
+}
+
+function parseLocaleNumber(value?: string | number | null) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return 0;
+  }
+
+  const clean = raw.replace(/[^\d,.-]/g, "");
+  const lastComma = clean.lastIndexOf(",");
+  const lastDot = clean.lastIndexOf(".");
+  const decimalSeparator = lastComma > lastDot ? "," : lastDot >= 0 ? "." : "";
+  const normalized = decimalSeparator
+    ? `${clean.slice(0, decimalSeparator === "," ? lastComma : lastDot).replace(/[.,]/g, "")}.${clean.slice((decimalSeparator === "," ? lastComma : lastDot) + 1).replace(/[.,]/g, "")}`
+    : clean.replace(/[.,]/g, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatDecimalInput(value: string | number) {
+  const number = parseLocaleNumber(value);
+  if (!Number.isFinite(number)) {
+    return "0";
+  }
+  return String(Math.round(number * 100) / 100).replace(".", ",");
 }
 
 function isConfirmedFinancePayment(payment: Payment) {
@@ -15248,6 +17089,59 @@ function buildGpsGoogleMapsRouteUrl(
   }
 
   return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+function buildGoogleMapsRouteFromGpsPoints(route: NonNullable<VehicleDailySummary["route"]>) {
+  const clean = route.filter((point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude));
+  if (!clean.length) {
+    return "";
+  }
+
+  const sampled = sampleRouteForMaps(clean, 10);
+  if (sampled.length === 1) {
+    return buildGoogleMapsPlaceSearchUrl(sampled[0].latitude, sampled[0].longitude);
+  }
+
+  const params = new URLSearchParams({ api: "1", travelmode: "driving" });
+  const [origin, ...rest] = sampled;
+  const destination = rest.pop() ?? origin;
+  params.set("origin", `${origin.latitude},${origin.longitude}`);
+  params.set("destination", `${destination.latitude},${destination.longitude}`);
+  if (rest.length) {
+    params.set("waypoints", rest.map((point) => `${point.latitude},${point.longitude}`).join("|"));
+  }
+
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+function sampleRouteForMaps<T>(points: T[], maxPoints: number) {
+  if (points.length <= maxPoints) {
+    return points;
+  }
+
+  const result: T[] = [];
+  const step = (points.length - 1) / (maxPoints - 1);
+  for (let index = 0; index < maxPoints; index += 1) {
+    result.push(points[Math.round(index * step)]);
+  }
+  return result;
+}
+
+function buildGoogleMapsPlaceSearchUrl(latitude: number, longitude: number) {
+  const params = new URLSearchParams({
+    api: "1",
+    query: `${latitude},${longitude}`,
+  });
+  return `https://www.google.com/maps/search/?${params.toString()}`;
+}
+
+function buildGoogleMapsEmbedUrl(latitude: number, longitude: number) {
+  const params = new URLSearchParams({
+    q: `${latitude},${longitude}`,
+    z: "17",
+    output: "embed",
+  });
+  return `https://maps.google.com/maps?${params.toString()}`;
 }
 
 function mergeDateAndTime(date: Date, time: string) {
@@ -15733,6 +17627,87 @@ function formatShortDateTime(value?: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatGpsAge(seconds?: number | null) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) {
+    return "Sin dato";
+  }
+  if (seconds < 60) {
+    return `${Math.max(0, Math.round(seconds))} s`;
+  }
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+  const hours = Math.round(minutes / 60);
+  return `${hours} h`;
+}
+
+function getLiveSignalBars(live?: VehicleLivePosition | null) {
+  if (!live?.online) {
+    return 0;
+  }
+  const age = Number(live.ageSeconds ?? 9999);
+  if (age <= 10) {
+    return 4;
+  }
+  if (age <= 30) {
+    return 3;
+  }
+  if (age <= 60) {
+    return 2;
+  }
+  return 1;
+}
+
+function getLiveSignalLabel(live?: VehicleLivePosition | null) {
+  if (!live?.online) {
+    return "Sin conexion";
+  }
+  const age = Number(live.ageSeconds ?? 9999);
+  if (age <= 10) {
+    return "Senal excelente";
+  }
+  if (age <= 30) {
+    return "Senal buena";
+  }
+  if (age <= 60) {
+    return "Senal media";
+  }
+  return "Senal atrasada";
+}
+
+function traccarEventUiLabel(type: string) {
+  const labels: Record<string, string> = {
+    alarm: "Alarma / panico",
+    deviceOnline: "GPS conectado",
+    deviceOffline: "GPS desconectado",
+    ignitionOn: "Contacto encendido",
+    ignitionOff: "Contacto apagado",
+    geofenceEnter: "Ingreso a geozona",
+    geofenceExit: "Salida de geozona",
+    deviceOverspeed: "Exceso de velocidad",
+    commandResult: "Resultado de comando",
+    status: "Consulta de estado",
+    engineStop: "Bloqueo de motor",
+    engineResume: "Restauracion de motor",
+    "test-whatsapp": "Prueba WhatsApp",
+  };
+
+  return labels[type] ?? type;
+}
+
+function formatTraccarAttributes(attributes?: Record<string, unknown>) {
+  if (!attributes) {
+    return "Sin detalle";
+  }
+
+  const alarm = attributes.alarm ? `alarma: ${String(attributes.alarm)}` : "";
+  const result = attributes.result ? String(attributes.result) : "";
+  const speed = attributes.speed ? `velocidad: ${String(attributes.speed)}` : "";
+  const details = [alarm, result, speed].filter(Boolean);
+  return details.length ? details.join(" - ") : "Evento registrado";
 }
 
 function getErrorMessage(error: unknown) {

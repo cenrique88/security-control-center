@@ -5,44 +5,24 @@ export declare class PaymentsController {
     private readonly paymentsService;
     constructor(paymentsService: PaymentsService);
     list(search?: string, customerId?: string, status?: "PAID" | "PENDING" | "OVERDUE", type?: "INCOME" | "EXPENSE", category?: string, period?: "CURRENT_MONTH", includeInternalCosts?: string): Promise<({
-        customer: {
-            id: string;
-            name: string;
-            email: string | null;
-            phone: string | null;
-            type: import(".prisma/client").$Enums.CustomerType;
-        };
-        quote: {
-            number: string;
-            id: string;
-            title: string;
-            total: import("@prisma/client/runtime/library").Decimal;
-        } | null;
-        workOrder: {
-            id: string;
-            status: import(".prisma/client").$Enums.WorkOrderStatus;
-            title: string;
-        } | null;
         vehicle: {
             id: string;
             name: string;
             plate: string | null;
         } | null;
-        inventoryItem: {
+        customer: {
             id: string;
-            reference: string;
             name: string;
-            sku: string | null;
-            unit: string;
-            stock: number;
-            sourceType: string;
-        } | null;
+            phone: string | null;
+            email: string | null;
+            type: import(".prisma/client").$Enums.CustomerType;
+        };
         inventoryMovements: {
             id: string;
-            quantity: number;
-            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
+            currency: string | null;
+            quantity: number;
             stockAfter: number;
             unitCost: import("@prisma/client/runtime/library").Decimal | null;
             totalCost: import("@prisma/client/runtime/library").Decimal | null;
@@ -53,67 +33,67 @@ export declare class PaymentsController {
                 unit: string;
             };
         }[];
+        workOrder: {
+            id: string;
+            status: import(".prisma/client").$Enums.WorkOrderStatus;
+            title: string;
+        } | null;
+        inventoryItem: {
+            id: string;
+            name: string;
+            reference: string;
+            sku: string | null;
+            unit: string;
+            stock: number;
+            sourceType: string;
+        } | null;
+        quote: {
+            number: string;
+            id: string;
+            title: string;
+            total: import("@prisma/client/runtime/library").Decimal;
+        } | null;
     } & {
         id: string;
-        customerId: string;
-        quoteId: string | null;
-        workOrderId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         vehicleId: string | null;
-        inventoryItemId: string | null;
-        transactionType: string;
+        reference: string | null;
+        notes: string | null;
+        customerId: string;
+        method: string | null;
+        workOrderId: string | null;
         category: string;
+        currency: string;
+        quoteId: string | null;
+        transactionType: string;
         concept: string;
         amount: import("@prisma/client/runtime/library").Decimal;
         quantity: number | null;
         unitPrice: import("@prisma/client/runtime/library").Decimal | null;
-        currency: string;
-        method: string | null;
-        reference: string | null;
-        notes: string | null;
         dueDate: Date | null;
         paidAt: Date | null;
-        createdAt: Date;
-        updatedAt: Date;
+        inventoryItemId: string | null;
     })[]>;
     create(dto: CreatePaymentDto): Promise<{
-        customer: {
-            id: string;
-            name: string;
-            email: string | null;
-            phone: string | null;
-            type: import(".prisma/client").$Enums.CustomerType;
-        };
-        quote: {
-            number: string;
-            id: string;
-            title: string;
-            total: import("@prisma/client/runtime/library").Decimal;
-        } | null;
-        workOrder: {
-            id: string;
-            status: import(".prisma/client").$Enums.WorkOrderStatus;
-            title: string;
-        } | null;
         vehicle: {
             id: string;
             name: string;
             plate: string | null;
         } | null;
-        inventoryItem: {
+        customer: {
             id: string;
-            reference: string;
             name: string;
-            sku: string | null;
-            unit: string;
-            stock: number;
-            sourceType: string;
-        } | null;
+            phone: string | null;
+            email: string | null;
+            type: import(".prisma/client").$Enums.CustomerType;
+        };
         inventoryMovements: {
             id: string;
-            quantity: number;
-            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
+            currency: string | null;
+            quantity: number;
             stockAfter: number;
             unitCost: import("@prisma/client/runtime/library").Decimal | null;
             totalCost: import("@prisma/client/runtime/library").Decimal | null;
@@ -124,67 +104,67 @@ export declare class PaymentsController {
                 unit: string;
             };
         }[];
+        workOrder: {
+            id: string;
+            status: import(".prisma/client").$Enums.WorkOrderStatus;
+            title: string;
+        } | null;
+        inventoryItem: {
+            id: string;
+            name: string;
+            reference: string;
+            sku: string | null;
+            unit: string;
+            stock: number;
+            sourceType: string;
+        } | null;
+        quote: {
+            number: string;
+            id: string;
+            title: string;
+            total: import("@prisma/client/runtime/library").Decimal;
+        } | null;
     } & {
         id: string;
-        customerId: string;
-        quoteId: string | null;
-        workOrderId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         vehicleId: string | null;
-        inventoryItemId: string | null;
-        transactionType: string;
+        reference: string | null;
+        notes: string | null;
+        customerId: string;
+        method: string | null;
+        workOrderId: string | null;
         category: string;
+        currency: string;
+        quoteId: string | null;
+        transactionType: string;
         concept: string;
         amount: import("@prisma/client/runtime/library").Decimal;
         quantity: number | null;
         unitPrice: import("@prisma/client/runtime/library").Decimal | null;
-        currency: string;
-        method: string | null;
-        reference: string | null;
-        notes: string | null;
         dueDate: Date | null;
         paidAt: Date | null;
-        createdAt: Date;
-        updatedAt: Date;
+        inventoryItemId: string | null;
     }>;
     update(id: string, dto: UpdatePaymentDto): Promise<{
-        customer: {
-            id: string;
-            name: string;
-            email: string | null;
-            phone: string | null;
-            type: import(".prisma/client").$Enums.CustomerType;
-        };
-        quote: {
-            number: string;
-            id: string;
-            title: string;
-            total: import("@prisma/client/runtime/library").Decimal;
-        } | null;
-        workOrder: {
-            id: string;
-            status: import(".prisma/client").$Enums.WorkOrderStatus;
-            title: string;
-        } | null;
         vehicle: {
             id: string;
             name: string;
             plate: string | null;
         } | null;
-        inventoryItem: {
+        customer: {
             id: string;
-            reference: string;
             name: string;
-            sku: string | null;
-            unit: string;
-            stock: number;
-            sourceType: string;
-        } | null;
+            phone: string | null;
+            email: string | null;
+            type: import(".prisma/client").$Enums.CustomerType;
+        };
         inventoryMovements: {
             id: string;
-            quantity: number;
-            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
+            currency: string | null;
+            quantity: number;
             stockAfter: number;
             unitCost: import("@prisma/client/runtime/library").Decimal | null;
             totalCost: import("@prisma/client/runtime/library").Decimal | null;
@@ -195,67 +175,67 @@ export declare class PaymentsController {
                 unit: string;
             };
         }[];
+        workOrder: {
+            id: string;
+            status: import(".prisma/client").$Enums.WorkOrderStatus;
+            title: string;
+        } | null;
+        inventoryItem: {
+            id: string;
+            name: string;
+            reference: string;
+            sku: string | null;
+            unit: string;
+            stock: number;
+            sourceType: string;
+        } | null;
+        quote: {
+            number: string;
+            id: string;
+            title: string;
+            total: import("@prisma/client/runtime/library").Decimal;
+        } | null;
     } & {
         id: string;
-        customerId: string;
-        quoteId: string | null;
-        workOrderId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         vehicleId: string | null;
-        inventoryItemId: string | null;
-        transactionType: string;
+        reference: string | null;
+        notes: string | null;
+        customerId: string;
+        method: string | null;
+        workOrderId: string | null;
         category: string;
+        currency: string;
+        quoteId: string | null;
+        transactionType: string;
         concept: string;
         amount: import("@prisma/client/runtime/library").Decimal;
         quantity: number | null;
         unitPrice: import("@prisma/client/runtime/library").Decimal | null;
-        currency: string;
-        method: string | null;
-        reference: string | null;
-        notes: string | null;
         dueDate: Date | null;
         paidAt: Date | null;
-        createdAt: Date;
-        updatedAt: Date;
+        inventoryItemId: string | null;
     }>;
     remove(id: string): Promise<{
-        customer: {
-            id: string;
-            name: string;
-            email: string | null;
-            phone: string | null;
-            type: import(".prisma/client").$Enums.CustomerType;
-        };
-        quote: {
-            number: string;
-            id: string;
-            title: string;
-            total: import("@prisma/client/runtime/library").Decimal;
-        } | null;
-        workOrder: {
-            id: string;
-            status: import(".prisma/client").$Enums.WorkOrderStatus;
-            title: string;
-        } | null;
         vehicle: {
             id: string;
             name: string;
             plate: string | null;
         } | null;
-        inventoryItem: {
+        customer: {
             id: string;
-            reference: string;
             name: string;
-            sku: string | null;
-            unit: string;
-            stock: number;
-            sourceType: string;
-        } | null;
+            phone: string | null;
+            email: string | null;
+            type: import(".prisma/client").$Enums.CustomerType;
+        };
         inventoryMovements: {
             id: string;
-            quantity: number;
-            currency: string | null;
             createdAt: Date;
             type: import(".prisma/client").$Enums.InventoryMovementType;
+            currency: string | null;
+            quantity: number;
             stockAfter: number;
             unitCost: import("@prisma/client/runtime/library").Decimal | null;
             totalCost: import("@prisma/client/runtime/library").Decimal | null;
@@ -266,26 +246,46 @@ export declare class PaymentsController {
                 unit: string;
             };
         }[];
+        workOrder: {
+            id: string;
+            status: import(".prisma/client").$Enums.WorkOrderStatus;
+            title: string;
+        } | null;
+        inventoryItem: {
+            id: string;
+            name: string;
+            reference: string;
+            sku: string | null;
+            unit: string;
+            stock: number;
+            sourceType: string;
+        } | null;
+        quote: {
+            number: string;
+            id: string;
+            title: string;
+            total: import("@prisma/client/runtime/library").Decimal;
+        } | null;
     } & {
         id: string;
-        customerId: string;
-        quoteId: string | null;
-        workOrderId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
         vehicleId: string | null;
-        inventoryItemId: string | null;
-        transactionType: string;
+        reference: string | null;
+        notes: string | null;
+        customerId: string;
+        method: string | null;
+        workOrderId: string | null;
         category: string;
+        currency: string;
+        quoteId: string | null;
+        transactionType: string;
         concept: string;
         amount: import("@prisma/client/runtime/library").Decimal;
         quantity: number | null;
         unitPrice: import("@prisma/client/runtime/library").Decimal | null;
-        currency: string;
-        method: string | null;
-        reference: string | null;
-        notes: string | null;
         dueDate: Date | null;
         paidAt: Date | null;
-        createdAt: Date;
-        updatedAt: Date;
+        inventoryItemId: string | null;
     }>;
 }

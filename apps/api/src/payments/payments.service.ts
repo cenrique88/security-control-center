@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { AuditSeverity, Prisma } from "@prisma/client";
+import { AuditService } from "../audit/audit.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { UpdatePaymentDto } from "./dto/update-payment.dto";
@@ -19,7 +20,10 @@ const INTERNAL_COST_CATEGORIES = new Set(["WORK_ORDER_MATERIAL_COST"]);
 
 @Injectable()
 export class PaymentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async list(filters: PaymentFilters) {
     const where: Prisma.PaymentWhereInput = {};
@@ -111,7 +115,7 @@ export class PaymentsService {
       Boolean(quantity && quantity > 0) &&
       Boolean(this.cleanOptional(dto.inventoryItemId) || this.cleanOptional(dto.inventoryItemName) || this.cleanOptional(dto.concept));
 
-    return this.prisma.$transaction(async (tx) => {
+    const payment = await this.prisma.$transaction(async (tx) => {
       const inventoryItem = shouldCreateInventoryEntry
         ? await this.findOrCreateInventoryItem(tx, dto, customer.name)
         : this.cleanOptional(dto.inventoryItemId)
@@ -181,6 +185,26 @@ export class PaymentsService {
 
       return payment;
     });
+    await this.audit.record({
+      module: "PAYMENTS",
+      action: "PAYMENT_CREATED",
+      entityType: "Payment",
+      entityId: payment.id,
+      severity: payment.transactionType === "EXPENSE" ? AuditSeverity.WARNING : AuditSeverity.INFO,
+      summary: `${payment.transactionType === "EXPENSE" ? "Egreso" : "Ingreso"} registrado: ${payment.concept}`,
+      metadata: {
+        customerId: payment.customerId,
+        customerName: payment.customer.name,
+        amount: Number(payment.amount),
+        currency: payment.currency,
+        category: payment.category,
+        method: payment.method,
+        reference: payment.reference,
+        inventoryItemId: payment.inventoryItemId,
+      },
+    });
+
+    return payment;
   }
 
   async update(id: string, dto: UpdatePaymentDto) {
@@ -194,7 +218,7 @@ export class PaymentsService {
     }
     await this.ensureOptionalLinks(dto);
 
-    return this.prisma.payment.update({
+    const payment = await this.prisma.payment.update({
       where: { id },
       data: {
         customerId: dto.customerId,
@@ -217,10 +241,29 @@ export class PaymentsService {
       },
       include: this.includeCustomer(),
     });
+    await this.audit.record({
+      module: "PAYMENTS",
+      action: "PAYMENT_UPDATED",
+      entityType: "Payment",
+      entityId: payment.id,
+      severity: AuditSeverity.WARNING,
+      summary: `Movimiento actualizado: ${payment.concept}`,
+      metadata: {
+        customerId: payment.customerId,
+        customerName: payment.customer.name,
+        amount: Number(payment.amount),
+        currency: payment.currency,
+        transactionType: payment.transactionType,
+        category: payment.category,
+        paidAt: payment.paidAt?.toISOString(),
+      },
+    });
+
+    return payment;
   }
 
   async remove(id: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const payment = await this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({
         where: { id },
         include: {
@@ -262,6 +305,25 @@ export class PaymentsService {
         include: this.includeCustomer(),
       });
     });
+    await this.audit.record({
+      module: "PAYMENTS",
+      action: "PAYMENT_DELETED",
+      entityType: "Payment",
+      entityId: payment.id,
+      severity: AuditSeverity.CRITICAL,
+      summary: `Movimiento eliminado: ${payment.concept}`,
+      metadata: {
+        customerId: payment.customerId,
+        customerName: payment.customer.name,
+        amount: Number(payment.amount),
+        currency: payment.currency,
+        transactionType: payment.transactionType,
+        category: payment.category,
+        reference: payment.reference,
+      },
+    });
+
+    return payment;
   }
 
   private includeCustomer() {

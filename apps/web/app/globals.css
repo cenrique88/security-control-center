@@ -1,3 +1,5 @@
+@import "maplibre-gl/dist/maplibre-gl.css";
+
 :root {
   --bg: #f4f6f8;
   --panel: #ffffff;
@@ -1479,29 +1481,85 @@ button:disabled {
   display: grid;
   gap: 16px;
   margin-top: 18px;
-  padding: 18px;
+  padding: 20px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--panel);
+  background:
+    linear-gradient(135deg, rgba(20, 184, 166, 0.08), transparent 34%),
+    var(--panel);
 }
 
 .traccarConfigGrid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  align-items: end;
+  grid-template-columns: minmax(280px, 1.2fr) minmax(240px, 0.8fr) minmax(320px, 1fr);
+  gap: 14px;
+  align-items: stretch;
 }
 
-.traccarConfigGrid .wideField {
+.traccarConfigGroup {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid rgba(126, 197, 210, 0.2);
+  border-radius: 8px;
+  background: rgba(5, 14, 22, 0.6);
+}
+
+.traccarConfigGroup legend {
+  padding: 0 6px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.traccarConfigGroup label {
+  min-width: 0;
+}
+
+.traccarConfigGroup input {
+  min-height: 42px;
+  width: 100%;
+}
+
+.traccarConfigGroup p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.traccarConnectionGroup {
+  grid-column: span 1;
+}
+
+.traccarTuningGroup {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.traccarBaseGroup {
+  grid-column: span 1;
+}
+
+.traccarConfigGrid .wideField,
+.traccarConfigGroup .wideField {
   grid-column: span 2;
 }
 
-.traccarConfigGrid .primaryButton {
+.traccarConfigGrid .primaryButton,
+.traccarSyncButton {
   min-height: 46px;
 }
 
-.traccarSyncButton {
-  min-height: 46px;
+.traccarConfigGrid > .primaryButton,
+.traccarConfigGrid > .traccarSyncButton {
+  align-self: end;
 }
 
 .traccarSyncSummary {
@@ -1596,6 +1654,375 @@ button:disabled {
   font-size: 24px;
 }
 
+.vehicleMonitoringMap {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(67, 211, 198, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--vehicle-color, #19a89b) 20%, transparent), transparent 38%),
+    rgba(6, 16, 26, 0.88);
+}
+
+.vehicleMonitoringHeader,
+.vehicleMapFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.vehicleMonitoringTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.vehicleMonitoringTitle p,
+.vehicleMonitoringTitle h3,
+.vehicleMonitoringTitle small,
+.vehicleMapFooter span,
+.vehicleMonitoringStatus small {
+  margin: 0;
+}
+
+.vehicleMonitoringTitle p {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.vehicleMonitoringTitle h3 {
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.vehicleMonitoringTitle small,
+.vehicleMapFooter span,
+.vehicleMonitoringStatus small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.vehicleMapMarker {
+  width: 58px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 14px 18px 12px 12px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent 42%),
+    var(--vehicle-color, #19a89b);
+  color: #ffffff;
+  overflow: visible;
+  position: relative;
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.32),
+    inset 0 -10px 16px rgba(0, 0, 0, 0.18);
+}
+
+.vehicleMapMarker::before,
+.vehicleMapMarker::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  border-radius: 999px;
+  background: #06101a;
+}
+
+.vehicleMapMarker::before {
+  left: 10px;
+}
+
+.vehicleMapMarker::after {
+  right: 10px;
+}
+
+.vehicleMapMarker img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.vehicleMonitoringStatus {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+  text-align: right;
+}
+
+.vehicleMapCanvas {
+  position: relative;
+  min-height: 300px;
+  border: 1px solid rgba(126, 197, 210, 0.2);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 22% 18%, rgba(67, 211, 198, 0.13), transparent 22%),
+    linear-gradient(135deg, rgba(12, 31, 45, 0.88), rgba(4, 11, 18, 0.94));
+  overflow: hidden;
+}
+
+.vehicleLiveMarker {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  transform: translate(-50%, -76%);
+  color: #ffffff;
+  outline: none;
+  cursor: default;
+}
+
+.vehicleLiveMarkerHalo {
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  width: 42px;
+  height: 42px;
+  border: 1px solid color-mix(in srgb, var(--vehicle-color, #19a89b) 70%, #ffffff);
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: color-mix(in srgb, var(--vehicle-color, #19a89b) 24%, transparent);
+  filter: blur(0.2px);
+  opacity: 0.42;
+}
+
+.vehicleLiveMarker.moving .vehicleLiveMarkerHalo {
+  animation: vehiclePulse 1.8s ease-out infinite;
+}
+
+.vehicleLiveMarkerIcon {
+  position: relative;
+  z-index: 1;
+  width: 44px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: 11px 14px 9px 9px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.22), transparent 42%),
+    var(--vehicle-color, #19a89b);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.38),
+    0 0 0 4px rgba(6, 16, 26, 0.28),
+    inset 0 -8px 12px rgba(0, 0, 0, 0.18);
+}
+
+.vehicleLiveMarkerIcon::before,
+.vehicleLiveMarkerIcon::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 999px;
+  background: #041018;
+  box-shadow: inset 0 0 0 2px rgba(67, 211, 198, 0.22);
+}
+
+.vehicleLiveMarkerIcon::before {
+  left: 8px;
+}
+
+.vehicleLiveMarkerIcon::after {
+  right: 8px;
+}
+
+.vehicleLiveMarkerIcon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.vehicleLiveMarkerPlate {
+  position: relative;
+  z-index: 1;
+  max-width: 110px;
+  padding: 3px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(4, 11, 18, 0.88);
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.3);
+}
+
+.vehicleLiveTooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 18px);
+  z-index: 5;
+  width: min(260px, 72vw);
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--vehicle-color, #19a89b) 45%, rgba(255, 255, 255, 0.14));
+  border-radius: 8px;
+  background: rgba(5, 14, 23, 0.96);
+  color: var(--muted);
+  text-align: left;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+
+.vehicleLiveTooltip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 12px;
+  height: 12px;
+  border-right: 1px solid color-mix(in srgb, var(--vehicle-color, #19a89b) 45%, rgba(255, 255, 255, 0.14));
+  border-bottom: 1px solid color-mix(in srgb, var(--vehicle-color, #19a89b) 45%, rgba(255, 255, 255, 0.14));
+  background: rgba(5, 14, 23, 0.96);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.vehicleLiveTooltip strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.vehicleLiveTooltip span {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.vehicleLiveMarker:hover .vehicleLiveTooltip,
+.vehicleLiveMarker:focus .vehicleLiveTooltip,
+.vehicleLiveMarker:focus-within .vehicleLiveTooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+@keyframes vehiclePulse {
+  0% {
+    opacity: 0.48;
+    transform: translate(-50%, -50%) scale(0.78);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.35);
+  }
+}
+
+@keyframes vehicleMapPulse {
+  0% {
+    opacity: 0.64;
+    transform: scale(0.72);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.42);
+  }
+}
+
+.vehicleMapCanvas svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+}
+
+.vehicleMapGridLine {
+  fill: none;
+  stroke: rgba(126, 197, 210, 0.12);
+  stroke-width: 1;
+  stroke-dasharray: 10 14;
+}
+
+.vehicleMapRouteGlow,
+.vehicleMapRoute {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.vehicleMapRouteGlow {
+  stroke: rgba(67, 211, 198, 0.18);
+  stroke-width: 18;
+}
+
+.vehicleMapRoute {
+  stroke-width: 7;
+}
+
+.vehicleMapPoint circle {
+  fill: #071521;
+  stroke: var(--accent);
+  stroke-width: 4;
+}
+
+.vehicleMapPoint.finish circle {
+  fill: var(--vehicle-color, #19a89b);
+  stroke: #ffffff;
+}
+
+.vehicleMapPoint.stop circle {
+  fill: #f7c948;
+  stroke: rgba(7, 21, 33, 0.9);
+}
+
+.vehicleMapPoint text {
+  fill: var(--text);
+  font-size: 22px;
+  font-weight: 900;
+  paint-order: stroke;
+  stroke: rgba(4, 11, 18, 0.9);
+  stroke-width: 5;
+}
+
+.vehicleMapEmpty {
+  min-height: 300px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.vehicleMapEmpty p {
+  margin: 0;
+  font-weight: 850;
+}
+
+.vehicleMapFooter > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .vehicleList {
   display: grid;
   padding: 14px;
@@ -1647,6 +2074,32 @@ button:disabled {
   gap: 4px;
 }
 
+.vehicleIdentityCell {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.vehicleVisualBadge {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(67, 211, 198, 0.18), 0 10px 20px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.vehicleVisualBadge img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .vehicleListCell strong {
   color: var(--text);
   font-size: 15px;
@@ -1663,6 +2116,113 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.vehicleColorInput {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.vehicleColorInput input[type="color"] {
+  width: 54px;
+  min-width: 54px;
+  height: 42px;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.vehicleLogoPicker {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.vehicleLogoPreview {
+  width: 62px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: #ffffff;
+  overflow: hidden;
+}
+
+.vehicleLogoPreview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.vehicleLogoPicker small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.vehicleAlertLogList {
+  display: grid;
+  gap: 8px;
+}
+
+.vehicleAlertLogList article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(8, 20, 32, 0.72);
+}
+
+.vehicleAlertLogList article.failed {
+  border-color: rgba(255, 109, 109, 0.36);
+  background: rgba(60, 13, 24, 0.32);
+}
+
+.vehicleAlertLogList article.sent {
+  border-color: rgba(28, 189, 173, 0.32);
+  background: rgba(0, 92, 82, 0.2);
+}
+
+.vehicleAlertLogList strong,
+.vehicleAlertLogList span,
+.vehicleAlertLogList small,
+.vehicleAlertLogList p {
+  min-width: 0;
+}
+
+.vehicleAlertLogList strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.vehicleAlertLogList span,
+.vehicleAlertLogList small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.vehicleAlertLogList p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #ff8b8b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.compactActionButton {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 12px;
 }
 
 .vehicleDetailModal {
@@ -1706,9 +2266,670 @@ button:disabled {
   align-items: center;
 }
 
+.vehicleLivePanel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--vehicle-color, #19a89b) 36%, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--vehicle-color, #19a89b) 18%, transparent), transparent 44%),
+    radial-gradient(circle at 80% 12%, rgba(67, 211, 198, 0.1), transparent 22%),
+    rgba(5, 15, 24, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.vehicleLivePanel:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  align-content: start;
+  padding: 24px;
+  border: 0;
+  border-radius: 0;
+  overflow: auto;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--vehicle-color, #19a89b) 18%, transparent), transparent 44%),
+    radial-gradient(circle at 70% 18%, rgba(67, 211, 198, 0.12), transparent 24%),
+    #041018;
+}
+
+.vehicleLivePanel:fullscreen .vehicleLiveGrid {
+  grid-template-columns: minmax(560px, 1.45fr) minmax(340px, 0.55fr);
+  min-height: calc(100vh - 170px);
+}
+
+.vehicleLivePanel:fullscreen .vehicleLiveMap {
+  min-height: calc(100vh - 190px);
+}
+
+.vehicleLivePanel:fullscreen .vehicleLiveStats {
+  align-content: start;
+}
+
+.vehicleLivePanel:fullscreen .vehicleLiveStats article {
+  min-height: 96px;
+}
+
+.vehicleLivePanel:fullscreen .vehicleLiveStats strong {
+  font-size: 24px;
+}
+
+.vehicleLiveGrid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 0.9fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.vehicleLiveMap {
+  position: relative;
+  min-height: 340px;
+  border: 1px solid rgba(126, 197, 210, 0.2);
+  border-radius: 8px;
+  background: rgba(4, 11, 18, 0.96);
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 18px 38px rgba(0, 0, 0, 0.22);
+}
+
+.vehicleLiveMapFrame,
+.vehicleLiveMapShade {
+  position: absolute;
+  inset: 0;
+}
+
+.securityLiveMapCanvas {
+  position: absolute;
+  inset: 0;
+}
+
+.securityRouteMapCanvas {
+  position: absolute;
+  inset: 0;
+}
+
+.securityLiveMapCanvas .maplibregl-canvas {
+  outline: 0;
+}
+
+.securityLiveMapCanvas .maplibregl-ctrl-bottom-right {
+  right: 12px;
+  bottom: 86px;
+}
+
+.securityLiveMapCanvas .maplibregl-ctrl-group {
+  overflow: hidden;
+  border: 1px solid rgba(126, 197, 210, 0.22);
+  border-radius: 8px;
+  background: rgba(4, 13, 22, 0.84);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(10px);
+}
+
+.securityLiveMapCanvas .maplibregl-ctrl-group button {
+  width: 34px;
+  height: 34px;
+  background-color: transparent;
+  filter: invert(1) opacity(0.84);
+}
+
+.securityLiveMapCanvas .maplibregl-ctrl button:not(:disabled):hover {
+  background-color: rgba(67, 211, 198, 0.16);
+}
+
+.securityMapBrand {
+  position: absolute;
+  z-index: 3;
+  right: 14px;
+  bottom: 62px;
+  display: grid;
+  gap: 1px;
+  min-width: 112px;
+  padding: 8px 10px;
+  border: 1px solid rgba(126, 197, 210, 0.26);
+  border-radius: 8px;
+  background: rgba(4, 13, 22, 0.82);
+  color: var(--text);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(10px);
+}
+
+.securityMapBrand span {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.securityMapBrand strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.securityRouteMetrics {
+  position: absolute;
+  z-index: 3;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid rgba(126, 197, 210, 0.26);
+  border-radius: 999px;
+  background: rgba(4, 13, 22, 0.82);
+  color: var(--text);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(10px);
+}
+
+.securityRouteMetrics strong {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.securityRouteMetrics span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.securityRoutePoint {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  transform: translate(-50%, -50%);
+}
+
+.securityRoutePoint i {
+  width: 15px;
+  height: 15px;
+  display: block;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  border-radius: 999px;
+  background: #f7c948;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
+}
+
+.securityRoutePoint.start i {
+  background: #43d3c6;
+}
+
+.securityRoutePoint b {
+  max-width: 92px;
+  padding: 3px 6px;
+  border: 1px solid rgba(126, 197, 210, 0.28);
+  border-radius: 999px;
+  background: rgba(3, 12, 20, 0.86);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.securityVehicleMarker {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+}
+
+.securityVehiclePulse {
+  position: absolute;
+  inset: 5px;
+  border: 2px solid color-mix(in srgb, var(--vehicle-color, #19a89b) 68%, #ffffff);
+  border-radius: 999px;
+  opacity: 0.62;
+  animation: vehicleMapPulse 1.85s ease-out infinite;
+}
+
+.securityVehicleMarker.stopped .securityVehiclePulse {
+  animation-duration: 3.2s;
+  opacity: 0.36;
+}
+
+.securityVehicleBody {
+  position: relative;
+  width: 34px;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  border-radius: 11px 13px 9px 9px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.32), transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, var(--vehicle-color, #19a89b) 82%, #ffffff), var(--vehicle-color, #19a89b));
+  box-shadow:
+    0 12px 22px rgba(0, 0, 0, 0.42),
+    0 0 18px color-mix(in srgb, var(--vehicle-color, #19a89b) 54%, transparent);
+  transform: rotate(var(--vehicle-bearing, 0deg));
+  transform-origin: center;
+}
+
+.securityVehicleMarker.pickup .securityVehicleBody {
+  width: 38px;
+  border-radius: 9px 15px 8px 8px;
+}
+
+.securityVehicleRoof,
+.securityVehicleGlass,
+.securityVehicleHood,
+.securityVehicleWheel {
+  position: absolute;
+  display: block;
+}
+
+.securityVehicleRoof {
+  top: 4px;
+  left: 11px;
+  width: 13px;
+  height: 11px;
+  border-radius: 6px 7px 4px 4px;
+  background: rgba(3, 20, 31, 0.5);
+}
+
+.securityVehicleMarker.pickup .securityVehicleRoof {
+  left: 9px;
+}
+
+.securityVehicleGlass {
+  top: 5px;
+  left: 14px;
+  width: 7px;
+  height: 9px;
+  border-radius: 4px;
+  background: rgba(223, 250, 255, 0.7);
+}
+
+.securityVehicleHood {
+  top: 8px;
+  right: 3px;
+  width: 7px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.securityVehicleWheel {
+  bottom: -3px;
+  width: 7px;
+  height: 5px;
+  border-radius: 999px;
+  background: #02070c;
+}
+
+.securityVehicleWheel.front {
+  right: 5px;
+}
+
+.securityVehicleWheel.rear {
+  left: 5px;
+}
+
+.securityVehiclePlate {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  max-width: 96px;
+  transform: translateX(-50%);
+  padding: 3px 7px;
+  border: 1px solid rgba(126, 197, 210, 0.32);
+  border-radius: 999px;
+  background: rgba(3, 12, 20, 0.86);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+
+.securityMapPopup .maplibregl-popup-content {
+  display: grid;
+  gap: 4px;
+  min-width: 210px;
+  padding: 12px;
+  border: 1px solid rgba(126, 197, 210, 0.28);
+  border-radius: 8px;
+  background: rgba(3, 12, 20, 0.94);
+  color: var(--text);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(12px);
+}
+
+.securityMapPopup .maplibregl-popup-tip {
+  border-top-color: rgba(3, 12, 20, 0.94);
+  border-bottom-color: rgba(3, 12, 20, 0.94);
+}
+
+.securityMapPopup strong {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.securityMapPopup span,
+.securityMapPopup b {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.securityMapPopup b {
+  color: var(--accent);
+}
+
+.vehicleLiveMapFrame {
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+  border: 0;
+  filter: saturate(0.92) contrast(1.02);
+}
+
+.vehicleLiveMapShade {
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(4, 11, 18, 0.44), transparent 24%, transparent 66%, rgba(4, 11, 18, 0.5)),
+    linear-gradient(90deg, rgba(4, 11, 18, 0.32), transparent 22%, transparent 72%, rgba(4, 11, 18, 0.24)),
+    radial-gradient(circle at 50% 52%, transparent 0 11%, rgba(4, 11, 18, 0.08) 44%, rgba(4, 11, 18, 0.25));
+}
+
+.vehicleLiveMapTop,
+.vehicleLiveMapBottom,
+.vehicleLiveSpeedPod {
+  position: absolute;
+  z-index: 3;
+}
+
+.vehicleLiveMapTop {
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vehicleLiveIdentity,
+.vehicleLiveSignal,
+.vehicleLiveMapBottom span,
+.vehicleLiveSpeedPod {
+  border: 1px solid rgba(126, 197, 210, 0.26);
+  background: rgba(4, 13, 22, 0.82);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(10px);
+}
+
+.vehicleLiveIdentity {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  max-width: min(440px, 62%);
+  padding: 9px 11px;
+  border-radius: 8px;
+}
+
+.vehicleLiveAvatar {
+  width: 42px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 12px 16px 10px 10px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.2), transparent 44%),
+    var(--vehicle-color, #19a89b);
+  color: #ffffff;
+  overflow: hidden;
+}
+
+.vehicleLiveAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.vehicleLiveIdentity strong {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vehicleLiveIdentity small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vehicleLiveSignal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.signalBars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 16px;
+}
+
+.signalBars i {
+  width: 4px;
+  border-radius: 999px;
+  background: rgba(126, 197, 210, 0.26);
+}
+
+.signalBars i:nth-child(1) {
+  height: 6px;
+}
+
+.signalBars i:nth-child(2) {
+  height: 9px;
+}
+
+.signalBars i:nth-child(3) {
+  height: 12px;
+}
+
+.signalBars i:nth-child(4) {
+  height: 15px;
+}
+
+.signalBars i.active {
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(67, 211, 198, 0.46);
+}
+
+.vehicleLiveSpeedPod {
+  top: 92px;
+  right: 14px;
+  min-width: 116px;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 13px 14px;
+  border-radius: 8px;
+  color: var(--text);
+}
+
+.vehicleLiveSpeedPod strong {
+  font-size: 34px;
+  line-height: 1;
+  color: #ffffff;
+}
+
+.vehicleLiveSpeedPod span {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.vehicleLiveMapBottom {
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vehicleLiveMapBottom span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vehicleLiveMarker.mapCenter {
+  left: 50%;
+  top: 52%;
+}
+
+.vehicleLiveStats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vehicleLiveStats article {
+  display: grid;
+  gap: 5px;
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid rgba(126, 197, 210, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(67, 211, 198, 0.08), transparent 46%),
+    rgba(8, 20, 32, 0.82);
+}
+
+.vehicleLiveStats article.primary {
+  grid-column: span 2;
+  min-height: 110px;
+  border-color: color-mix(in srgb, var(--vehicle-color, #19a89b) 42%, rgba(255, 255, 255, 0.12));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--vehicle-color, #19a89b) 18%, transparent), transparent 46%),
+    rgba(8, 20, 32, 0.9);
+}
+
+.vehicleLiveStats span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.vehicleLiveStats strong {
+  color: var(--text);
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.vehicleLiveStats article.primary strong {
+  font-size: 32px;
+}
+
+.vehicleLiveStats small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.vehicleLiveFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 2px;
+}
+
+.vehicleLiveFooter span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.spinSlow {
+  animation: spin 3s linear infinite;
+}
+
 .vehicleDeleteButton {
   border-color: rgba(67, 211, 198, 0.35);
   color: var(--accent);
+}
+
+.engineCommandButton {
+  font-weight: 950;
+}
+
+.engineStopButton {
+  border-color: rgba(255, 109, 109, 0.58);
+  background: rgba(109, 22, 34, 0.42);
+  color: #ffd7d7;
+}
+
+.engineStopButton:hover:not(:disabled),
+.engineStopButton:focus-visible:not(:disabled) {
+  border-color: rgba(255, 109, 109, 0.9);
+  background: rgba(150, 30, 45, 0.58);
+}
+
+.engineResumeButton {
+  border-color: rgba(28, 189, 116, 0.55);
+  background: rgba(13, 91, 57, 0.36);
+  color: #c9ffe1;
+}
+
+.engineResumeButton:hover:not(:disabled),
+.engineResumeButton:focus-visible:not(:disabled) {
+  border-color: rgba(28, 189, 116, 0.9);
+  background: rgba(16, 118, 72, 0.54);
 }
 
 .traccarLists {
@@ -3363,6 +4584,173 @@ button:disabled {
 
 .customerProfileSectionHeader .secondaryButton {
   width: auto;
+}
+
+.sectionHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.customerProfileSectionHeader small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.auditLayout {
+  display: grid;
+  gap: 14px;
+}
+
+.usersLayout {
+  display: grid;
+  grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.userAdminForm {
+  position: sticky;
+  top: 16px;
+}
+
+.usersPanel {
+  min-width: 0;
+}
+
+.userList {
+  display: grid;
+  gap: 9px;
+}
+
+.userList article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(8, 20, 32, 0.72);
+}
+
+.userList strong {
+  display: block;
+  color: var(--text);
+}
+
+.userList span,
+.userList small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.auditToolbar {
+  display: grid;
+  gap: 14px;
+}
+
+.auditFilters {
+  display: grid;
+  grid-template-columns: 180px minmax(220px, 1fr) minmax(220px, 1fr) 160px;
+  gap: 10px;
+  align-items: end;
+}
+
+.auditFilters label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.auditStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.auditStats article {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(8, 20, 32, 0.72);
+}
+
+.auditStats article.negative {
+  border-color: rgba(255, 109, 109, 0.4);
+  background: rgba(60, 13, 24, 0.32);
+}
+
+.auditStats article.warning {
+  border-color: rgba(255, 195, 90, 0.35);
+  background: rgba(67, 47, 12, 0.26);
+}
+
+.auditStats span,
+.auditLogCard span,
+.auditLogCard small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.auditStats strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--text);
+  font-size: 26px;
+}
+
+.auditList {
+  display: grid;
+  gap: 9px;
+}
+
+.auditLogCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(8, 20, 32, 0.74);
+}
+
+.auditLogCard.warning {
+  border-color: rgba(255, 195, 90, 0.35);
+}
+
+.auditLogCard.critical {
+  border-color: rgba(255, 109, 109, 0.45);
+  background: rgba(60, 13, 24, 0.3);
+}
+
+.auditLogCard strong {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.auditLogCard p {
+  margin: 7px 0 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.auditLogMeta {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+  min-width: 170px;
 }
 
 .customerProfileGrid {
@@ -5360,18 +6748,62 @@ button:disabled {
 .toggleField {
   display: flex !important;
   align-items: center;
-  gap: 10px !important;
-  min-height: 42px;
-  padding: 10px 12px;
+  gap: 12px !important;
+  min-height: 54px;
+  padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #eef3f6;
-  color: var(--accent-strong) !important;
+  background: rgba(8, 20, 32, 0.78);
+  color: var(--text) !important;
 }
 
 .toggleField input {
   width: 18px;
   height: 18px;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.toggleField span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.toggleField strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.toggleField small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.gpsToggleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.commandTemplateGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vehicleCommandNotice {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #f8d38d;
+  font-weight: 700;
 }
 
 .gmailStatusPanel,
@@ -6434,6 +7866,29 @@ button:disabled {
 }
 
 @media (max-width: 940px) {
+  .vehicleLivePanel:fullscreen .vehicleLiveGrid,
+  .vehicleLiveGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .vehicleLivePanel:fullscreen .vehicleLiveMap,
+  .vehicleLiveMap {
+    min-height: 420px;
+  }
+
+  .vehicleLiveIdentity {
+    max-width: 100%;
+  }
+
+  .vehicleLiveMapTop {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .vehicleLiveSignal {
+    align-self: flex-start;
+  }
+
   .shell {
     grid-template-columns: 1fr;
   }
@@ -6573,6 +8028,18 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .usersLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .userAdminForm {
+    position: static;
+  }
+
+  .userList article {
+    grid-template-columns: 1fr auto;
+  }
+
   .vehiclesLayout {
     grid-template-columns: 1fr;
   }
@@ -6581,11 +8048,29 @@ button:disabled {
   .vehicleTrackingSummary,
   .traccarSyncSummary,
   .traccarLists,
+  .auditFilters,
+  .auditStats,
   .traccarRunBar {
     grid-template-columns: 1fr;
   }
 
-  .traccarConfigGrid .wideField {
+  .auditLogCard {
+    grid-template-columns: 1fr;
+  }
+
+  .auditLogMeta {
+    justify-items: start;
+    min-width: 0;
+  }
+
+  .traccarConfigGroup,
+  .gpsToggleGrid,
+  .commandTemplateGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .traccarConfigGrid .wideField,
+  .traccarConfigGroup .wideField {
     grid-column: auto;
   }
 
@@ -6703,6 +8188,42 @@ button:disabled {
 }
 
 @media (max-width: 620px) {
+  .vehicleLivePanel {
+    padding: 12px;
+  }
+
+  .vehicleLiveMap {
+    min-height: 360px;
+  }
+
+  .vehicleLiveStats {
+    grid-template-columns: 1fr;
+  }
+
+  .vehicleLiveStats article.primary {
+    grid-column: span 1;
+  }
+
+  .vehicleLiveSpeedPod {
+    top: auto;
+    right: 12px;
+    bottom: 72px;
+    min-width: 96px;
+  }
+
+  .vehicleLiveSpeedPod strong {
+    font-size: 26px;
+  }
+
+  .vehicleLiveMapBottom span {
+    width: 100%;
+  }
+
+  .vehicleLiveFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .workspace {
     padding: 14px;
   }

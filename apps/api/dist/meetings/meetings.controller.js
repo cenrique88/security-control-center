@@ -16,6 +16,8 @@ exports.MeetingsController = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const roles_decorator_1 = require("../auth/roles.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 const create_meeting_dto_1 = require("./dto/create-meeting.dto");
 const update_meeting_dto_1 = require("./dto/update-meeting.dto");
 const meetings_service_1 = require("./meetings.service");
@@ -62,7 +64,8 @@ __decorate([
 ], MeetingsController.prototype, "update", null);
 exports.MeetingsController = MeetingsController = __decorate([
     (0, common_1.Controller)("meetings"),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.OWNER, client_1.UserRole.ADMIN, client_1.UserRole.SALES),
     __metadata("design:paramtypes", [meetings_service_1.MeetingsService])
 ], MeetingsController);
 //# sourceMappingURL=meetings.controller.js.map

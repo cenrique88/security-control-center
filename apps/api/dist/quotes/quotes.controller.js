@@ -16,6 +16,8 @@ exports.QuotesController = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const roles_decorator_1 = require("../auth/roles.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 const create_quote_dto_1 = require("./dto/create-quote.dto");
 const update_quote_dto_1 = require("./dto/update-quote.dto");
 const quotes_service_1 = require("./quotes.service");
@@ -72,7 +74,8 @@ __decorate([
 ], QuotesController.prototype, "remove", null);
 exports.QuotesController = QuotesController = __decorate([
     (0, common_1.Controller)("quotes"),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.OWNER, client_1.UserRole.ADMIN, client_1.UserRole.SALES),
     __metadata("design:paramtypes", [quotes_service_1.QuotesService])
 ], QuotesController);
 //# sourceMappingURL=quotes.controller.js.map

@@ -11,17 +11,21 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.InventoryService = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const node_child_process_1 = require("node:child_process");
 const promises_1 = require("node:fs/promises");
 const node_os_1 = require("node:os");
 const node_path_1 = require("node:path");
 const node_util_1 = require("node:util");
+const audit_service_1 = require("../audit/audit.service");
 const prisma_service_1 = require("../prisma/prisma.service");
 const execFileAsync = (0, node_util_1.promisify)(node_child_process_1.execFile);
 let InventoryService = class InventoryService {
     prisma;
-    constructor(prisma) {
+    audit;
+    constructor(prisma, audit) {
         this.prisma = prisma;
+        this.audit = audit;
     }
     async list(filters) {
         const where = {};
@@ -94,7 +98,7 @@ let InventoryService = class InventoryService {
     }
     async createItem(dto) {
         try {
-            return await this.prisma.$transaction(async (tx) => {
+            const item = await this.prisma.$transaction(async (tx) => {
                 const item = await tx.inventoryItem.create({
                     data: {
                         reference: await this.nextReference(tx),
@@ -169,6 +173,23 @@ let InventoryService = class InventoryService {
                 }
                 return item;
             });
+            await this.audit.record({
+                module: "INVENTORY",
+                action: "ITEM_CREATED",
+                entityType: "InventoryItem",
+                entityId: item.id,
+                severity: Number(item.stock) > 0 ? client_1.AuditSeverity.WARNING : client_1.AuditSeverity.INFO,
+                summary: `Articulo creado: ${item.name}`,
+                metadata: {
+                    reference: item.reference,
+                    stock: item.stock,
+                    supplier: item.supplier,
+                    sourceType: item.sourceType,
+                    costPrice: item.costPrice ? Number(item.costPrice) : null,
+                    currency: item.currency,
+                },
+            });
+            return item;
         }
         catch (error) {
             this.handleDatabaseError(error);
@@ -180,7 +201,7 @@ let InventoryService = class InventoryService {
             throw new common_1.NotFoundException("Inventory item not found");
         }
         try {
-            return await this.prisma.$transaction(async (tx) => {
+            const item = await this.prisma.$transaction(async (tx) => {
                 const cleanName = dto.name?.trim();
                 const item = await tx.inventoryItem.update({
                     where: { id },
@@ -220,13 +241,30 @@ let InventoryService = class InventoryService {
                 }
                 return item;
             });
+            await this.audit.record({
+                module: "INVENTORY",
+                action: "ITEM_UPDATED",
+                entityType: "InventoryItem",
+                entityId: item.id,
+                severity: client_1.AuditSeverity.WARNING,
+                summary: `Articulo actualizado: ${item.name}`,
+                metadata: {
+                    reference: item.reference,
+                    stock: item.stock,
+                    supplier: item.supplier,
+                    sourceType: item.sourceType,
+                    costPrice: item.costPrice ? Number(item.costPrice) : null,
+                    currency: item.currency,
+                },
+            });
+            return item;
         }
         catch (error) {
             this.handleDatabaseError(error);
         }
     }
     async createMovement(dto) {
-        return this.prisma.$transaction(async (tx) => {
+        const movement = await this.prisma.$transaction(async (tx) => {
             const item = await tx.inventoryItem.findUnique({
                 where: { id: dto.itemId },
                 select: { id: true, name: true, stock: true, costPrice: true, priceWithTax: true, currency: true, customerId: true, supplier: true, sourceType: true },
@@ -326,9 +364,30 @@ let InventoryService = class InventoryService {
                 },
             });
         });
+        await this.audit.record({
+            module: "INVENTORY",
+            action: "MOVEMENT_CREATED",
+            entityType: "InventoryMovement",
+            entityId: movement.id,
+            severity: movement.type === "ADJUST" ? client_1.AuditSeverity.CRITICAL : client_1.AuditSeverity.WARNING,
+            summary: `${movement.type} ${movement.quantity} ${movement.item.unit} - ${movement.item.name}`,
+            metadata: {
+                itemId: movement.itemId,
+                itemName: movement.item.name,
+                type: movement.type,
+                quantity: movement.quantity,
+                stockAfter: movement.stockAfter,
+                totalCost: movement.totalCost ? Number(movement.totalCost) : null,
+                currency: movement.currency,
+                paymentId: movement.paymentId,
+                workOrderId: movement.workOrderId,
+                reason: movement.reason,
+            },
+        });
+        return movement;
     }
     async createMovementBatch(dto) {
-        return this.prisma.$transaction(async (tx) => {
+        const result = await this.prisma.$transaction(async (tx) => {
             if (!dto.items.length) {
                 throw new common_1.BadRequestException("Agrega al menos un articulo al movimiento");
             }
@@ -457,9 +516,25 @@ let InventoryService = class InventoryService {
             }
             return { paymentId: payment?.id ?? null, movements: createdMovements };
         });
+        await this.audit.record({
+            module: "INVENTORY",
+            action: "MOVEMENT_BATCH_CREATED",
+            entityType: "InventoryMovement",
+            entityId: result.paymentId ?? result.movements[0]?.id,
+            severity: client_1.AuditSeverity.WARNING,
+            summary: `Movimiento agrupado: ${result.movements.length} articulo(s)`,
+            metadata: {
+                paymentId: result.paymentId,
+                movementIds: result.movements.map((movement) => movement.id),
+                type: dto.type,
+                reason: dto.reason,
+                totalQuantity: result.movements.reduce((total, movement) => total + movement.quantity, 0),
+            },
+        });
+        return result;
     }
     async deleteMovement(id) {
-        return this.prisma.$transaction(async (tx) => {
+        const movement = await this.prisma.$transaction(async (tx) => {
             const movement = await tx.inventoryMovement.findUnique({
                 where: { id },
                 include: { item: true },
@@ -499,12 +574,35 @@ let InventoryService = class InventoryService {
             }
             return deletedMovement;
         });
+        await this.audit.record({
+            module: "INVENTORY",
+            action: "MOVEMENT_DELETED",
+            entityType: "InventoryMovement",
+            entityId: movement.id,
+            severity: client_1.AuditSeverity.CRITICAL,
+            summary: `Movimiento eliminado: ${movement.type} ${movement.quantity} - ${movement.item.name}`,
+            metadata: {
+                itemId: movement.itemId,
+                itemName: movement.item.name,
+                type: movement.type,
+                quantity: movement.quantity,
+                stockAfter: movement.stockAfter,
+                paymentId: movement.paymentId,
+                workOrderId: movement.workOrderId,
+            },
+        });
+        return movement;
     }
     async deleteItem(id) {
         const item = await this.prisma.inventoryItem.findUnique({
             where: { id },
             select: {
                 id: true,
+                reference: true,
+                name: true,
+                stock: true,
+                supplier: true,
+                sourceType: true,
                 _count: {
                     select: { movements: true },
                 },
@@ -514,7 +612,7 @@ let InventoryService = class InventoryService {
             throw new common_1.NotFoundException("Inventory item not found");
         }
         if (item._count.movements > 0) {
-            return this.prisma.inventoryItem.update({
+            const archived = await this.prisma.inventoryItem.update({
                 where: { id },
                 data: {
                     stock: 0,
@@ -525,8 +623,39 @@ let InventoryService = class InventoryService {
                     },
                 },
             });
+            await this.audit.record({
+                module: "INVENTORY",
+                action: "ITEM_ARCHIVED",
+                entityType: "InventoryItem",
+                entityId: archived.id,
+                severity: client_1.AuditSeverity.CRITICAL,
+                summary: `Articulo archivado: ${archived.name}`,
+                metadata: {
+                    reference: archived.reference,
+                    previousStock: item.stock,
+                    supplier: item.supplier,
+                    sourceType: item.sourceType,
+                    movements: item._count.movements,
+                },
+            });
+            return archived;
         }
-        return this.prisma.inventoryItem.delete({ where: { id } });
+        const deleted = await this.prisma.inventoryItem.delete({ where: { id } });
+        await this.audit.record({
+            module: "INVENTORY",
+            action: "ITEM_DELETED",
+            entityType: "InventoryItem",
+            entityId: deleted.id,
+            severity: client_1.AuditSeverity.CRITICAL,
+            summary: `Articulo eliminado: ${deleted.name}`,
+            metadata: {
+                reference: deleted.reference,
+                stock: item.stock,
+                supplier: item.supplier,
+                sourceType: item.sourceType,
+            },
+        });
+        return deleted;
     }
     async summary() {
         const [items, outOfStock, movements, installed] = await Promise.all([
@@ -568,7 +697,7 @@ let InventoryService = class InventoryService {
         if (preview.duplicate?.exists) {
             throw new common_1.ConflictException(preview.duplicate.message);
         }
-        return this.prisma.$transaction(async (tx) => {
+        const result = await this.prisma.$transaction(async (tx) => {
             const importer = await this.findOrCreateImporter(tx, preview);
             const importMode = dto.importMode === "EXPENSE" || dto.createStockEntries === false ? "EXPENSE" : "STOCK";
             if (importMode === "EXPENSE") {
@@ -665,6 +794,25 @@ let InventoryService = class InventoryService {
                 invoice: preview,
             };
         });
+        await this.audit.record({
+            module: "INVENTORY",
+            action: "INVOICE_IMPORTED",
+            entityType: "Payment",
+            entityId: result.paymentId,
+            severity: client_1.AuditSeverity.WARNING,
+            summary: `Factura importada: ${preview.reference} - ${preview.providerName}`,
+            metadata: {
+                providerName: preview.providerName,
+                providerTaxId: preview.providerTaxId,
+                reference: preview.reference,
+                importMode: "importMode" in result ? result.importMode : "STOCK",
+                amount: preview.totals.total,
+                currency: preview.currency,
+                itemCount: preview.items.length,
+                movementCount: result.movements.length,
+            },
+        });
+        return result;
     }
     async withInvoiceDuplicateStatus(preview) {
         const duplicate = await this.findDuplicateInvoice(preview);
@@ -1205,6 +1353,7 @@ let InventoryService = class InventoryService {
 exports.InventoryService = InventoryService;
 exports.InventoryService = InventoryService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        audit_service_1.AuditService])
 ], InventoryService);
 //# sourceMappingURL=inventory.service.js.map

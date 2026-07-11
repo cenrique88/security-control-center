@@ -78,5 +78,6 @@ export declare class DashboardService {
     }>;
     private safeIntegration;
     private normalizeIntegration;
+    private withTimeout;
     private toUyu;
 }

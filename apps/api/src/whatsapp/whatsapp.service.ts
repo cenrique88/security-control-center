@@ -179,86 +179,18 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
     const chatId = to.includes("@") ? to : `${to}@c.us`;
     const forcedPath = this.config.get<string>("OPENWA_SEND_PATH");
-    const result = await this.openWaSend(apiUrl, apiKey, [
+    const result = await this.openWaSend(apiUrl, apiKey, session.id, [
       ...(forcedPath
         ? [
             {
               path: forcedPath,
-              body: { to, chatId, phone: to, message: dto.message, text: dto.message, content: dto.message },
+              body: { chatId, text: dto.message },
             },
           ]
         : []),
       {
         path: `/sessions/${session.id}/messages/send-text`,
-        body: { to, message: dto.message },
-      },
-      {
-        path: `/sessions/${session.id}/messages/send-text`,
-        body: { to: chatId, message: dto.message },
-      },
-      {
-        path: `/sessions/${session.id}/messages/send-text`,
-        body: { phone: to, message: dto.message },
-      },
-      {
-        path: `/sessions/${session.id}/messages/send-text`,
-        body: { recipient: chatId, message: dto.message },
-      },
-      {
-        path: `/sessions/${session.id}/messages/send-text`,
         body: { chatId, text: dto.message },
-      },
-      {
-        path: `/sessions/${session.id}/messages/send-text`,
-        body: { chatId, message: dto.message },
-      },
-      {
-        path: `/sessions/${session.id}/messages/send-text`,
-        body: { chatId, content: dto.message },
-      },
-      {
-        path: `/sessions/${session.id}/messages/send`,
-        body: { chatId, text: dto.message },
-      },
-      {
-        path: `/sessions/${session.id}/messages/send`,
-        body: { to, message: dto.message },
-      },
-      {
-        path: "/sendText",
-        body: { session: session.name ?? session.id, chatId, text: dto.message },
-      },
-      {
-        path: "/sendText",
-        body: { session: session.name ?? session.id, to, message: dto.message },
-      },
-      {
-        path: "/sendText",
-        body: { sessionId: session.id, chatId, text: dto.message },
-      },
-      {
-        path: `/${session.name ?? session.id}/send-message`,
-        body: { phone: to, message: dto.message, isGroup: chatId.endsWith("@g.us") },
-      },
-      {
-        path: `/${session.id}/send-message`,
-        body: { phone: to, message: dto.message, isGroup: chatId.endsWith("@g.us") },
-      },
-      {
-        path: `/sessions/${session.id}/send-message`,
-        body: { to, chatId, phone: to, message: dto.message, text: dto.message },
-      },
-      {
-        path: `/sessions/${session.id}/send-text`,
-        body: { to, chatId, phone: to, message: dto.message, text: dto.message },
-      },
-      {
-        path: `/sessions/${session.id}/messages`,
-        body: { to, chatId, phone: to, message: dto.message, text: dto.message },
-      },
-      {
-        path: "/messages/send",
-        body: { sessionId: session.id, session: session.name ?? session.id, to, chatId, message: dto.message, text: dto.message },
       },
     ]);
     return {
@@ -441,7 +373,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   ): Promise<T> {
     let response: Response;
     try {
-      response = await fetch(`${apiUrl}/api${path}`, {
+      response = await this.fetchWithTimeout(`${apiUrl}/api${path}`, {
         method: options.method ?? "GET",
         headers: {
           "Content-Type": "application/json",
@@ -479,6 +411,31 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private async openWaSend(
     apiUrl: string,
     apiKey: string,
+    sessionId: string,
+    candidates: Array<{ path: string; body: Record<string, unknown> }>,
+  ) {
+    const firstAttempt = await this.tryOpenWaSend(apiUrl, apiKey, candidates);
+    if (firstAttempt.result) {
+      return firstAttempt.result;
+    }
+
+    if (firstAttempt.failures.some((failure) => failure.includes("sin conexion"))) {
+      this.logger.warn("OpenWA no respondio al enviar. Reiniciando sesion y reintentando una vez.");
+      await this.restartOpenWaSession(apiUrl, apiKey, sessionId);
+      const secondAttempt = await this.tryOpenWaSend(apiUrl, apiKey, candidates);
+      if (secondAttempt.result) {
+        return secondAttempt.result;
+      }
+
+      throw new ServiceUnavailableException(`OpenWA send failed (${secondAttempt.failures.join(", ")})`);
+    }
+
+    throw new ServiceUnavailableException(`OpenWA send failed (${firstAttempt.failures.join(", ")})`);
+  }
+
+  private async tryOpenWaSend(
+    apiUrl: string,
+    apiKey: string,
     candidates: Array<{ path: string; body: Record<string, unknown> }>,
   ) {
     const failures: string[] = [];
@@ -486,7 +443,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     for (const candidate of candidates) {
       let response: Response;
       try {
-        response = await fetch(`${apiUrl}/api${candidate.path}`, {
+        response = await this.fetchWithTimeout(`${apiUrl}/api${candidate.path}`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -494,20 +451,44 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             "X-API-Key": apiKey,
           },
           body: JSON.stringify(candidate.body),
-        });
+        }, 15000);
       } catch {
         failures.push(`${candidate.path}: sin conexion`);
         continue;
       }
 
       if (response.ok) {
-        return (await this.safeJson(response)) as Record<string, unknown>;
+        return { result: (await this.safeJson(response)) as Record<string, unknown>, failures };
       }
 
       failures.push(`${candidate.path}: ${response.status}${await this.responseFailureDetail(response)}`);
     }
 
-    throw new ServiceUnavailableException(`OpenWA send failed (${failures.join(", ")})`);
+    return { result: null, failures };
+  }
+
+  private async restartOpenWaSession(apiUrl: string, apiKey: string, sessionId: string) {
+    await this.safeOpenWaRequest(apiUrl, apiKey, `/sessions/${sessionId}/stop`, {}, {
+      method: "POST",
+    });
+    await this.sleep(1800);
+    await this.safeOpenWaRequest(apiUrl, apiKey, `/sessions/${sessionId}/start`, {}, {
+      method: "POST",
+    });
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await this.sleep(1500);
+      const session = await this.safeOpenWaRequest<OpenWaSession | null>(apiUrl, apiKey, `/sessions/${sessionId}`, null);
+      if (session?.status === "ready") {
+        return;
+      }
+    }
+  }
+
+  private sleep(ms: number) {
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
   }
 
   private async responseFailureDetail(response: Response) {
@@ -529,6 +510,21 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       return JSON.parse(text) as unknown;
     } catch {
       return { response: text };
+    }
+  }
+
+  private async fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new ServiceUnavailableException(`OpenWA no respondio a tiempo en ${url}`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

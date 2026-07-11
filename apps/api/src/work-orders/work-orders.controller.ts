@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { ServiceType, WorkOrderStatus } from "@prisma/client";
+import { ServiceType, UserRole, WorkOrderStatus } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { Roles } from "../auth/roles.decorator";
+import { RolesGuard } from "../auth/roles.guard";
 import { AddWorkOrderMaterialDto } from "./dto/add-work-order-material.dto";
 import { CreateWorkOrderDto } from "./dto/create-work-order.dto";
 import { ReturnWorkOrderMaterialDto } from "./dto/return-work-order-material.dto";
@@ -8,7 +10,8 @@ import { UpdateWorkOrderDto } from "./dto/update-work-order.dto";
 import { WorkOrdersService } from "./work-orders.service";
 
 @Controller("work-orders")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.TECHNICIAN, UserRole.MONITORING)
 export class WorkOrdersController {
   constructor(private readonly workOrdersService: WorkOrdersService) {}
 

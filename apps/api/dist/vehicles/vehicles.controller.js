@@ -14,8 +14,12 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VehiclesController = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const roles_decorator_1 = require("../auth/roles.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 const create_vehicle_dto_1 = require("./dto/create-vehicle.dto");
+const send_traccar_command_dto_1 = require("./dto/send-traccar-command.dto");
 const update_traccar_settings_dto_1 = require("./dto/update-traccar-settings.dto");
 const update_vehicle_dto_1 = require("./dto/update-vehicle.dto");
 const vehicles_service_1 = require("./vehicles.service");
@@ -41,6 +45,24 @@ let VehiclesController = class VehiclesController {
     }
     traccarDaily(id, date) {
         return this.vehiclesService.traccarDailySummary(id, date);
+    }
+    traccarLive(id) {
+        return this.vehiclesService.traccarLivePosition(id);
+    }
+    traccarEvents(id, date) {
+        return this.vehiclesService.traccarEvents(id, date);
+    }
+    traccarAlertLogs(id) {
+        return this.vehiclesService.traccarAlertLogs(id);
+    }
+    sendTraccarCommand(id, dto) {
+        return this.vehiclesService.sendTraccarCommand(id, dto);
+    }
+    sendVehicleTestWhatsApp(id) {
+        return this.vehiclesService.sendVehicleTestWhatsApp(id);
+    }
+    syncVehicleAlerts(id) {
+        return this.vehiclesService.syncVehicleAlerts(id);
     }
     create(dto) {
         return this.vehiclesService.create(dto);
@@ -89,6 +111,50 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], VehiclesController.prototype, "traccarDaily", null);
 __decorate([
+    (0, common_1.Get)(":id/traccar/live"),
+    __param(0, (0, common_1.Param)("id")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], VehiclesController.prototype, "traccarLive", null);
+__decorate([
+    (0, common_1.Get)(":id/traccar/events"),
+    __param(0, (0, common_1.Param)("id")),
+    __param(1, (0, common_1.Query)("date")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], VehiclesController.prototype, "traccarEvents", null);
+__decorate([
+    (0, common_1.Get)(":id/traccar/alerts"),
+    __param(0, (0, common_1.Param)("id")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], VehiclesController.prototype, "traccarAlertLogs", null);
+__decorate([
+    (0, common_1.Post)(":id/traccar/command"),
+    __param(0, (0, common_1.Param)("id")),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, send_traccar_command_dto_1.SendTraccarCommandDto]),
+    __metadata("design:returntype", void 0)
+], VehiclesController.prototype, "sendTraccarCommand", null);
+__decorate([
+    (0, common_1.Post)(":id/traccar/test-whatsapp"),
+    __param(0, (0, common_1.Param)("id")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], VehiclesController.prototype, "sendVehicleTestWhatsApp", null);
+__decorate([
+    (0, common_1.Post)(":id/traccar/sync-alerts"),
+    __param(0, (0, common_1.Param)("id")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], VehiclesController.prototype, "syncVehicleAlerts", null);
+__decorate([
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -112,7 +178,8 @@ __decorate([
 ], VehiclesController.prototype, "remove", null);
 exports.VehiclesController = VehiclesController = __decorate([
     (0, common_1.Controller)("vehicles"),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.OWNER, client_1.UserRole.ADMIN, client_1.UserRole.MONITORING),
     __metadata("design:paramtypes", [vehicles_service_1.VehiclesService])
 ], VehiclesController);
 //# sourceMappingURL=vehicles.controller.js.map

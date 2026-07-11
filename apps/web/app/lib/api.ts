@@ -2,12 +2,56 @@ export type AuthUser = {
   id: string;
   name: string;
   email: string;
-  role: string;
+  role: UserRole;
+};
+
+export type UserRole = "OWNER" | "ADMIN" | "TECHNICIAN" | "SALES" | "MONITORING";
+
+export type UserAccount = {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UserPayload = {
+  name?: string;
+  email?: string;
+  password?: string;
+  role?: UserRole;
 };
 
 export type AuthResponse = {
   user: AuthUser;
   accessToken: string;
+};
+
+export type AuditSeverity = "INFO" | "WARNING" | "CRITICAL";
+
+export type AuditLog = {
+  id: string;
+  module: string;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  severity: AuditSeverity;
+  actorId?: string | null;
+  actorName?: string | null;
+  summary: string;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+  actor?: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+  } | null;
+};
+
+export type AuditLogResponse = {
+  logs: AuditLog[];
 };
 
 export class ApiError extends Error {
@@ -698,9 +742,27 @@ export type Vehicle = {
   id: string;
   name: string;
   plate?: string | null;
+  make?: string | null;
+  model?: string | null;
+  color?: string | null;
+  colorHex?: string | null;
+  icon?: string | null;
+  logoUrl?: string | null;
   traccarDeviceId?: string | null;
   fuelKmPerLiter?: string | number | null;
   active: boolean;
+  monitoringPhones?: string | null;
+  clientShareUrl?: string | null;
+  gpsMonitoringEnabled?: boolean;
+  gpsWhatsappAlerts?: boolean;
+  gpsEngineCommandsEnabled?: boolean;
+  gpsAutoEngineStopOnAlarm?: boolean;
+  gpsCommandTextChannel?: boolean;
+  gpsStatusCommand?: string | null;
+  gpsEngineStopCommand?: string | null;
+  gpsEngineResumeCommand?: string | null;
+  gpsLastEventId?: number | null;
+  gpsLastAlertAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -708,9 +770,115 @@ export type Vehicle = {
 export type VehiclePayload = {
   name: string;
   plate?: string;
+  make?: string;
+  model?: string;
+  color?: string;
+  colorHex?: string;
+  icon?: string;
+  logoUrl?: string;
   traccarDeviceId?: string;
   fuelKmPerLiter?: number;
   active?: boolean;
+  monitoringPhones?: string;
+  clientShareUrl?: string;
+  gpsMonitoringEnabled?: boolean;
+  gpsWhatsappAlerts?: boolean;
+  gpsEngineCommandsEnabled?: boolean;
+  gpsAutoEngineStopOnAlarm?: boolean;
+  gpsCommandTextChannel?: boolean;
+  gpsStatusCommand?: string;
+  gpsEngineStopCommand?: string;
+  gpsEngineResumeCommand?: string;
+};
+
+export type VehicleTraccarEvent = {
+  id: number;
+  type: string;
+  eventTime?: string;
+  serverTime?: string;
+  deviceId?: number;
+  positionId?: number;
+  geofenceId?: number;
+  attributes?: Record<string, unknown>;
+};
+
+export type VehicleTraccarEventsResponse = {
+  configured: boolean;
+  vehicle: Vehicle;
+  events: VehicleTraccarEvent[];
+  message?: string;
+};
+
+export type VehicleLivePosition = {
+  configured: boolean;
+  vehicle: Vehicle;
+  device?: {
+    id: number;
+    name?: string;
+    uniqueId?: string;
+    status?: string;
+    lastUpdate?: string;
+    phone?: string;
+    model?: string;
+    category?: string;
+  } | null;
+  online: boolean;
+  moving: boolean;
+  stale?: boolean;
+  ageSeconds?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  speedKmh?: number;
+  course?: number | null;
+  altitude?: number | null;
+  accuracyMeters?: number | null;
+  address?: string | null;
+  positionTime?: string | null;
+  serverTime?: string | null;
+  fixTime?: string | null;
+  mapUrl?: string | null;
+  ignition?: boolean | null;
+  motion?: boolean | null;
+  alarm?: string | null;
+  batteryLevel?: number | null;
+  power?: number | null;
+  charge?: boolean | null;
+  attributes?: Record<string, unknown>;
+  message?: string;
+};
+
+export type VehicleAlertLog = {
+  id: string;
+  vehicleId: string;
+  eventId?: number | null;
+  eventType: string;
+  phone: string;
+  status: "SENT" | "FAILED" | string;
+  message: string;
+  error?: string | null;
+  traccarDeviceId?: string | null;
+  geofenceId?: number | null;
+  geofenceName?: string | null;
+  positionId?: number | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  mapUrl?: string | null;
+  eventTime?: string | null;
+  createdAt: string;
+};
+
+export type VehicleAlertLogsResponse = {
+  vehicle: Vehicle;
+  logs: VehicleAlertLog[];
+};
+
+export type VehicleTraccarCommandResponse = {
+  sent: boolean;
+  command: "status" | "engineStop" | "engineResume";
+  commandMode?: "custom" | "traccar-type";
+  textChannel?: boolean;
+  message: string;
+  result?: unknown;
 };
 
 export type DispatchPlaceType =
@@ -825,6 +993,9 @@ export type VehicleDailySummary = {
   date: string;
   configured: boolean;
   positions: number;
+  routePositions?: number;
+  filteredPositions?: number;
+  routeMode?: "MATCHED" | "GPS_FILTERED";
   distanceKm: number;
   movingMinutes: number;
   stoppedMinutes: number;
@@ -837,6 +1008,13 @@ export type VehicleDailySummary = {
   stops: VehicleStop[];
   visits: VehicleVisit[];
   unmatchedStops: VehicleStop[];
+  route?: Array<{
+    time: string;
+    latitude: number;
+    longitude: number;
+    speedKmh: number;
+    accuracyMeters?: number | null;
+  }>;
   message?: string;
 };
 
@@ -1103,22 +1281,11 @@ export type WhatsAppDailyMeetingSummaryPayload = {
 };
 
 function getApiUrl() {
-  const configuredUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
-  if (typeof window !== "undefined" && window.location.hostname.endsWith(".devtunnels.ms")) {
+  if (typeof window !== "undefined") {
     return "";
   }
 
-  if (
-    typeof window !== "undefined" &&
-    window.location.hostname !== "localhost" &&
-    window.location.hostname !== "127.0.0.1" &&
-    configuredUrl.includes("localhost")
-  ) {
-    return `${window.location.protocol}//${window.location.hostname}:3001`;
-  }
-
-  return configuredUrl;
+  return process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:3001";
 }
 
 export async function apiRequest<T>(

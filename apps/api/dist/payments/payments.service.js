@@ -11,13 +11,17 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentsService = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
+const audit_service_1 = require("../audit/audit.service");
 const prisma_service_1 = require("../prisma/prisma.service");
 const STOCK_EXPENSE_CATEGORIES = new Set(["MATERIAL_PURCHASE", "SUPPLIES", "IMPORTER_PAYMENT", "TOOLS"]);
 const INTERNAL_COST_CATEGORIES = new Set(["WORK_ORDER_MATERIAL_COST"]);
 let PaymentsService = class PaymentsService {
     prisma;
-    constructor(prisma) {
+    audit;
+    constructor(prisma, audit) {
         this.prisma = prisma;
+        this.audit = audit;
     }
     async list(filters) {
         const where = {};
@@ -94,7 +98,7 @@ let PaymentsService = class PaymentsService {
             dto.createInventoryEntry !== false &&
             Boolean(quantity && quantity > 0) &&
             Boolean(this.cleanOptional(dto.inventoryItemId) || this.cleanOptional(dto.inventoryItemName) || this.cleanOptional(dto.concept));
-        return this.prisma.$transaction(async (tx) => {
+        const payment = await this.prisma.$transaction(async (tx) => {
             const inventoryItem = shouldCreateInventoryEntry
                 ? await this.findOrCreateInventoryItem(tx, dto, customer.name)
                 : this.cleanOptional(dto.inventoryItemId)
@@ -160,6 +164,25 @@ let PaymentsService = class PaymentsService {
             }
             return payment;
         });
+        await this.audit.record({
+            module: "PAYMENTS",
+            action: "PAYMENT_CREATED",
+            entityType: "Payment",
+            entityId: payment.id,
+            severity: payment.transactionType === "EXPENSE" ? client_1.AuditSeverity.WARNING : client_1.AuditSeverity.INFO,
+            summary: `${payment.transactionType === "EXPENSE" ? "Egreso" : "Ingreso"} registrado: ${payment.concept}`,
+            metadata: {
+                customerId: payment.customerId,
+                customerName: payment.customer.name,
+                amount: Number(payment.amount),
+                currency: payment.currency,
+                category: payment.category,
+                method: payment.method,
+                reference: payment.reference,
+                inventoryItemId: payment.inventoryItemId,
+            },
+        });
+        return payment;
     }
     async update(id, dto) {
         const current = await this.prisma.payment.findUnique({ where: { id }, select: { id: true } });
@@ -170,7 +193,7 @@ let PaymentsService = class PaymentsService {
             await this.ensureCustomer(dto.customerId);
         }
         await this.ensureOptionalLinks(dto);
-        return this.prisma.payment.update({
+        const payment = await this.prisma.payment.update({
             where: { id },
             data: {
                 customerId: dto.customerId,
@@ -193,9 +216,27 @@ let PaymentsService = class PaymentsService {
             },
             include: this.includeCustomer(),
         });
+        await this.audit.record({
+            module: "PAYMENTS",
+            action: "PAYMENT_UPDATED",
+            entityType: "Payment",
+            entityId: payment.id,
+            severity: client_1.AuditSeverity.WARNING,
+            summary: `Movimiento actualizado: ${payment.concept}`,
+            metadata: {
+                customerId: payment.customerId,
+                customerName: payment.customer.name,
+                amount: Number(payment.amount),
+                currency: payment.currency,
+                transactionType: payment.transactionType,
+                category: payment.category,
+                paidAt: payment.paidAt?.toISOString(),
+            },
+        });
+        return payment;
     }
     async remove(id) {
-        return this.prisma.$transaction(async (tx) => {
+        const payment = await this.prisma.$transaction(async (tx) => {
             const payment = await tx.payment.findUnique({
                 where: { id },
                 include: {
@@ -231,6 +272,24 @@ let PaymentsService = class PaymentsService {
                 include: this.includeCustomer(),
             });
         });
+        await this.audit.record({
+            module: "PAYMENTS",
+            action: "PAYMENT_DELETED",
+            entityType: "Payment",
+            entityId: payment.id,
+            severity: client_1.AuditSeverity.CRITICAL,
+            summary: `Movimiento eliminado: ${payment.concept}`,
+            metadata: {
+                customerId: payment.customerId,
+                customerName: payment.customer.name,
+                amount: Number(payment.amount),
+                currency: payment.currency,
+                transactionType: payment.transactionType,
+                category: payment.category,
+                reference: payment.reference,
+            },
+        });
+        return payment;
     }
     includeCustomer() {
         return {
@@ -376,6 +435,7 @@ let PaymentsService = class PaymentsService {
 exports.PaymentsService = PaymentsService;
 exports.PaymentsService = PaymentsService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        audit_service_1.AuditService])
 ], PaymentsService);
 //# sourceMappingURL=payments.service.js.map

@@ -11,11 +11,15 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.QuotesService = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
+const audit_service_1 = require("../audit/audit.service");
 const prisma_service_1 = require("../prisma/prisma.service");
 let QuotesService = class QuotesService {
     prisma;
-    constructor(prisma) {
+    audit;
+    constructor(prisma, audit) {
         this.prisma = prisma;
+        this.audit = audit;
     }
     async list(filters) {
         const where = {};
@@ -64,7 +68,7 @@ let QuotesService = class QuotesService {
             pricingMode: dto.pricingMode ?? "DIRECT",
             refreshLaborItem: true,
         });
-        return this.prisma.$transaction(async (tx) => {
+        const quote = await this.prisma.$transaction(async (tx) => {
             const quote = await tx.quote.create({
                 data: {
                     customerId: dto.customerId,
@@ -117,6 +121,24 @@ let QuotesService = class QuotesService {
             }
             return quote;
         });
+        await this.audit.record({
+            module: "QUOTES",
+            action: "QUOTE_CREATED",
+            entityType: "Quote",
+            entityId: quote.id,
+            severity: quote.status === "APPROVED" ? client_1.AuditSeverity.WARNING : client_1.AuditSeverity.INFO,
+            summary: `Presupuesto creado: ${quote.number} - ${quote.title}`,
+            metadata: {
+                customerId: quote.customerId,
+                customerName: quote.customer.name,
+                status: quote.status,
+                total: Number(quote.total),
+                currency: quote.currency,
+                costTotal: Number(quote.costTotal),
+                estimatedProfit: Number(quote.estimatedProfit),
+            },
+        });
+        return quote;
     }
     async update(id, dto) {
         const current = await this.prisma.quote.findUnique({
@@ -166,7 +188,7 @@ let QuotesService = class QuotesService {
                 : dto.status === "APPROVED"
                     ? new Date()
                     : undefined;
-        return this.prisma.$transaction(async (tx) => {
+        const quote = await this.prisma.$transaction(async (tx) => {
             if (dto.items) {
                 await tx.quoteItem.deleteMany({ where: { quoteId: id } });
             }
@@ -225,6 +247,28 @@ let QuotesService = class QuotesService {
             }
             return quote;
         });
+        await this.audit.record({
+            module: "QUOTES",
+            action: quote.status === "APPROVED" && current.status !== "APPROVED" ? "QUOTE_APPROVED" : "QUOTE_UPDATED",
+            entityType: "Quote",
+            entityId: quote.id,
+            severity: quote.status === "APPROVED" && current.status !== "APPROVED" ? client_1.AuditSeverity.CRITICAL : client_1.AuditSeverity.WARNING,
+            summary: quote.status === "APPROVED" && current.status !== "APPROVED"
+                ? `Presupuesto aprobado: ${quote.number} - ${quote.title}`
+                : `Presupuesto actualizado: ${quote.number} - ${quote.title}`,
+            metadata: {
+                customerId: quote.customerId,
+                customerName: quote.customer.name,
+                previousStatus: current.status,
+                status: quote.status,
+                total: Number(quote.total),
+                currency: quote.currency,
+                costTotal: Number(quote.costTotal),
+                estimatedProfit: Number(quote.estimatedProfit),
+                itemsUpdated: Boolean(dto.items),
+            },
+        });
+        return quote;
     }
     async remove(id) {
         const quote = await this.prisma.quote.findUnique({
@@ -234,7 +278,7 @@ let QuotesService = class QuotesService {
         if (!quote) {
             throw new common_1.NotFoundException("Quote not found");
         }
-        return this.prisma.$transaction(async (tx) => {
+        const deleted = await this.prisma.$transaction(async (tx) => {
             await tx.payment.updateMany({
                 where: { quoteId: id },
                 data: { quoteId: null },
@@ -244,6 +288,22 @@ let QuotesService = class QuotesService {
                 include: this.includeCustomer(),
             });
         });
+        await this.audit.record({
+            module: "QUOTES",
+            action: "QUOTE_DELETED",
+            entityType: "Quote",
+            entityId: deleted.id,
+            severity: client_1.AuditSeverity.CRITICAL,
+            summary: `Presupuesto eliminado: ${deleted.number} - ${deleted.title}`,
+            metadata: {
+                customerId: deleted.customerId,
+                customerName: deleted.customer.name,
+                status: deleted.status,
+                total: Number(deleted.total),
+                currency: deleted.currency,
+            },
+        });
+        return deleted;
     }
     includeCustomer() {
         return {
@@ -298,8 +358,21 @@ let QuotesService = class QuotesService {
         }
     }
     async nextNumber() {
-        const count = await this.prisma.quote.count();
-        return `P-${String(count + 1).padStart(5, "0")}`;
+        const quotes = await this.prisma.quote.findMany({
+            where: {
+                number: {
+                    startsWith: "P-",
+                },
+            },
+            select: {
+                number: true,
+            },
+        });
+        const lastNumber = quotes.reduce((max, quote) => {
+            const value = Number(quote.number?.replace(/\D/g, "")) || 0;
+            return Math.max(max, value);
+        }, 0);
+        return `P-${String(lastNumber + 1).padStart(5, "0")}`;
     }
     roundMoney(value) {
         return Math.round(value * 100) / 100;
@@ -674,6 +747,7 @@ let QuotesService = class QuotesService {
 exports.QuotesService = QuotesService;
 exports.QuotesService = QuotesService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        audit_service_1.AuditService])
 ], QuotesService);
 //# sourceMappingURL=quotes.service.js.map

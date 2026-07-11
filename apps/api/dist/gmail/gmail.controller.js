@@ -14,7 +14,10 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GmailController = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
+const roles_decorator_1 = require("../auth/roles.decorator");
+const roles_guard_1 = require("../auth/roles.guard");
 const send_gmail_message_dto_1 = require("./dto/send-gmail-message.dto");
 const gmail_service_1 = require("./gmail.service");
 let GmailController = class GmailController {
@@ -54,7 +57,8 @@ __decorate([
 ], GmailController.prototype, "send", null);
 exports.GmailController = GmailController = __decorate([
     (0, common_1.Controller)("gmail"),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.OWNER, client_1.UserRole.ADMIN, client_1.UserRole.SALES, client_1.UserRole.MONITORING),
     __metadata("design:paramtypes", [gmail_service_1.GmailService])
 ], GmailController);
 //# sourceMappingURL=gmail.controller.js.map
