@@ -5,10 +5,15 @@ import { AppModule } from "./app.module";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const corsOrigins = (process.env.CORS_ORIGIN ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   app.use(json({ limit: "50mb" }));
   app.use(urlencoded({ extended: true, limit: "50mb" }));
   app.enableCors({
-    origin: true,
+    origin: corsOrigins.length ? corsOrigins : true,
     credentials: true,
   });
   app.setGlobalPrefix("api");

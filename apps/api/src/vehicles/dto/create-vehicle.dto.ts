@@ -51,6 +51,10 @@ export class CreateVehicleDto {
 
   @IsOptional()
   @IsString()
+  monitoringEmails?: string;
+
+  @IsOptional()
+  @IsString()
   clientShareUrl?: string;
 
   @IsOptional()
@@ -60,6 +64,10 @@ export class CreateVehicleDto {
   @IsOptional()
   @IsBoolean()
   gpsWhatsappAlerts?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  gpsEmailAlerts?: boolean;
 
   @IsOptional()
   @IsBoolean()

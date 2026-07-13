@@ -11,9 +11,11 @@ export declare class CreateVehicleDto {
     fuelKmPerLiter?: number;
     active?: boolean;
     monitoringPhones?: string;
+    monitoringEmails?: string;
     clientShareUrl?: string;
     gpsMonitoringEnabled?: boolean;
     gpsWhatsappAlerts?: boolean;
+    gpsEmailAlerts?: boolean;
     gpsEngineCommandsEnabled?: boolean;
     gpsAutoEngineStopOnAlarm?: boolean;
     gpsCommandTextChannel?: boolean;

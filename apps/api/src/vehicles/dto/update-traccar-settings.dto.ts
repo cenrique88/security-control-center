@@ -19,7 +19,7 @@ export class UpdateTraccarSettingsDto {
 
   @IsOptional()
   @IsNumber()
-  @Min(20)
+  @Min(10)
   matchRadiusMeters?: number;
 
   @IsOptional()

@@ -211,10 +211,10 @@ let GmailService = class GmailService {
                 grant_type: "refresh_token",
             }),
         });
+        const data = (await response.json().catch(() => ({})));
         if (!response.ok) {
-            throw new common_1.ServiceUnavailableException(`Gmail token request failed: ${response.status}`);
+            throw new common_1.ServiceUnavailableException(data.error_description ?? data.error ?? `Gmail token request failed: ${response.status}`);
         }
-        const data = (await response.json());
         if (!data.access_token) {
             throw new common_1.ServiceUnavailableException("Gmail did not return an access token");
         }

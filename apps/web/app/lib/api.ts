@@ -752,9 +752,11 @@ export type Vehicle = {
   fuelKmPerLiter?: string | number | null;
   active: boolean;
   monitoringPhones?: string | null;
+  monitoringEmails?: string | null;
   clientShareUrl?: string | null;
   gpsMonitoringEnabled?: boolean;
   gpsWhatsappAlerts?: boolean;
+  gpsEmailAlerts?: boolean;
   gpsEngineCommandsEnabled?: boolean;
   gpsAutoEngineStopOnAlarm?: boolean;
   gpsCommandTextChannel?: boolean;
@@ -780,9 +782,11 @@ export type VehiclePayload = {
   fuelKmPerLiter?: number;
   active?: boolean;
   monitoringPhones?: string;
+  monitoringEmails?: string;
   clientShareUrl?: string;
   gpsMonitoringEnabled?: boolean;
   gpsWhatsappAlerts?: boolean;
+  gpsEmailAlerts?: boolean;
   gpsEngineCommandsEnabled?: boolean;
   gpsAutoEngineStopOnAlarm?: boolean;
   gpsCommandTextChannel?: boolean;
@@ -853,6 +857,7 @@ export type VehicleAlertLog = {
   eventId?: number | null;
   eventType: string;
   phone: string;
+  channel?: string | null;
   status: "SENT" | "FAILED" | string;
   message: string;
   error?: string | null;
@@ -879,6 +884,19 @@ export type VehicleTraccarCommandResponse = {
   textChannel?: boolean;
   message: string;
   result?: unknown;
+};
+
+export type VehicleTraccarNotificationsResponse = {
+  configured: boolean;
+  vehicle: Vehicle;
+  notifications: Array<{
+    type: string;
+    label: string;
+    notificationId?: number | null;
+    status: string;
+    linked: boolean;
+  }>;
+  message: string;
 };
 
 export type DispatchPlaceType =
@@ -913,6 +931,7 @@ export type DispatchStopRecord = {
   tollCost: string | number;
   notes?: string | null;
   source: string;
+  traccarGeofenceId?: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -996,6 +1015,10 @@ export type VehicleDailySummary = {
   routePositions?: number;
   filteredPositions?: number;
   routeMode?: "MATCHED" | "GPS_FILTERED";
+  routeEngine?: "OSRM" | "GPS";
+  routeSampledPoints?: number;
+  routeMatchedPoints?: number;
+  routeConfidence?: number | null;
   distanceKm: number;
   movingMinutes: number;
   stoppedMinutes: number;
@@ -1009,10 +1032,10 @@ export type VehicleDailySummary = {
   visits: VehicleVisit[];
   unmatchedStops: VehicleStop[];
   route?: Array<{
-    time: string;
+    time?: string;
     latitude: number;
     longitude: number;
-    speedKmh: number;
+    speedKmh?: number;
     accuracyMeters?: number | null;
   }>;
   message?: string;

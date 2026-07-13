@@ -24,9 +24,11 @@ class CreateVehicleDto {
     fuelKmPerLiter;
     active;
     monitoringPhones;
+    monitoringEmails;
     clientShareUrl;
     gpsMonitoringEnabled;
     gpsWhatsappAlerts;
+    gpsEmailAlerts;
     gpsEngineCommandsEnabled;
     gpsAutoEngineStopOnAlarm;
     gpsCommandTextChannel;
@@ -99,6 +101,11 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
+], CreateVehicleDto.prototype, "monitoringEmails", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
 ], CreateVehicleDto.prototype, "clientShareUrl", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
@@ -110,6 +117,11 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], CreateVehicleDto.prototype, "gpsWhatsappAlerts", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateVehicleDto.prototype, "gpsEmailAlerts", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),

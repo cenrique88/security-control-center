@@ -102,6 +102,7 @@ import {
   VehiclePayload,
   VehicleTraccarCommandResponse,
   VehicleTraccarEventsResponse,
+  VehicleTraccarNotificationsResponse,
   WhatsAppChat,
   WhatsAppDailyMeetingSummary,
   WhatsAppDailyMeetingSummaryPayload,
@@ -296,6 +297,13 @@ type QuoteCatalogOption = {
   stock?: number;
   managedStock?: boolean;
   source: "INVENTORY" | "PRICE_BOOK";
+};
+
+type ParsedQuoteExcel = {
+  form: QuotePayload;
+  customerName: string;
+  itemCount: number;
+  total: number;
 };
 
 const inventoryColumnDefaults: Record<InventoryColumnKey, number> = {
@@ -515,9 +523,11 @@ const emptyVehicleForm: VehiclePayload = {
   fuelKmPerLiter: 10,
   active: true,
   monitoringPhones: "",
+  monitoringEmails: "",
   clientShareUrl: "",
   gpsMonitoringEnabled: false,
   gpsWhatsappAlerts: false,
+  gpsEmailAlerts: false,
   gpsEngineCommandsEnabled: false,
   gpsAutoEngineStopOnAlarm: false,
   gpsCommandTextChannel: false,
@@ -2038,6 +2048,19 @@ export default function Home() {
     }
   }
 
+  async function reconnectGmailOAuth() {
+    setGmailLoading(true);
+    setGmailError("");
+    try {
+      const data = await apiRequest<{ authorizationUrl: string }>("/api/gmail/oauth/url");
+      window.open(data.authorizationUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setGmailError(`No se pudo abrir la reconexion de Gmail: ${getErrorMessage(error)}`);
+    } finally {
+      setGmailLoading(false);
+    }
+  }
+
   async function loadWhatsAppStatus(activeToken = token) {
     if (!activeToken) {
       return;
@@ -2625,9 +2648,11 @@ export default function Home() {
       fuelKmPerLiter: vehicle.fuelKmPerLiter ? Number(vehicle.fuelKmPerLiter) : 10,
       active: vehicle.active,
       monitoringPhones: vehicle.monitoringPhones ?? "",
+      monitoringEmails: vehicle.monitoringEmails ?? "",
       clientShareUrl: vehicle.clientShareUrl ?? "",
       gpsMonitoringEnabled: Boolean(vehicle.gpsMonitoringEnabled),
       gpsWhatsappAlerts: Boolean(vehicle.gpsWhatsappAlerts),
+      gpsEmailAlerts: Boolean(vehicle.gpsEmailAlerts),
       gpsEngineCommandsEnabled: Boolean(vehicle.gpsEngineCommandsEnabled),
       gpsAutoEngineStopOnAlarm: Boolean(vehicle.gpsAutoEngineStopOnAlarm),
       gpsCommandTextChannel: Boolean(vehicle.gpsCommandTextChannel),
@@ -3119,6 +3144,18 @@ export default function Home() {
     }
 
     const payment = payments.find((item) => item.id === id);
+    const defaultAmount = payment ? String(payment.amount ?? "") : "";
+    const amountLabel = payment?.transactionType === "EXPENSE" ? "Importe real pagado" : "Importe real recibido";
+    const typedAmount = window.prompt(amountLabel, defaultAmount)?.trim();
+    if (!typedAmount) {
+      setPaymentError("Para confirmar el movimiento primero indica el importe real.");
+      return;
+    }
+    const amount = parseLocaleNumber(typedAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPaymentError("El importe real debe ser mayor a cero.");
+      return;
+    }
     const method = payment?.method?.trim()
       ? payment.method.trim()
       : window.prompt("Metodo de pago para confirmar este movimiento", "Transferencia")?.trim();
@@ -3133,7 +3170,7 @@ export default function Home() {
       await apiRequest<Payment>(`/api/payments/${id}`, {
         token,
         method: "PATCH",
-        body: JSON.stringify({ method, paidAt: new Date().toISOString() }),
+        body: JSON.stringify({ amount, method, paidAt: new Date().toISOString() }),
       });
       await Promise.all([loadPayments(token), loadSummary(token)]);
     } catch {
@@ -4164,6 +4201,7 @@ export default function Home() {
             customers={customers}
             editingQuoteId={editingQuoteId}
             loading={quotesLoading}
+            token={token}
             quoteError={quoteError}
             quoteForm={quoteForm}
             quoteLaborPreview={quoteLaborPreview}
@@ -4180,7 +4218,9 @@ export default function Home() {
             onDeleteQuote={deleteQuote}
             onEditQuote={editQuote}
             onFormChange={setQuoteForm}
-            onRefresh={() => loadQuotes()}
+            onRefresh={() => {
+              void Promise.all([loadQuotes(token), loadCustomers(token), loadSummary(token)]);
+            }}
             onSave={saveQuote}
             onSearchChange={setQuoteSearch}
             onSelectCustomer={selectCustomer}
@@ -4319,6 +4359,7 @@ export default function Home() {
             loading={gmailLoading}
             status={gmailStatus}
             sync={gmailSync}
+            onReconnect={reconnectGmailOAuth}
             onRefresh={() => syncGmail()}
           />
         ) : activeModule === "WhatsApp" ? (
@@ -6481,9 +6522,13 @@ function DispatcherView({
   );
   const activeVehicles = vehicles.filter((vehicle) => vehicle.active);
   const selectedVehicle = activeVehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? activeVehicles[0] ?? null;
+  const savedGpsTimelineStops = useMemo(
+    () => buildSavedDispatchTimelineStops(savedDispatchStops),
+    [savedDispatchStops],
+  );
   const gpsTimelineStops = useMemo(
-    () => buildGpsTimelineStops(dailySummary, plan.baseLocation, learnedDispatchPlaces),
-    [dailySummary, plan.baseLocation, learnedDispatchPlaces],
+    () => savedGpsTimelineStops.length ? savedGpsTimelineStops : buildGpsTimelineStops(dailySummary, plan.baseLocation, learnedDispatchPlaces),
+    [dailySummary, learnedDispatchPlaces, plan.baseLocation, savedGpsTimelineStops],
   );
   const usingGpsTimeline = gpsTimelineStops.length > 0;
   const visibleRouteStopCount = usingGpsTimeline ? gpsTimelineStops.length : plan.orderedStops.length;
@@ -9514,6 +9559,7 @@ function QuotesView({
   customers,
   editingQuoteId,
   loading,
+  token,
   quoteError,
   quoteForm,
   quoteLaborPreview,
@@ -9539,6 +9585,7 @@ function QuotesView({
   customers: Customer[];
   editingQuoteId: string | null;
   loading: boolean;
+  token: string | null;
   quoteError: string;
   quoteForm: QuotePayload;
   quoteLaborPreview: LaborPointCalculation | null;
@@ -9583,6 +9630,7 @@ function QuotesView({
   const selectedQuoteCustomer = customers.find((customer) => customer.id === quoteForm.customerId) ?? null;
   const [quoteCustomerQuery, setQuoteCustomerQuery] = useState(selectedQuoteCustomer?.name ?? "");
   const [quoteCustomerOpen, setQuoteCustomerOpen] = useState(false);
+  const quoteFormRef = useRef<HTMLFormElement | null>(null);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalogQuantity, setCatalogQuantity] = useState(1);
@@ -9602,6 +9650,12 @@ function QuotesView({
   const [fuelKmPerLiter, setFuelKmPerLiter] = useState<number>(10);
   const [fuelUpdating, setFuelUpdating] = useState(false);
   const [fuelMessage, setFuelMessage] = useState("Nafta Super Uruguay");
+  const [quoteImportFile, setQuoteImportFile] = useState<File | null>(null);
+  const [quoteImportFileName, setQuoteImportFileName] = useState("");
+  const [quoteImportFileSize, setQuoteImportFileSize] = useState(0);
+  const [quoteImportAnalyzed, setQuoteImportAnalyzed] = useState(false);
+  const [quoteImportMessage, setQuoteImportMessage] = useState("Pendiente de analizar");
+  const [quoteImportError, setQuoteImportError] = useState("");
   const quoteCurrency = (quoteForm.currency || "UYU").toUpperCase();
   const normalizedExchangeRate = Math.max(0, Number(quoteExchangeRate) || 0);
   const estimatedFuelLiters = fuelKmPerLiter > 0 ? travelKilometers / fuelKmPerLiter : 0;
@@ -10054,6 +10108,124 @@ function QuotesView({
     });
   }
 
+  async function resolveOrCreateQuoteCustomer(rawCustomerName: string, quoteTitle: string) {
+    const cleanedName = rawCustomerName.trim();
+    const hasUsableName = cleanedName && !cleanedName.toLowerCase().startsWith("pendiente");
+    const customerName = hasUsableName
+      ? cleanedName
+      : window.prompt("Nombre del cliente para crear el presupuesto:", quoteTitle ? `Cliente - ${quoteTitle}` : "")?.trim() || "";
+
+    if (!customerName) {
+      return null;
+    }
+
+    const existingCustomer = customers.find((customer) => customer.name.trim().toLowerCase() === customerName.toLowerCase());
+    if (existingCustomer) {
+      return existingCustomer;
+    }
+
+    if (!token) {
+      throw new Error("No hay sesion activa para crear el cliente automaticamente.");
+    }
+
+    const createdCustomer = await apiRequest<Customer>("/api/customers", {
+      token,
+      method: "POST",
+      body: JSON.stringify({
+        name: customerName,
+        type: "NORMAL",
+        status: "PROSPECT",
+        notes: "Cliente creado automaticamente al importar un presupuesto Excel. Completar datos despues.",
+      } satisfies CustomerPayload),
+    });
+
+    await onRefresh();
+    return createdCustomer;
+  }
+
+  function handleQuoteExcelFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    setQuoteImportError("");
+    setQuoteImportAnalyzed(false);
+    setQuoteImportFile(null);
+
+    if (!file) {
+      setQuoteImportFileName("");
+      setQuoteImportFileSize(0);
+      setQuoteImportMessage("Pendiente de analizar");
+      return;
+    }
+
+    const isExcelFile =
+      file.name.toLowerCase().endsWith(".xlsx") ||
+      file.name.toLowerCase().endsWith(".xls") ||
+      file.type.includes("spreadsheet") ||
+      file.type.includes("excel");
+
+    if (!isExcelFile) {
+      setQuoteImportFile(null);
+      setQuoteImportFileName("");
+      setQuoteImportFileSize(0);
+      setQuoteImportMessage("Archivo no compatible");
+      setQuoteImportError("Selecciona un archivo Excel de presupuesto (.xlsx o .xls).");
+      event.target.value = "";
+      return;
+    }
+
+    setQuoteImportFile(file);
+    setQuoteImportFileName(file.name);
+    setQuoteImportFileSize(file.size);
+    setQuoteImportMessage("Listo para analizar");
+  }
+
+  async function previewQuoteExcel() {
+    setQuoteImportError("");
+
+    if (!quoteImportFile) {
+      setQuoteImportError("Selecciona primero un Excel de presupuesto.");
+      return;
+    }
+
+    try {
+      setQuoteImportMessage("Analizando Excel...");
+      const parsed = await parseQuoteExcelFile(quoteImportFile);
+      const resolvedCustomer = await resolveOrCreateQuoteCustomer(parsed.customerName, parsed.form.title);
+
+      onFormChange({
+        ...parsed.form,
+        customerId: resolvedCustomer?.id || quoteForm.customerId || "",
+      });
+      setQuoteCustomerQuery(resolvedCustomer?.name || "");
+      if (resolvedCustomer?.id) {
+        onSelectCustomer(resolvedCustomer.id);
+      }
+      setQuoteImportAnalyzed(true);
+      setQuoteImportMessage(
+        `${parsed.itemCount} item(s) cargados - Cliente ${resolvedCustomer?.name || "pendiente"} - Total ${formatPrice(parsed.total, parsed.form.currency || "USD")}`,
+      );
+    } catch (error) {
+      setQuoteImportAnalyzed(false);
+      setQuoteImportMessage("No se pudo analizar");
+      setQuoteImportError(`No se pudo leer el Excel: ${getErrorMessage(error)}`);
+    }
+  }
+
+  function importQuoteExcel() {
+    setQuoteImportError("");
+
+    if (!quoteImportAnalyzed) {
+      setQuoteImportError("Primero analiza el Excel para cargar el formulario.");
+      return;
+    }
+
+    if (!quoteForm.customerId) {
+      setQuoteImportError("El Excel ya esta cargado. Selecciona el cliente en el formulario y luego toca Crear presupuesto.");
+      return;
+    }
+
+    quoteFormRef.current?.requestSubmit();
+  }
+
   return (
     <section className="quotesModule">
       <div className="summaryGrid customerStats" aria-label="Resumen de presupuestos">
@@ -10065,8 +10237,65 @@ function QuotesView({
         ))}
       </div>
 
+      <section className="invoiceImportPanel">
+        <div className="sectionHeader compactHeader">
+          <div>
+            <p>Presupuesto inteligente</p>
+            <h2>Importar Excel a presupuesto</h2>
+          </div>
+          <div className="rowActionButtons">
+            <a className="secondaryButton" href="/templates/Plantilla_Presupuesto_SSCC.xlsx" download>
+              <FileText size={17} />
+              Plantilla
+            </a>
+            <button type="button" className="secondaryButton" onClick={previewQuoteExcel} disabled={!quoteImportFileName}>
+              <FileText size={17} />
+              Analizar
+            </button>
+            <button type="button" className="primaryButton smallPrimary" onClick={importQuoteExcel} disabled={!quoteImportAnalyzed}>
+              <Save size={17} />
+              Importar
+            </button>
+          </div>
+        </div>
+        <div className="invoiceImportGrid">
+          <label className="invoiceFilePicker">
+            <span>Presupuesto Excel</span>
+            <input
+              type="file"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              onChange={handleQuoteExcelFileChange}
+            />
+            <span className="invoiceFilePickerControl">
+              <span className="invoiceFilePickerButton">
+                <Paperclip size={17} />
+                Seleccionar Excel
+              </span>
+              <span className="invoiceFilePickerName">{quoteImportFileName || "Ningun archivo seleccionado"}</span>
+            </span>
+          </label>
+          <div className="invoiceImportSummary">
+            <span>
+              {quoteImportFileName
+                ? `${quoteImportFileName}${quoteImportFileSize ? ` - ${Math.max(1, Math.round(quoteImportFileSize / 1024))} KB` : ""}`
+                : "Sin archivo seleccionado"}
+            </span>
+            <strong>{quoteImportMessage}</strong>
+          </div>
+        </div>
+        <div className="invoiceModeSelector" role="group" aria-label="Destino de presupuesto Excel">
+          <button type="button" className="active">
+            Presupuesto
+          </button>
+          <span>
+            Crea un presupuesto comercial. No crea productos ni entradas de stock; el almacen se descuenta recien al aprobar la orden.
+          </span>
+        </div>
+        {quoteImportError ? <p className="formError">{quoteImportError}</p> : null}
+      </section>
+
       <div className="quotesLayout">
-        <form className="quoteForm" onSubmit={onSave}>
+        <form ref={quoteFormRef} className="quoteForm" onSubmit={onSave}>
           <div className="sectionHeader compactHeader">
             <div>
               <p>Comercial</p>
@@ -12159,8 +12388,8 @@ function VehiclesView({
     token: "",
     username: "",
     password: "",
-    matchRadiusMeters: 120,
-    minStopMinutes: 5,
+    matchRadiusMeters: 20,
+    minStopMinutes: 2,
     companyName: "Security Solutions",
     companyAddress: "",
     companyLatitude: undefined as number | undefined,
@@ -12198,8 +12427,8 @@ function VehiclesView({
           token: settings.token ?? "",
           username: settings.username ?? "",
           password: settings.password ?? "",
-          matchRadiusMeters: Number(settings.matchRadiusMeters) || 120,
-          minStopMinutes: Number(settings.minStopMinutes) || 5,
+          matchRadiusMeters: Number(settings.matchRadiusMeters) || 20,
+          minStopMinutes: Number(settings.minStopMinutes) || 2,
           companyName: settings.companyName ?? "Security Solutions",
           companyAddress: settings.companyAddress ?? "",
           companyLatitude: hasCoordinates(settings.companyLatitude, settings.companyLongitude) ? Number(settings.companyLatitude) : undefined,
@@ -12262,8 +12491,8 @@ function VehiclesView({
         method: "PATCH",
         body: JSON.stringify({
           ...traccarForm,
-          matchRadiusMeters: Number(traccarForm.matchRadiusMeters) || 120,
-          minStopMinutes: Number(traccarForm.minStopMinutes) || 5,
+          matchRadiusMeters: Number(traccarForm.matchRadiusMeters) || 20,
+          minStopMinutes: Number(traccarForm.minStopMinutes) || 2,
           companyLatitude: normalizedCoordinates.latitude,
           companyLongitude: normalizedCoordinates.longitude,
         }),
@@ -12274,8 +12503,8 @@ function VehiclesView({
         token: settings.token ?? "",
         username: settings.username ?? "",
         password: settings.password ?? "",
-        matchRadiusMeters: Number(settings.matchRadiusMeters) || 120,
-        minStopMinutes: Number(settings.minStopMinutes) || 5,
+        matchRadiusMeters: Number(settings.matchRadiusMeters) || 20,
+        minStopMinutes: Number(settings.minStopMinutes) || 2,
         companyName: settings.companyName ?? "Security Solutions",
         companyAddress: settings.companyAddress ?? "",
         companyLatitude: hasCoordinates(settings.companyLatitude, settings.companyLongitude) ? Number(settings.companyLatitude) : undefined,
@@ -12304,6 +12533,28 @@ function VehiclesView({
       setVehicleDaily(data);
     } catch (error) {
       setTraccarError(`No se pudo generar el resumen GPS: ${getErrorMessage(error)}`);
+    } finally {
+      setTraccarLoading(false);
+    }
+  }
+
+  async function registerVehicleFuelExpense(vehicleId = selectedVehicleId) {
+    if (!token || !vehicleId) {
+      return;
+    }
+
+    setSelectedVehicleId(vehicleId);
+    setTraccarLoading(true);
+    setTraccarError("");
+    try {
+      const result = await apiRequest<{ created: boolean; updated: boolean; payment: Payment; summary: VehicleDailySummary; message: string }>(
+        `/api/vehicles/${vehicleId}/traccar/daily/fuel-expense?date=${encodeURIComponent(traccarDate)}`,
+        { token, method: "POST" },
+      );
+      setVehicleDaily(result.summary);
+      setTraccarError(result.message);
+    } catch (error) {
+      setTraccarError(`No se pudo registrar combustible GPS: ${getErrorMessage(error)}`);
     } finally {
       setTraccarLoading(false);
     }
@@ -12443,6 +12694,28 @@ function VehiclesView({
       await onRefresh();
     } catch (error) {
       setTraccarError(`No se pudieron sincronizar alertas: ${getErrorMessage(error)}`);
+    } finally {
+      setTraccarLoading(false);
+    }
+  }
+
+  async function configureVehicleTraccarNotifications(vehicle: Vehicle) {
+    if (!token) {
+      return;
+    }
+
+    setTraccarLoading(true);
+    setTraccarError("");
+    try {
+      const result = await apiRequest<VehicleTraccarNotificationsResponse>(`/api/vehicles/${vehicle.id}/traccar/notifications/configure`, {
+        token,
+        method: "POST",
+      });
+      const linked = result.notifications.filter((notification) => notification.linked).length;
+      setTraccarError(`${result.message} Vinculadas: ${linked}/${result.notifications.length}.`);
+      await loadVehicleAlertLogs(vehicle.id);
+    } catch (error) {
+      setTraccarError(`No se pudieron configurar notificaciones Traccar: ${getErrorMessage(error)}`);
     } finally {
       setTraccarLoading(false);
     }
@@ -12665,6 +12938,14 @@ function VehiclesView({
               />
             </label>
             <label className="wideField">
+              Correos de alerta
+              <textarea
+                value={vehicleForm.monitoringEmails ?? ""}
+                onChange={(event) => onFormChange({ ...vehicleForm, monitoringEmails: event.target.value })}
+                placeholder="Un correo por linea o separados por coma. Ej: cliente@empresa.com"
+              />
+            </label>
+            <label className="wideField">
               Enlace para cliente
               <input
                 value={vehicleForm.clientShareUrl ?? ""}
@@ -12693,6 +12974,17 @@ function VehiclesView({
                 <span>
                   <strong>Alertas WhatsApp</strong>
                   <small>Eventos enviados al responsable</small>
+                </span>
+              </label>
+              <label className="toggleField">
+                <input
+                  type="checkbox"
+                  checked={Boolean(vehicleForm.gpsEmailAlerts)}
+                  onChange={(event) => onFormChange({ ...vehicleForm, gpsEmailAlerts: event.target.checked })}
+                />
+                <span>
+                  <strong>Alertas Email</strong>
+                  <small>Entradas y salidas de geozona por correo</small>
                 </span>
               </label>
               <label className="toggleField">
@@ -12910,9 +13202,9 @@ function VehiclesView({
               Radio visita (m)
               <input
                 type="number"
-                min="20"
+                min="10"
                 value={traccarForm.matchRadiusMeters}
-                onChange={(event) => setTraccarForm((form) => ({ ...form, matchRadiusMeters: Number(event.target.value) || 120 }))}
+                onChange={(event) => setTraccarForm((form) => ({ ...form, matchRadiusMeters: Number(event.target.value) || 20 }))}
               />
             </label>
             <label>
@@ -13032,6 +13324,7 @@ function VehiclesView({
               events={vehicleEvents}
               alertLogs={vehicleAlertLogs}
               summary={vehicleDaily}
+              traccarSettings={traccarSettings}
               vehicle={selectedVehicleDetail}
               onClose={() => setSelectedVehicleDetailId(null)}
               onDateChange={setTraccarDate}
@@ -13047,9 +13340,11 @@ function VehiclesView({
               onLoadAlertLogs={() => loadVehicleAlertLogs(selectedVehicleDetail.id)}
               onLoadLive={() => loadVehicleLive(selectedVehicleDetail.id)}
               onLoadSummary={() => loadVehicleDaily(selectedVehicleDetail.id)}
+              onRegisterFuelExpense={() => registerVehicleFuelExpense(selectedVehicleDetail.id)}
               onSendCommand={(command) => sendVehicleCommand(selectedVehicleDetail, command)}
               onSendTestWhatsApp={() => sendVehicleTestWhatsApp(selectedVehicleDetail)}
               onSyncAlerts={() => syncVehicleAlerts(selectedVehicleDetail)}
+              onConfigureTraccarNotifications={() => configureVehicleTraccarNotifications(selectedVehicleDetail)}
               onToggleLiveAutoRefresh={() => setLiveAutoRefresh((value) => !value)}
               onToggleActive={() => onToggleActive(selectedVehicleDetail)}
             />,
@@ -13070,6 +13365,7 @@ function VehicleDetailModal({
   events,
   alertLogs,
   summary,
+  traccarSettings,
   vehicle,
   onClose,
   onDateChange,
@@ -13079,9 +13375,11 @@ function VehicleDetailModal({
   onLoadAlertLogs,
   onLoadLive,
   onLoadSummary,
+  onRegisterFuelExpense,
   onSendCommand,
   onSendTestWhatsApp,
   onSyncAlerts,
+  onConfigureTraccarNotifications,
   onToggleLiveAutoRefresh,
   onToggleActive,
 }: {
@@ -13094,6 +13392,7 @@ function VehicleDetailModal({
   events: VehicleTraccarEventsResponse | null;
   alertLogs: VehicleAlertLogsResponse | null;
   summary: VehicleDailySummary | null;
+  traccarSettings: TraccarSettings | null;
   vehicle: Vehicle;
   onClose: () => void;
   onDateChange: (value: string) => void;
@@ -13103,15 +13402,21 @@ function VehicleDetailModal({
   onLoadAlertLogs: () => void;
   onLoadLive: () => void;
   onLoadSummary: () => void;
+  onRegisterFuelExpense: () => void;
   onSendCommand: (command: "status" | "engineStop" | "engineResume") => void;
   onSendTestWhatsApp: () => void;
   onSyncAlerts: () => void;
+  onConfigureTraccarNotifications: () => void;
   onToggleLiveAutoRefresh: () => void;
   onToggleActive: () => void;
 }) {
   const monitoringPhones = (vehicle.monitoringPhones ?? "")
     .split(/[\n,;]+/)
     .map((phone) => phone.trim())
+    .filter(Boolean);
+  const monitoringEmails = (vehicle.monitoringEmails ?? "")
+    .split(/[\n,;]+/)
+    .map((email) => email.trim())
     .filter(Boolean);
   const sortedAlertLogs = useMemo(
     () =>
@@ -13161,15 +13466,25 @@ function VehicleDetailModal({
             <strong>{vehicle.gpsWhatsappAlerts ? "Alertas activas" : "Sin alertas"}</strong>
           </article>
           <article>
+            <span>Email</span>
+            <strong>{vehicle.gpsEmailAlerts ? "Alertas activas" : "Sin alertas"}</strong>
+          </article>
+          <article>
             <span>Comandos</span>
             <strong>{vehicle.gpsEngineCommandsEnabled ? (hasEngineCommandTemplates ? "Especificos GPS" : "Genericos Traccar") : "Bloqueados"}</strong>
           </article>
         </div>
 
         {vehicle.gpsEngineCommandsEnabled && !hasEngineCommandTemplates ? (
-          <p className="vehicleCommandNotice">
-            Los botones de motor estan activos, pero este vehiculo todavia no tiene cargado el comando exacto del GPS. El CRM usara el tipo generico de Traccar hasta que se configure.
-          </p>
+          <div className="vehicleCommandNotice">
+            <span>
+              Los botones de motor estan activos, pero este vehiculo todavia no tiene cargado el comando exacto del GPS. El CRM usara el tipo generico de Traccar hasta que se configure.
+            </span>
+            <button type="button" className="secondaryButton compactActionButton" onClick={onEdit}>
+              <Edit3 size={15} />
+              Configurar comandos
+            </button>
+          </div>
         ) : null}
 
         <div className="vehicleDetailActions">
@@ -13182,6 +13497,10 @@ function VehicleDetailModal({
             <RefreshCw size={18} className={loading ? "spin" : ""} />
             Generar resumen GPS
           </button>
+          <button type="button" className="secondaryButton" onClick={onRegisterFuelExpense} disabled={loading || !vehicle.traccarDeviceId}>
+            <Fuel size={18} />
+            Registrar combustible GPS
+          </button>
           <button type="button" className="secondaryButton" onClick={onLoadEvents} disabled={loading || !vehicle.traccarDeviceId}>
             <Bell size={18} />
             Ver eventos
@@ -13193,6 +13512,10 @@ function VehicleDetailModal({
           <button type="button" className="secondaryButton" onClick={onSyncAlerts} disabled={loading || !vehicle.gpsMonitoringEnabled}>
             <MessageSquare size={18} />
             Sincronizar alertas
+          </button>
+          <button type="button" className="secondaryButton" onClick={onConfigureTraccarNotifications} disabled={loading || !vehicle.traccarDeviceId}>
+            <Bell size={18} />
+            Configurar alertas Traccar
           </button>
           <button type="button" className="secondaryButton" onClick={onSendTestWhatsApp} disabled={loading || !vehicle.monitoringPhones}>
             <PhoneCall size={18} />
@@ -13222,8 +13545,54 @@ function VehicleDetailModal({
         {error ? <p className="formError">{error}</p> : null}
         {summary?.message ? <p className="emptyPanel">{summary.message}</p> : null}
 
+        {summary ? (
+          <section className="customerProfileSection routeResultPanel">
+            <div className="customerProfileSectionHeader">
+              <div>
+                <h3>Resumen de recorrido</h3>
+                <small>
+                  {summary.routeEngine === "OSRM"
+                    ? `OSRM privado - ${summary.routeMatchedPoints ?? summary.route?.length ?? 0} puntos corregidos`
+                    : `${summary.routePositions ?? summary.positions} puntos GPS filtrados`}
+                </small>
+              </div>
+              <span className={`statusPill ${summary.routeMode === "MATCHED" ? "completed" : "pending"}`}>
+                {summary.routeMode === "MATCHED" ? "Ruta corregida" : "GPS filtrado"}
+              </span>
+            </div>
+            <div className="vehicleTrackingSummary">
+              <article>
+                <span>Distancia</span>
+                <strong>{formatNumber(summary.distanceKm)} km</strong>
+                <small>{summary.filteredPositions ? `${summary.filteredPositions} puntos descartados` : "Sin descarte GPS"}</small>
+              </article>
+              <article>
+                <span>Motor de ruta</span>
+                <strong>{summary.routeEngine === "OSRM" ? "OSRM privado" : "GPS filtrado"}</strong>
+                <small>
+                  {summary.routeConfidence !== null && summary.routeConfidence !== undefined
+                    ? `${formatNumber(summary.routeConfidence * 100, 0)}% confianza`
+                    : `${summary.routeSampledPoints ?? summary.routePositions ?? summary.positions} puntos analizados`}
+                </small>
+              </article>
+              <article>
+                <span>Velocidad prom.</span>
+                <strong>{formatNumber(summary.averageSpeedKmh, 1)} km/h</strong>
+                <small>{formatDuration(summary.movingMinutes)} movimiento</small>
+              </article>
+              <article>
+                <span>Paradas</span>
+                <strong>{summary.stops.length}</strong>
+                <small>{summary.visits.length} visita(s) detectadas</small>
+              </article>
+            </div>
+            <TraccarOfficialPanel date={date} mode="route" settings={traccarSettings} summary={summary} vehicle={vehicle} />
+          </section>
+        ) : null}
+
         <VehicleLiveTrackingPanel
           live={live}
+          traccarSettings={traccarSettings}
           vehicle={vehicle}
           loading={liveLoading}
           autoRefresh={liveAutoRefresh}
@@ -13239,6 +13608,10 @@ function VehicleDetailModal({
             <section>
               <span>Celulares WhatsApp</span>
               <p>{monitoringPhones.length ? monitoringPhones.join(" / ") : "Sin celulares configurados"}</p>
+            </section>
+            <section>
+              <span>Correos Email</span>
+              <p>{monitoringEmails.length ? monitoringEmails.join(" / ") : "Sin correos configurados"}</p>
             </section>
             <section>
               <span>Compartir con cliente</span>
@@ -13274,7 +13647,7 @@ function VehicleDetailModal({
           <section className="customerProfileSection">
             <div className="customerProfileSectionHeader">
               <div>
-                <h3>Alertas WhatsApp enviadas</h3>
+                <h3>Alertas GPS enviadas</h3>
                 {latestAlert ? (
                   <small>
                     Ultima: {latestAlert.status === "SENT" ? "enviada" : "fallida"} - {formatShortDateTime(latestAlert.createdAt)}
@@ -13294,7 +13667,7 @@ function VehicleDetailModal({
                 <article key={log.id} className={log.status === "SENT" ? "sent" : "failed"}>
                   <div>
                     <strong>{traccarEventUiLabel(log.eventType.replace("command:", ""))}</strong>
-                    <span>{[log.phone, log.geofenceName].filter(Boolean).join(" - ")}</span>
+                    <span>{[log.channel === "EMAIL" ? "Email" : "WhatsApp", log.phone, log.geofenceName].filter(Boolean).join(" - ")}</span>
                     {log.latitude && log.longitude ? (
                       <small>
                         {formatNumber(Number(log.latitude), 6)}, {formatNumber(Number(log.longitude), 6)}
@@ -13318,7 +13691,7 @@ function VehicleDetailModal({
                   {log.error ? <p>{log.error}</p> : null}
                 </article>
               ))}
-              {!alertLogs.logs.length ? <p className="emptyPanel">Todavia no hay alertas WhatsApp registradas para este vehiculo.</p> : null}
+              {!alertLogs.logs.length ? <p className="emptyPanel">Todavia no hay alertas GPS registradas para este vehiculo.</p> : null}
             </div>
           </section>
         ) : null}
@@ -13330,8 +13703,17 @@ function VehicleDetailModal({
                 <span>{summary.routeMode === "MATCHED" ? "Ruta corregida" : "Kilometros"}</span>
                 <strong>{formatNumber(summary.distanceKm)} km</strong>
                 <small>
-                  {summary.routePositions ?? summary.positions} puntos utiles
+                  {summary.routeEngine === "OSRM" ? `${summary.routeMatchedPoints ?? summary.route?.length ?? 0} puntos OSRM` : `${summary.routePositions ?? summary.positions} puntos utiles`}
                   {summary.filteredPositions ? ` / ${summary.filteredPositions} filtrados` : ""}
+                </small>
+              </article>
+              <article>
+                <span>Motor de ruta</span>
+                <strong>{summary.routeEngine === "OSRM" ? "OSRM privado" : "GPS filtrado"}</strong>
+                <small>
+                  {summary.routeConfidence !== null && summary.routeConfidence !== undefined
+                    ? `${formatNumber(summary.routeConfidence * 100, 0)}% confianza`
+                    : `${summary.routeSampledPoints ?? summary.routePositions ?? summary.positions} puntos analizados`}
                 </small>
               </article>
               <article>
@@ -13355,9 +13737,6 @@ function VehicleDetailModal({
                 <small>{formatCurrency(summary.estimatedFuelCost)} aprox.</small>
               </article>
             </div>
-
-            <VehicleMonitoringMap summary={summary} vehicle={vehicle} />
-
             <div className="traccarLists">
               <section>
                 <h3>Visitas detectadas</h3>
@@ -13401,8 +13780,76 @@ function VehicleDetailModal({
   );
 }
 
+function TraccarOfficialPanel({
+  date,
+  live,
+  mode,
+  settings,
+  summary,
+  vehicle,
+}: {
+  date: string;
+  live?: VehicleLivePosition | null;
+  mode: "live" | "route";
+  settings: TraccarSettings | null;
+  summary?: VehicleDailySummary | null;
+  vehicle: Vehicle;
+}) {
+  const liveUrl = buildTraccarDeviceUrl(settings, vehicle);
+  const routeUrl = buildTraccarRouteReportUrl(settings, vehicle, date);
+  const targetUrl = mode === "route" ? routeUrl || liveUrl : liveUrl || routeUrl;
+  const hasOfficialView = Boolean(targetUrl);
+
+  return (
+    <section className={`traccarOfficialPanel ${mode}`}>
+      <div className="traccarOfficialHeader">
+        <div>
+          <span>Vista oficial Traccar</span>
+          <strong>{mode === "route" ? "Recorrido y reportes" : "Seguimiento en vivo"}</strong>
+          <small>
+            {vehicle.traccarDeviceId
+              ? `Dispositivo ${vehicle.traccarDeviceId}${summary ? ` - ${formatNumber(summary.distanceKm)} km CRM` : ""}`
+              : "Vehiculo sin dispositivo vinculado"}
+          </small>
+        </div>
+        <div className="traccarOfficialActions">
+          <button type="button" className="routeMapButton primary" onClick={() => liveUrl && window.open(liveUrl, "_blank", "noopener,noreferrer")} disabled={!liveUrl}>
+            <MapPin size={15} />
+            En vivo
+          </button>
+          <button type="button" className="routeMapButton" onClick={() => routeUrl && window.open(routeUrl, "_blank", "noopener,noreferrer")} disabled={!routeUrl}>
+            <Navigation size={15} />
+            Recorrido
+          </button>
+          {live?.mapUrl ? (
+            <button type="button" className="routeMapButton" onClick={() => window.open(live.mapUrl!, "_blank", "noopener,noreferrer")}>
+              <MapPin size={15} />
+              Google
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="traccarOfficialFrame">
+        {hasOfficialView ? (
+          <iframe src={targetUrl} title={`Traccar ${vehicle.name}`} />
+        ) : (
+          <div className="vehicleMapEmpty">
+            <MapPin size={22} />
+            <p>Configura la URL de Traccar y el ID del dispositivo para ver la pantalla oficial.</p>
+          </div>
+        )}
+      </div>
+      <p className="traccarOfficialNote">
+        Si Traccar no permite mostrarse embebido, usa los botones de arriba. La vista oficial conserva calles, recorridos y controles reales de Traccar.
+      </p>
+    </section>
+  );
+}
+
 function VehicleLiveTrackingPanel({
   live,
+  traccarSettings,
   vehicle,
   loading,
   autoRefresh,
@@ -13410,6 +13857,7 @@ function VehicleLiveTrackingPanel({
   onToggleAutoRefresh,
 }: {
   live: VehicleLivePosition | null;
+  traccarSettings: TraccarSettings | null;
   vehicle: Vehicle;
   loading: boolean;
   autoRefresh: boolean;
@@ -13485,7 +13933,9 @@ function VehicleLiveTrackingPanel({
 
       <div className="vehicleLiveGrid">
         <div className="vehicleLiveMap">
-          {live && hasPosition ? (
+          {traccarSettings?.baseUrl && vehicle.traccarDeviceId ? (
+            <TraccarOfficialPanel date={toDateInputValue(new Date())} live={live} mode="live" settings={traccarSettings} vehicle={vehicle} />
+          ) : live && hasPosition ? (
             <>
               <PremiumLiveMap live={live} vehicle={vehicle} isPickup={isPickup} />
               <div className="vehicleLiveMapTop">
@@ -13618,6 +14068,8 @@ function PremiumLiveMap({ live, vehicle, isPickup }: { live: VehicleLivePosition
         attributionControl: false,
       });
       mapRef.current.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
+      mapRef.current.on("load", () => mapRef.current?.resize());
+      window.setTimeout(() => mapRef.current?.resize(), 250);
     } else {
       mapRef.current.easeTo({
         center,
@@ -13625,6 +14077,7 @@ function PremiumLiveMap({ live, vehicle, isPickup }: { live: VehicleLivePosition
         bearing: Number.isFinite(course) ? course - 18 : mapRef.current.getBearing(),
         duration: 850,
       });
+      mapRef.current.resize();
     }
 
     const markerElement = buildVehicleMapMarkerElement({ vehicle, isPickup, moving, color, course, speed });
@@ -13684,6 +14137,7 @@ function buildVehicleMapMarkerElement({
   color,
   course,
   speed,
+  compact = false,
 }: {
   vehicle: Vehicle;
   isPickup: boolean;
@@ -13691,10 +14145,11 @@ function buildVehicleMapMarkerElement({
   color: string;
   course: number;
   speed: number;
+  compact?: boolean;
 }) {
   const marker = document.createElement("button");
   marker.type = "button";
-  marker.className = `securityVehicleMarker ${isPickup ? "pickup" : "car"} ${moving ? "moving" : "stopped"}`;
+  marker.className = `securityVehicleMarker ${isPickup ? "pickup" : "car"} ${moving ? "moving" : "stopped"} ${compact ? "compact" : ""}`;
   marker.style.setProperty("--vehicle-color", color);
   marker.style.setProperty("--vehicle-bearing", `${Number.isFinite(course) ? course : 0}deg`);
   marker.title = `${vehicle.name} ${vehicle.plate || ""} - ${formatNumber(speed, 1)} km/h`;
@@ -13716,31 +14171,86 @@ function buildSecurityMapStyle(): StyleSpecification {
   return {
     version: 8,
     sources: {
-      osm: {
+      osmRoads: {
         type: "raster",
-        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tiles: [
+          "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+          "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+          "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        ],
         tileSize: 256,
         attribution: "OpenStreetMap",
       },
     },
     layers: [
       {
+        id: "security-background",
+        type: "background",
+        paint: {
+          "background-color": "#06111b",
+        },
+      },
+      {
         id: "security-base",
         type: "raster",
-        source: "osm",
+        source: "osmRoads",
         paint: {
-          "raster-saturation": -0.72,
+          "raster-saturation": -0.18,
           "raster-contrast": 0.08,
-          "raster-brightness-min": 0.05,
-          "raster-brightness-max": 0.82,
+          "raster-brightness-min": 0.72,
+          "raster-brightness-max": 1,
         },
       },
     ],
   };
 }
 
+function simplifyRouteForMap<T extends { latitude: number; longitude: number }>(points: T[]) {
+  if (points.length <= 220) {
+    return points;
+  }
+  const tolerance = 0.00016;
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+  const stack: Array<[number, number]> = [[0, points.length - 1]];
+
+  while (stack.length) {
+    const [start, end] = stack.pop() as [number, number];
+    const startPoint = points[start];
+    const endPoint = points[end];
+    const dx = endPoint.longitude - startPoint.longitude;
+    const dy = endPoint.latitude - startPoint.latitude;
+    const lengthSq = dx * dx + dy * dy || 1;
+    let maxDistance = 0;
+    let maxIndex = -1;
+
+    for (let index = start + 1; index < end; index += 1) {
+      const point = points[index];
+      const projection = ((point.longitude - startPoint.longitude) * dx + (point.latitude - startPoint.latitude) * dy) / lengthSq;
+      const projectedLongitude = startPoint.longitude + projection * dx;
+      const projectedLatitude = startPoint.latitude + projection * dy;
+      const distance = Math.hypot(point.longitude - projectedLongitude, point.latitude - projectedLatitude);
+      if (distance > maxDistance) {
+        maxDistance = distance;
+        maxIndex = index;
+      }
+    }
+
+    if (maxDistance > tolerance && maxIndex > -1) {
+      keep[maxIndex] = 1;
+      stack.push([start, maxIndex], [maxIndex, end]);
+    }
+  }
+
+  return points.filter((_, index) => keep[index] === 1);
+}
+
 function VehicleMonitoringMap({ summary, vehicle }: { summary: VehicleDailySummary; vehicle: Vehicle }) {
+  const panelRef = useRef<HTMLElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const route = (summary.route ?? []).filter((point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude));
+  const mapRoute = simplifyRouteForMap(route);
   const stopPoints = summary.stops.filter((stop) => Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude));
   const finish = route[route.length - 1];
   const lastSpeed = Number(finish?.speedKmh ?? 0);
@@ -13757,8 +14267,28 @@ function VehicleMonitoringMap({ summary, vehicle }: { summary: VehicleDailySumma
         ? "Recorrido filtrado por calidad GPS"
         : "Esperando resumen GPS";
 
+  useEffect(() => {
+    function handleFullscreenChange() {
+      setIsFullscreen(document.fullscreenElement === panelRef.current);
+    }
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    const panel = panelRef.current;
+    if (!panel) {
+      return;
+    }
+    if (document.fullscreenElement === panel) {
+      await document.exitFullscreen();
+      return;
+    }
+    await panel.requestFullscreen();
+  };
+
   return (
-    <section className="vehicleMonitoringMap" style={{ "--vehicle-color": vehicle.colorHex || "#19a89b" } as CSSProperties}>
+    <section ref={panelRef} className="vehicleMonitoringMap" style={{ "--vehicle-color": vehicle.colorHex || "#19a89b" } as CSSProperties}>
       <div className="vehicleMonitoringHeader">
         <div className="vehicleMonitoringTitle">
           <span className={`vehicleMapMarker ${isPickup ? "pickup" : "car"}`}>
@@ -13777,8 +14307,17 @@ function VehicleMonitoringMap({ summary, vehicle }: { summary: VehicleDailySumma
       </div>
 
       <div className="vehicleMapCanvas">
-        {route.length >= 2 ? (
-          <SecurityRouteMap route={route} stopPoints={stopPoints} vehicle={vehicle} summary={summary} moving={moving} isPickup={isPickup} />
+        {mapRoute.length >= 2 ? (
+          <SecurityRouteMap
+            route={mapRoute}
+            stopPoints={stopPoints}
+            vehicle={vehicle}
+            summary={summary}
+            moving={moving}
+            isPickup={isPickup}
+            isFullscreen={isFullscreen}
+            onToggleFullscreen={toggleFullscreen}
+          />
         ) : (
           <div className="vehicleMapEmpty">
             <MapPin size={22} />
@@ -13813,6 +14352,8 @@ function SecurityRouteMap({
   summary,
   moving,
   isPickup,
+  isFullscreen,
+  onToggleFullscreen,
 }: {
   route: NonNullable<VehicleDailySummary["route"]>;
   stopPoints: VehicleDailySummary["stops"];
@@ -13820,14 +14361,33 @@ function SecurityRouteMap({
   summary: VehicleDailySummary;
   moving: boolean;
   isPickup: boolean;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => Promise<void>;
 }) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerRefs = useRef<MapLibreMarker[]>([]);
+  const replayMarkerRef = useRef<MapLibreMarker | null>(null);
+  const replayFrameRef = useRef<number | null>(null);
+  const routeCoordinatesRef = useRef<Array<[number, number]>>([]);
+  const [replayEnabled, setReplayEnabled] = useState(false);
   const color = vehicle.colorHex || "#19a89b";
   const lastPoint = route[route.length - 1];
   const lastSpeed = Number(lastPoint?.speedKmh ?? 0);
   const lastCourse = 0;
+
+  const fitRoute = () => {
+    const map = mapRef.current;
+    const coordinates = routeCoordinatesRef.current;
+    if (!map || coordinates.length < 2) {
+      return;
+    }
+    const bounds = coordinates.reduce(
+      (currentBounds, coordinate) => currentBounds.extend(coordinate),
+      new maplibregl.LngLatBounds(coordinates[0], coordinates[0]),
+    );
+    map.fitBounds(bounds, { padding: isFullscreen ? 120 : 76, maxZoom: 17.4, duration: 700 });
+  };
 
   useEffect(() => {
     const container = mapContainerRef.current;
@@ -13835,7 +14395,8 @@ function SecurityRouteMap({
       return;
     }
 
-    const coordinates = route.map((point) => [point.longitude, point.latitude]);
+    const coordinates = route.map((point) => [point.longitude, point.latitude] as [number, number]);
+    routeCoordinatesRef.current = coordinates;
     const center = coordinates[coordinates.length - 1] as LngLatLike;
 
     function drawRoute(map: MapLibreMap) {
@@ -13854,19 +14415,19 @@ function SecurityRouteMap({
           type: "line",
           source: "security-route",
           layout: { "line-cap": "round", "line-join": "round" },
-          paint: { "line-color": color, "line-width": 13, "line-opacity": 0.24, "line-blur": 6 },
+          paint: { "line-color": color, "line-width": 8, "line-opacity": 0.18, "line-blur": 4 },
         });
         map.addLayer({
           id: "security-route-line",
           type: "line",
           source: "security-route",
           layout: { "line-cap": "round", "line-join": "round" },
-          paint: { "line-color": color, "line-width": 5, "line-opacity": 0.96 },
+          paint: { "line-color": color, "line-width": 3.5, "line-opacity": 0.94 },
         });
       }
 
-      const bounds = coordinates.reduce((currentBounds, coordinate) => currentBounds.extend(coordinate as [number, number]), new maplibregl.LngLatBounds(coordinates[0] as [number, number], coordinates[0] as [number, number]));
-      map.fitBounds(bounds, { padding: 76, maxZoom: 17.2, duration: 900 });
+      const bounds = coordinates.reduce((currentBounds, coordinate) => currentBounds.extend(coordinate), new maplibregl.LngLatBounds(coordinates[0], coordinates[0]));
+      map.fitBounds(bounds, { padding: isFullscreen ? 110 : 64, maxZoom: 16.5, duration: 900 });
 
       markerRefs.current.forEach((marker) => marker.remove());
       markerRefs.current = [];
@@ -13875,11 +14436,46 @@ function SecurityRouteMap({
 
       stopPoints.slice(0, 20).forEach((stop) => {
         const stopMarker = buildRoutePointMarker(formatDuration(stop.durationMinutes), "stop");
-        markerRefs.current.push(new maplibregl.Marker({ element: stopMarker, anchor: "center" }).setLngLat([stop.longitude, stop.latitude]).addTo(map));
+        markerRefs.current.push(
+          new maplibregl.Marker({ element: stopMarker, anchor: "center" })
+            .setLngLat([stop.longitude, stop.latitude])
+            .setPopup(new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14 }).setHTML(`<strong>Parada</strong><span>${escapeHtml(formatDuration(stop.durationMinutes))}</span>`))
+            .addTo(map),
+        );
       });
 
-      const vehicleMarker = buildVehicleMapMarkerElement({ vehicle, isPickup, moving, color, course: lastCourse, speed: lastSpeed });
+      const vehicleMarker = buildVehicleMapMarkerElement({ vehicle, isPickup, moving, color, course: lastCourse, speed: lastSpeed, compact: true });
       markerRefs.current.push(new maplibregl.Marker({ element: vehicleMarker, anchor: "center", rotationAlignment: "map" }).setLngLat(center).addTo(map));
+
+      replayMarkerRef.current?.remove();
+      replayMarkerRef.current = null;
+      if (replayFrameRef.current) {
+        window.cancelAnimationFrame(replayFrameRef.current);
+        replayFrameRef.current = null;
+      }
+      if (!replayEnabled) {
+        return;
+      }
+      const replayElement = buildRouteReplayMarkerElement(vehicle, color, isPickup);
+      replayMarkerRef.current = new maplibregl.Marker({ element: replayElement, anchor: "center", rotationAlignment: "map" }).setLngLat(coordinates[0] as LngLatLike).addTo(map);
+      const startedAt = performance.now();
+      const durationMs = Math.min(22000, Math.max(7000, coordinates.length * 95));
+      const animateReplay = (now: number) => {
+        const progress = ((now - startedAt) % durationMs) / durationMs;
+        const rawIndex = progress * (coordinates.length - 1);
+        const lowerIndex = Math.floor(rawIndex);
+        const upperIndex = Math.min(coordinates.length - 1, lowerIndex + 1);
+        const ratio = rawIndex - lowerIndex;
+        const lower = coordinates[lowerIndex];
+        const upper = coordinates[upperIndex];
+        if (lower && upper) {
+          const lng = lower[0] + (upper[0] - lower[0]) * ratio;
+          const lat = lower[1] + (upper[1] - lower[1]) * ratio;
+          replayMarkerRef.current?.setLngLat([lng, lat]);
+        }
+        replayFrameRef.current = window.requestAnimationFrame(animateReplay);
+      };
+      replayFrameRef.current = window.requestAnimationFrame(animateReplay);
     }
 
     if (!mapRef.current) {
@@ -13888,24 +14484,57 @@ function SecurityRouteMap({
         style: buildSecurityMapStyle(),
         center,
         zoom: 14,
-        pitch: 42,
-        bearing: -14,
+        pitch: 0,
+        bearing: 0,
         attributionControl: false,
       });
       mapRef.current.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
-      mapRef.current.on("load", () => drawRoute(mapRef.current as MapLibreMap));
+      mapRef.current.scrollZoom.enable();
+      mapRef.current.dragPan.enable();
+      mapRef.current.doubleClickZoom.enable();
+      mapRef.current.touchZoomRotate.enable();
+      mapRef.current.on("load", () => {
+        mapRef.current?.resize();
+        drawRoute(mapRef.current as MapLibreMap);
+      });
+      window.setTimeout(() => {
+        mapRef.current?.resize();
+        if (mapRef.current?.isStyleLoaded()) {
+          drawRoute(mapRef.current);
+        }
+      }, 250);
     } else if (mapRef.current.isStyleLoaded()) {
+      mapRef.current.resize();
       drawRoute(mapRef.current);
     }
 
     return () => {
+      if (replayFrameRef.current) {
+        window.cancelAnimationFrame(replayFrameRef.current);
+        replayFrameRef.current = null;
+      }
+      replayMarkerRef.current?.remove();
+      replayMarkerRef.current = null;
       markerRefs.current.forEach((marker) => marker.remove());
       markerRefs.current = [];
     };
-  }, [color, isPickup, lastCourse, lastSpeed, moving, route, stopPoints, vehicle]);
+  }, [color, isFullscreen, isPickup, lastCourse, lastSpeed, moving, replayEnabled, route, stopPoints, vehicle]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      mapRef.current?.resize();
+      fitRoute();
+    }, 180);
+    return () => window.clearTimeout(timeout);
+  }, [isFullscreen]);
 
   useEffect(() => {
     return () => {
+      if (replayFrameRef.current) {
+        window.cancelAnimationFrame(replayFrameRef.current);
+        replayFrameRef.current = null;
+      }
+      replayMarkerRef.current?.remove();
       markerRefs.current.forEach((marker) => marker.remove());
       markerRefs.current = [];
       mapRef.current?.remove();
@@ -13917,10 +14546,25 @@ function SecurityRouteMap({
     <>
       <div ref={mapContainerRef} className="securityRouteMapCanvas" aria-label={`Recorrido profesional de ${vehicle.name}`} />
       <div className="vehicleLiveMapShade" />
+      <div className="securityRouteToolbar">
+        <button type="button" className="routeMapButton primary" onClick={() => setReplayEnabled((current) => !current)}>
+          <Navigation size={16} />
+          {replayEnabled ? "Pausar" : "Recorrer"}
+        </button>
+        <button type="button" className="routeMapButton" onClick={fitRoute}>
+          <RefreshCw size={16} />
+          Centrar
+        </button>
+        <button type="button" className="routeMapButton" onClick={() => void onToggleFullscreen()}>
+          {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          {isFullscreen ? "Salir" : "Pantalla completa"}
+        </button>
+      </div>
       <div className="securityRouteMetrics">
-        <strong>{formatNumber(summary.distanceKm)} km</strong>
-        <span>{summary.stops.length} paradas</span>
-        <span>{summary.visits.length} visitas</span>
+        <strong>{summary.routeEngine === "OSRM" ? "OSRM" : "GPS"}</strong>
+        <span>{formatNumber(summary.distanceKm)} km</span>
+        <span>{summary.routeMatchedPoints ?? route.length} pts</span>
+        {summary.routeConfidence !== null && summary.routeConfidence !== undefined ? <span>{formatNumber(summary.routeConfidence * 100, 0)}% confianza</span> : null}
       </div>
     </>
   );
@@ -13930,6 +14574,18 @@ function buildRoutePointMarker(label: string, variant: "start" | "stop") {
   const marker = document.createElement("span");
   marker.className = `securityRoutePoint ${variant}`;
   marker.innerHTML = `<i></i><b>${escapeHtml(label)}</b>`;
+  return marker;
+}
+
+function buildRouteReplayMarkerElement(vehicle: Vehicle, color: string, isPickup: boolean) {
+  const marker = document.createElement("span");
+  marker.className = `securityRouteReplay ${isPickup ? "pickup" : "car"}`;
+  marker.style.setProperty("--vehicle-color", color);
+  marker.innerHTML = `
+    <span class="securityRouteReplayGlow"></span>
+    <span class="securityRouteReplayBody"></span>
+    <b>${escapeHtml(vehicle.plate || "replay")}</b>
+  `;
   return marker;
 }
 
@@ -15628,6 +16284,7 @@ function GmailView({
   loading,
   status,
   sync,
+  onReconnect,
   onRefresh,
 }: {
   gmailError: string;
@@ -15635,6 +16292,7 @@ function GmailView({
   loading: boolean;
   status: GmailStatus;
   sync: GmailSync;
+  onReconnect: () => void;
   onRefresh: () => void;
 }) {
   return (
@@ -15661,10 +16319,16 @@ function GmailView({
             {sync.lastSyncAt ? `Ultima sincronizacion: ${formatDateTime(sync.lastSyncAt)}` : "Sin sincronizacion todavia"}
           </small>
         </div>
-        <button type="button" onClick={onRefresh}>
-          <RefreshCw size={18} className={loading ? "spin" : ""} />
-          Sincronizar
-        </button>
+        <div className="integrationActions">
+          <button type="button" className="secondaryAction" onClick={onReconnect}>
+            <Mail size={18} />
+            Reconectar Gmail
+          </button>
+          <button type="button" onClick={onRefresh}>
+            <RefreshCw size={18} className={loading ? "spin" : ""} />
+            Sincronizar
+          </button>
+        </div>
       </section>
 
       {gmailError ? <p className="formError">{gmailError}</p> : null}
@@ -16396,6 +17060,252 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+async function parseQuoteExcelFile(file: File): Promise<ParsedQuoteExcel> {
+  const buffer = await file.arrayBuffer();
+  assertLooksLikeXlsx(buffer);
+  const [budgetXml, itemsXml] = await Promise.all([
+    readZipTextFile(buffer, "xl/worksheets/sheet1.xml"),
+    readZipTextFile(buffer, "xl/worksheets/sheet2.xml"),
+  ]);
+
+  const budgetCells = parseWorksheetCells(budgetXml);
+  const itemCells = parseWorksheetCells(itemsXml);
+  const fields = new Map<string, string>();
+
+  for (let row = 1; row <= 80; row++) {
+    const key = normalizeExcelText(budgetCells.get(`A${row}`));
+    if (key) {
+      fields.set(key.toLowerCase(), budgetCells.get(`B${row}`)?.trim() ?? "");
+    }
+  }
+
+  const items: NonNullable<QuotePayload["items"]> = [];
+  for (let row = 2; row <= 250; row++) {
+    const description = itemCells.get(`C${row}`)?.trim() ?? "";
+    if (!description) {
+      continue;
+    }
+
+    const sourceType = (itemCells.get(`A${row}`) ?? "").trim().toUpperCase();
+    const quantity = parseLocaleNumber(itemCells.get(`E${row}`)) || 0;
+    const unitPrice = parseLocaleNumber(itemCells.get(`F${row}`)) || 0;
+    const unitCost = parseLocaleNumber(itemCells.get(`G${row}`)) || 0;
+
+    if (quantity <= 0 && unitPrice <= 0) {
+      continue;
+    }
+
+    const origin = (itemCells.get(`I${row}`) ?? "").trim().toUpperCase();
+    const provider = itemCells.get(`H${row}`)?.trim();
+    const code = itemCells.get(`B${row}`)?.trim();
+    const originNote = origin === "SI" ? "Origen almacen: SI" : "Origen almacen: NO";
+    const providerNote = provider ? ` - ${provider}` : "";
+    const codeNote = code ? `SKU ${code} - ` : "";
+    const category = `${sourceType || "MATERIAL"}${providerNote ? ` / ${provider}` : ""} / ${originNote}`;
+
+    items.push({
+      type: mapExcelQuoteItemType(sourceType),
+      category,
+      description: `${codeNote}${description}`,
+      quantity,
+      unit: itemCells.get(`D${row}`)?.trim() || "u",
+      unitPrice,
+      unitCost,
+      taxRate: 0,
+      priceBookItemId: undefined,
+      inventoryItemId: undefined,
+    });
+  }
+
+  const subtotal = items.reduce((sum, item) => sum + (parseLocaleNumber(item.quantity) || 0) * (parseLocaleNumber(item.unitPrice) || 0), 0);
+  const discountAmount = parseLocaleNumber(fields.get("descuento")) || 0;
+  const taxPercent = parseLocaleNumber(fields.get("iva %")) || 0;
+  const taxableBase = Math.max(0, subtotal - discountAmount);
+  const tax = taxableBase * taxPercent;
+  const total = taxableBase + tax;
+  const service = normalizeDeviceType(fields.get("servicio"));
+  const customerName = fields.get("cliente") || "";
+
+  return {
+    form: {
+      ...emptyQuoteForm,
+      customerId: "",
+      number: fields.get("numero") || "",
+      title: fields.get("titulo") || "Presupuesto importado desde Excel",
+      service,
+      status: "DRAFT",
+      pricingMode: "DIRECT",
+      currency: (fields.get("moneda") || "USD").toUpperCase(),
+      taxIncluded: taxPercent > 0,
+      discountPercent: 0,
+      discountAmount,
+      profitMarginPercent: 0,
+      laborPoints: 0,
+      subtotal,
+      tax,
+      commercialTerms: fields.get("condiciones") || "",
+      executionTime: fields.get("tiempo ejecucion") || "",
+      warranty: fields.get("garantia") || "",
+      paymentTerms: fields.get("forma de pago") || "",
+      internalNotes: `Importado desde Excel: ${file.name}`,
+      items,
+    },
+    customerName,
+    itemCount: items.length,
+    total,
+  };
+}
+
+function assertLooksLikeXlsx(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer.slice(0, Math.min(buffer.byteLength, 256)));
+  const textStart = new TextDecoder().decode(bytes).trimStart().toLowerCase();
+
+  if (textStart.startsWith("<!doctype") || textStart.startsWith("<html")) {
+    throw new Error("El archivo seleccionado no es un Excel real; parece una pagina HTML de error. Descarga o selecciona el .xlsx generado nuevamente.");
+  }
+
+  if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
+    throw new Error("El archivo seleccionado no tiene estructura .xlsx valida. Selecciona el Excel original, no una vista previa o descarga fallida.");
+  }
+}
+
+async function readZipTextFile(buffer: ArrayBuffer, targetPath: string) {
+  const files = await readZipFiles(buffer, new Set([targetPath]));
+  const text = files.get(targetPath);
+  if (!text) {
+    throw new Error(`No se encontro ${targetPath} dentro del Excel.`);
+  }
+  return text;
+}
+
+async function readZipFiles(buffer: ArrayBuffer, targets: Set<string>) {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  let eocdOffset = -1;
+
+  for (let i = bytes.length - 22; i >= 0; i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+
+  if (eocdOffset < 0) {
+    throw new Error("El archivo no parece ser un Excel valido.");
+  }
+
+  const centralDirSize = view.getUint32(eocdOffset + 12, true);
+  const centralDirOffset = view.getUint32(eocdOffset + 16, true);
+  const decoder = new TextDecoder();
+  const result = new Map<string, string>();
+  let offset = centralDirOffset;
+  const end = centralDirOffset + centralDirSize;
+
+  while (offset < end && view.getUint32(offset, true) === 0x02014b50) {
+    const method = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const fileNameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localHeaderOffset = view.getUint32(offset + 42, true);
+    const fileName = decoder.decode(bytes.slice(offset + 46, offset + 46 + fileNameLength)).replace(/\\/g, "/");
+
+    if (targets.has(fileName)) {
+      if (view.getUint32(localHeaderOffset, true) !== 0x04034b50) {
+        throw new Error(`Cabecera invalida en ${fileName}.`);
+      }
+
+      const localNameLength = view.getUint16(localHeaderOffset + 26, true);
+      const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
+      const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+      const compressed = bytes.slice(dataStart, dataStart + compressedSize);
+      const extracted = await inflateZipEntry(compressed, method);
+      result.set(fileName, decoder.decode(extracted));
+    }
+
+    offset += 46 + fileNameLength + extraLength + commentLength;
+  }
+
+  return result;
+}
+
+async function inflateZipEntry(compressed: Uint8Array, method: number) {
+  if (method === 0) {
+    return compressed;
+  }
+
+  if (method !== 8 || typeof DecompressionStream === "undefined") {
+    throw new Error("Este navegador no pudo descomprimir el Excel. Usa Chrome/Edge actualizado.");
+  }
+
+  const compressedBuffer = compressed.buffer.slice(compressed.byteOffset, compressed.byteOffset + compressed.byteLength) as ArrayBuffer;
+  const stream = new Blob([compressedBuffer]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+function parseWorksheetCells(xml: string) {
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  const cells = new Map<string, string>();
+
+  Array.from(doc.getElementsByTagName("c")).forEach((cell) => {
+    const ref = cell.getAttribute("r");
+    if (!ref) {
+      return;
+    }
+
+    const type = cell.getAttribute("t");
+    if (type === "inlineStr") {
+      cells.set(ref, Array.from(cell.getElementsByTagName("t")).map((node) => node.textContent ?? "").join(""));
+      return;
+    }
+
+    const value = cell.getElementsByTagName("v")[0]?.textContent;
+    if (value !== undefined && value !== null) {
+      cells.set(ref, value);
+    }
+  });
+
+  return cells;
+}
+
+function normalizeExcelText(value?: string) {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function mapExcelQuoteItemType(value: string): QuoteItemType {
+  if (value === "MANO_OBRA" || value === "LABOR") {
+    return "LABOR";
+  }
+
+  if (value === "GASTO" || value === "EXPENSE") {
+    return "EXPENSE";
+  }
+
+  if (value === "INSUMO" || value === "SUPPLY") {
+    return "SUPPLY";
+  }
+
+  return "MATERIAL";
+}
+
+function normalizeDeviceType(value?: string): DeviceType {
+  const normalized = (value || "").trim().toUpperCase();
+  const allowed: DeviceType[] = [
+    "CCTV",
+    "ALARM",
+    "ACCESS_CONTROL",
+    "CABLING",
+    "GPS",
+    "ELECTRIC_FENCE",
+    "AUTOMATION",
+    "NETWORKING",
+    "MAINTENANCE",
+    "OTHER",
+  ];
+
+  return allowed.includes(normalized as DeviceType) ? (normalized as DeviceType) : "OTHER";
+}
+
 function compressImageDataUrl(dataUrl: string, maxSide = 1600, quality = 0.78): Promise<string> {
   if (!dataUrl.startsWith("data:image/")) {
     return Promise.resolve(dataUrl);
@@ -16545,9 +17455,11 @@ function cleanVehiclePayload(form: VehiclePayload): VehiclePayload {
     fuelKmPerLiter: Number(form.fuelKmPerLiter) || undefined,
     active: form.active,
     monitoringPhones: form.monitoringPhones?.trim() || undefined,
+    monitoringEmails: form.monitoringEmails?.trim() || undefined,
     clientShareUrl: form.clientShareUrl?.trim() || undefined,
     gpsMonitoringEnabled: Boolean(form.gpsMonitoringEnabled),
     gpsWhatsappAlerts: Boolean(form.gpsWhatsappAlerts),
+    gpsEmailAlerts: Boolean(form.gpsEmailAlerts),
     gpsEngineCommandsEnabled: Boolean(form.gpsEngineCommandsEnabled),
     gpsAutoEngineStopOnAlarm: Boolean(form.gpsAutoEngineStopOnAlarm),
     gpsCommandTextChannel: Boolean(form.gpsCommandTextChannel),
@@ -16989,12 +17901,11 @@ function buildGpsTimelineStops(
 
   const visitsByStop = new Map(summary.visits.map((visit) => [visit.stopIndex, visit]));
   return summary.stops
-    .filter((stop) => stop.durationMinutes >= 5)
     .map((stop) => {
       const visit = visitsByStop.get(stop.index);
       const isBaseStop = Boolean(
         baseLocation &&
-          haversineKm(stop.latitude, stop.longitude, baseLocation.latitude, baseLocation.longitude) <= 0.15,
+          haversineKm(stop.latitude, stop.longitude, baseLocation.latitude, baseLocation.longitude) <= 0.025,
       );
       const learnedPlace = !isBaseStop && !visit ? findLearnedDispatchPlace(stop.latitude, stop.longitude, learnedPlaces) : null;
       const learnedTitle = learnedPlace ? getLearnedDispatchPlaceTitle(learnedPlace) : "";
@@ -17020,6 +17931,40 @@ function buildGpsTimelineStops(
         durationMinutes: stop.durationMinutes,
         latitude: stop.latitude,
         longitude: stop.longitude,
+      };
+    });
+}
+
+function buildSavedDispatchTimelineStops(records: DispatchStopRecord[]) {
+  return records
+    .filter((record) => record.source === "TRACCAR" && hasCoordinates(record.latitude, record.longitude))
+    .sort((left, right) => new Date(left.scheduledAt || left.createdAt).getTime() - new Date(right.scheduledAt || right.createdAt).getTime())
+    .map((record, index) => {
+      const arrival = record.scheduledAt || record.createdAt;
+      const durationMinutes = Number(record.durationMinutes) || 0;
+      const departure = durationMinutes > 0
+        ? new Date(new Date(arrival).getTime() + durationMinutes * 60_000).toISOString()
+        : arrival;
+      const isBaseStop = record.placeType === "WAREHOUSE" || record.kind === "WAREHOUSE";
+
+      return {
+        id: record.stopKey || `gps-${index}`,
+        title: record.title || `Parada GPS ${index + 1}`,
+        customerId: record.customerId ?? undefined,
+        customerName: record.customerId ? record.title : undefined,
+        customerType: record.placeType === "IMPORTER" ? ("IMPORTER" as CustomerType) : undefined,
+        siteId: record.siteId ?? undefined,
+        learnedPlaceId: record.id,
+        learnedPlaceType: record.placeType,
+        learnedZone: record.zone ?? undefined,
+        learnedNotes: record.notes ?? undefined,
+        address: record.address ?? undefined,
+        isBaseStop,
+        arrival,
+        departure,
+        durationMinutes,
+        latitude: Number(record.latitude),
+        longitude: Number(record.longitude),
       };
     });
 }
@@ -17114,6 +18059,35 @@ function buildGoogleMapsRouteFromGpsPoints(route: NonNullable<VehicleDailySummar
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 
+function normalizeTraccarBaseUrl(settings?: TraccarSettings | null) {
+  return settings?.baseUrl?.trim().replace(/\/+$/, "") || "";
+}
+
+function buildTraccarDeviceUrl(settings: TraccarSettings | null, vehicle: Vehicle) {
+  const baseUrl = normalizeTraccarBaseUrl(settings);
+  if (!baseUrl || !vehicle.traccarDeviceId) {
+    return "";
+  }
+  const params = new URLSearchParams({ deviceId: String(vehicle.traccarDeviceId) });
+  return `${baseUrl}/?${params.toString()}`;
+}
+
+function buildTraccarRouteReportUrl(settings: TraccarSettings | null, vehicle: Vehicle, date: string) {
+  const baseUrl = normalizeTraccarBaseUrl(settings);
+  if (!baseUrl || !vehicle.traccarDeviceId) {
+    return "";
+  }
+  const selected = date || toDateInputValue(new Date());
+  const from = new Date(`${selected}T00:00:00`);
+  const to = new Date(`${selected}T23:59:59`);
+  const params = new URLSearchParams({
+    deviceId: String(vehicle.traccarDeviceId),
+    from: from.toISOString(),
+    to: to.toISOString(),
+  });
+  return `${baseUrl}/reports/route?${params.toString()}`;
+}
+
 function sampleRouteForMaps<T>(points: T[], maxPoints: number) {
   if (points.length <= maxPoints) {
     return points;
@@ -17161,7 +18135,12 @@ function formatInputTime(value?: string | null) {
     return "";
   }
 
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return date.toLocaleTimeString("es-UY", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "America/Montevideo",
+  });
 }
 
 function nearestNeighborStops(stops: DispatchRouteStop[], baseLocation?: DispatchBaseLocation | null) {
@@ -17613,6 +18592,7 @@ function formatDateTime(value?: string | null) {
   return new Date(value).toLocaleString("es-UY", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: "America/Montevideo",
   });
 }
 
@@ -17626,6 +18606,7 @@ function formatShortDateTime(value?: string | null) {
     month: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "America/Montevideo",
   });
 }
 
@@ -17775,6 +18756,7 @@ function formatTime(value?: string | null) {
   return new Date(value).toLocaleTimeString("es-UY", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "America/Montevideo",
   });
 }
 

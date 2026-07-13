@@ -32,7 +32,6 @@ export declare class AuditService {
             } | null;
         } & {
             id: string;
-            createdAt: Date;
             module: string;
             action: string;
             entityType: string;
@@ -42,6 +41,7 @@ export declare class AuditService {
             actorName: string | null;
             summary: string;
             metadata: Prisma.JsonValue | null;
+            createdAt: Date;
         })[];
     }>;
     record(input: AuditInput): Promise<void>;

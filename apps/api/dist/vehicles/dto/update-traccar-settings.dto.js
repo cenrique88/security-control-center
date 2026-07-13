@@ -47,7 +47,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsNumber)(),
-    (0, class_validator_1.Min)(20),
+    (0, class_validator_1.Min)(10),
     __metadata("design:type", Number)
 ], UpdateTraccarSettingsDto.prototype, "matchRadiusMeters", void 0);
 __decorate([

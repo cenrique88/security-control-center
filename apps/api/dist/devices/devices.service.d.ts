@@ -11,10 +11,16 @@ export declare class DevicesService {
     private readonly prisma;
     constructor(prisma: PrismaService);
     list(filters: DeviceFilters): Promise<({
-        inventoryMovements: {
+        site: {
+            customer: {
+                id: string;
+                name: string;
+            };
             id: string;
-            createdAt: Date;
-            workOrderId: string | null;
+            name: string;
+            address: string;
+        };
+        inventoryMovements: {
             workOrder: {
                 id: string;
                 status: import(".prisma/client").$Enums.WorkOrderStatus;
@@ -22,23 +28,17 @@ export declare class DevicesService {
                 scheduledAt: Date | null;
                 completedAt: Date | null;
             } | null;
-        }[];
-        site: {
             id: string;
-            name: string;
-            customer: {
-                id: string;
-                name: string;
-            };
-            address: string;
-        };
+            createdAt: Date;
+            workOrderId: string | null;
+        }[];
     } & {
         id: string;
-        model: string | null;
         createdAt: Date;
         updatedAt: Date;
         type: import(".prisma/client").$Enums.ServiceType;
         notes: string | null;
+        model: string | null;
         siteId: string;
         brand: string | null;
         serial: string | null;
@@ -46,10 +46,16 @@ export declare class DevicesService {
         installedAt: Date | null;
     })[]>;
     create(dto: CreateDeviceDto): Promise<{
-        inventoryMovements: {
+        site: {
+            customer: {
+                id: string;
+                name: string;
+            };
             id: string;
-            createdAt: Date;
-            workOrderId: string | null;
+            name: string;
+            address: string;
+        };
+        inventoryMovements: {
             workOrder: {
                 id: string;
                 status: import(".prisma/client").$Enums.WorkOrderStatus;
@@ -57,23 +63,17 @@ export declare class DevicesService {
                 scheduledAt: Date | null;
                 completedAt: Date | null;
             } | null;
-        }[];
-        site: {
             id: string;
-            name: string;
-            customer: {
-                id: string;
-                name: string;
-            };
-            address: string;
-        };
+            createdAt: Date;
+            workOrderId: string | null;
+        }[];
     } & {
         id: string;
-        model: string | null;
         createdAt: Date;
         updatedAt: Date;
         type: import(".prisma/client").$Enums.ServiceType;
         notes: string | null;
+        model: string | null;
         siteId: string;
         brand: string | null;
         serial: string | null;

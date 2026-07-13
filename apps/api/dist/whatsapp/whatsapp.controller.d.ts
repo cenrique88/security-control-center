@@ -90,20 +90,20 @@ export declare class WhatsAppController {
             meetings: ({
                 customer: {
                     name: string;
-                    phone: string | null;
                     email: string | null;
+                    phone: string | null;
                 };
             } & {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
                 status: import(".prisma/client").$Enums.MeetingStatus;
-                type: import(".prisma/client").$Enums.MeetingType;
-                notes: string | null;
                 customerId: string;
                 dateTime: Date;
                 contact: string | null;
+                type: import(".prisma/client").$Enums.MeetingType;
                 objective: string;
+                notes: string | null;
                 commitments: string | null;
                 nextStep: string | null;
                 followUpDate: Date | null;
@@ -139,20 +139,20 @@ export declare class WhatsAppController {
             meetings: ({
                 customer: {
                     name: string;
-                    phone: string | null;
                     email: string | null;
+                    phone: string | null;
                 };
             } & {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
                 status: import(".prisma/client").$Enums.MeetingStatus;
-                type: import(".prisma/client").$Enums.MeetingType;
-                notes: string | null;
                 customerId: string;
                 dateTime: Date;
                 contact: string | null;
+                type: import(".prisma/client").$Enums.MeetingType;
                 objective: string;
+                notes: string | null;
                 commitments: string | null;
                 nextStep: string | null;
                 followUpDate: Date | null;
@@ -188,20 +188,20 @@ export declare class WhatsAppController {
             meetings: ({
                 customer: {
                     name: string;
-                    phone: string | null;
                     email: string | null;
+                    phone: string | null;
                 };
             } & {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
                 status: import(".prisma/client").$Enums.MeetingStatus;
-                type: import(".prisma/client").$Enums.MeetingType;
-                notes: string | null;
                 customerId: string;
                 dateTime: Date;
                 contact: string | null;
+                type: import(".prisma/client").$Enums.MeetingType;
                 objective: string;
+                notes: string | null;
                 commitments: string | null;
                 nextStep: string | null;
                 followUpDate: Date | null;

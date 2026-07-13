@@ -1654,6 +1654,17 @@ button:disabled {
   font-size: 24px;
 }
 
+.routeResultPanel {
+  border-color: rgba(67, 211, 198, 0.34);
+  background:
+    linear-gradient(135deg, rgba(20, 184, 166, 0.12), transparent 42%),
+    rgba(5, 15, 24, 0.78);
+}
+
+.routeResultPanel .vehicleTrackingSummary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .vehicleMonitoringMap {
   display: grid;
   gap: 12px;
@@ -1663,6 +1674,22 @@ button:disabled {
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--vehicle-color, #19a89b) 20%, transparent), transparent 38%),
     rgba(6, 16, 26, 0.88);
+}
+
+.vehicleMonitoringMap:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  padding: 18px;
+  border: 0;
+  border-radius: 0;
+  overflow: auto;
+  background:
+    radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--vehicle-color, #19a89b) 18%, transparent), transparent 34%),
+    linear-gradient(135deg, rgba(3, 12, 20, 0.98), rgba(4, 18, 27, 0.98));
+}
+
+.vehicleMonitoringMap:fullscreen .vehicleMapCanvas {
+  min-height: calc(100vh - 210px);
 }
 
 .vehicleMonitoringHeader,
@@ -1764,7 +1791,7 @@ button:disabled {
 
 .vehicleMapCanvas {
   position: relative;
-  min-height: 300px;
+  min-height: 390px;
   border: 1px solid rgba(126, 197, 210, 0.2);
   border-radius: 8px;
   background:
@@ -2333,6 +2360,89 @@ button:disabled {
     0 18px 38px rgba(0, 0, 0, 0.22);
 }
 
+.traccarOfficialPanel {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  min-height: 100%;
+  padding: 12px;
+  border: 1px solid rgba(67, 211, 198, 0.26);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(20, 184, 166, 0.12), transparent 42%),
+    rgba(4, 13, 22, 0.92);
+}
+
+.traccarOfficialPanel.route {
+  min-height: 480px;
+}
+
+.traccarOfficialHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.traccarOfficialHeader div:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.traccarOfficialHeader span {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.traccarOfficialHeader strong {
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.traccarOfficialHeader small,
+.traccarOfficialNote {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.traccarOfficialActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.traccarOfficialFrame {
+  position: relative;
+  min-height: 330px;
+  overflow: hidden;
+  border: 1px solid rgba(126, 197, 210, 0.24);
+  border-radius: 8px;
+  background: rgba(2, 8, 14, 0.94);
+}
+
+.traccarOfficialPanel.route .traccarOfficialFrame {
+  min-height: 410px;
+}
+
+.traccarOfficialFrame iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+  border: 0;
+  background: #101820;
+}
+
+.traccarOfficialNote {
+  margin: 0;
+}
+
 .vehicleLiveMapFrame,
 .vehicleLiveMapShade {
   position: absolute;
@@ -2349,16 +2459,36 @@ button:disabled {
   inset: 0;
 }
 
-.securityLiveMapCanvas .maplibregl-canvas {
+.securityLiveMapCanvas,
+.securityRouteMapCanvas {
+  background:
+    linear-gradient(135deg, rgba(220, 238, 243, 0.9), rgba(184, 205, 213, 0.9)),
+    #dce8ee;
+}
+
+.securityLiveMapCanvas .maplibregl-canvas-container,
+.securityRouteMapCanvas .maplibregl-canvas-container {
+  cursor: grab;
+}
+
+.securityLiveMapCanvas .maplibregl-canvas-container:active,
+.securityRouteMapCanvas .maplibregl-canvas-container:active {
+  cursor: grabbing;
+}
+
+.securityLiveMapCanvas .maplibregl-canvas,
+.securityRouteMapCanvas .maplibregl-canvas {
   outline: 0;
 }
 
-.securityLiveMapCanvas .maplibregl-ctrl-bottom-right {
+.securityLiveMapCanvas .maplibregl-ctrl-bottom-right,
+.securityRouteMapCanvas .maplibregl-ctrl-bottom-right {
   right: 12px;
   bottom: 86px;
 }
 
-.securityLiveMapCanvas .maplibregl-ctrl-group {
+.securityLiveMapCanvas .maplibregl-ctrl-group,
+.securityRouteMapCanvas .maplibregl-ctrl-group {
   overflow: hidden;
   border: 1px solid rgba(126, 197, 210, 0.22);
   border-radius: 8px;
@@ -2367,14 +2497,16 @@ button:disabled {
   backdrop-filter: blur(10px);
 }
 
-.securityLiveMapCanvas .maplibregl-ctrl-group button {
+.securityLiveMapCanvas .maplibregl-ctrl-group button,
+.securityRouteMapCanvas .maplibregl-ctrl-group button {
   width: 34px;
   height: 34px;
   background-color: transparent;
   filter: invert(1) opacity(0.84);
 }
 
-.securityLiveMapCanvas .maplibregl-ctrl button:not(:disabled):hover {
+.securityLiveMapCanvas .maplibregl-ctrl button:not(:disabled):hover,
+.securityRouteMapCanvas .maplibregl-ctrl button:not(:disabled):hover {
   background-color: rgba(67, 211, 198, 0.16);
 }
 
@@ -2442,37 +2574,179 @@ button:disabled {
   position: relative;
   display: grid;
   justify-items: center;
-  gap: 3px;
   transform: translate(-50%, -50%);
+  pointer-events: auto;
 }
 
 .securityRoutePoint i {
-  width: 15px;
-  height: 15px;
+  width: 9px;
+  height: 9px;
   display: block;
-  border: 2px solid rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.78);
   border-radius: 999px;
   background: #f7c948;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
+  box-shadow:
+    0 0 0 3px rgba(247, 201, 72, 0.14),
+    0 8px 18px rgba(0, 0, 0, 0.28);
 }
 
 .securityRoutePoint.start i {
   background: #43d3c6;
+  box-shadow:
+    0 0 0 3px rgba(67, 211, 198, 0.16),
+    0 8px 18px rgba(0, 0, 0, 0.28);
 }
 
 .securityRoutePoint b {
-  max-width: 92px;
-  padding: 3px 6px;
+  position: absolute;
+  top: 13px;
+  left: 50%;
+  max-width: 86px;
+  transform: translateX(-50%);
+  padding: 2px 5px;
   border: 1px solid rgba(126, 197, 210, 0.28);
   border-radius: 999px;
   background: rgba(3, 12, 20, 0.86);
   color: #ffffff;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease;
+}
+
+.securityRoutePoint:hover b,
+.securityRoutePoint:focus-within b {
+  opacity: 1;
+}
+
+.securityRouteReplay {
+  position: relative;
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.securityRouteReplayGlow {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border: 1px solid color-mix(in srgb, var(--vehicle-color, #19a89b) 70%, #ffffff);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vehicle-color, #19a89b) 18%, transparent);
+  opacity: 0.42;
+  animation: vehicleMapPulse 1.65s ease-out infinite;
+}
+
+.securityRouteReplayBody {
+  position: relative;
+  width: 16px;
+  height: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 8px 10px 7px 7px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.34), transparent 38%),
+    var(--vehicle-color, #19a89b);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.36),
+    0 0 18px color-mix(in srgb, var(--vehicle-color, #19a89b) 55%, transparent);
+}
+
+.securityRouteReplayBody::before,
+.securityRouteReplayBody::after {
+  position: absolute;
+  bottom: -3px;
+  width: 4px;
+  height: 3px;
+  border-radius: 999px;
+  background: #02070c;
+  content: "";
+}
+
+.securityRouteReplayBody::before {
+  left: 3px;
+}
+
+.securityRouteReplayBody::after {
+  right: 3px;
+}
+
+.securityRouteReplay b {
+  position: absolute;
+  top: 17px;
+  left: 50%;
+  max-width: 82px;
+  transform: translateX(-50%);
+  padding: 2px 5px;
+  border: 1px solid rgba(126, 197, 210, 0.28);
+  border-radius: 999px;
+  background: rgba(3, 12, 20, 0.86);
+  color: #ffffff;
+  font-size: 8px;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.securityRouteToolbar {
+  position: absolute;
+  z-index: 5;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: calc(100% - 24px);
+  pointer-events: auto;
+}
+
+.routeMapButton {
+  display: inline-flex;
+  width: auto;
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid rgba(5, 31, 41, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #06202d;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.routeMapButton svg {
+  width: 15px !important;
+  height: 15px !important;
+  flex: 0 0 15px;
+  stroke-width: 2.5;
+}
+
+.routeMapButton.primary {
+  border-color: color-mix(in srgb, var(--vehicle-color, #19a89b) 48%, rgba(5, 31, 41, 0.2));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--vehicle-color, #19a89b) 18%, transparent), transparent 64%),
+    rgba(255, 255, 255, 0.94);
+  color: #042c32;
+}
+
+.routeMapButton:hover {
+  transform: translateY(-1px);
 }
 
 .securityVehicleMarker {
@@ -2487,6 +2761,11 @@ button:disabled {
   transform: translate(-50%, -50%);
 }
 
+.securityVehicleMarker.compact {
+  width: 28px;
+  height: 28px;
+}
+
 .securityVehiclePulse {
   position: absolute;
   inset: 5px;
@@ -2494,6 +2773,12 @@ button:disabled {
   border-radius: 999px;
   opacity: 0.62;
   animation: vehicleMapPulse 1.85s ease-out infinite;
+}
+
+.securityVehicleMarker.compact .securityVehiclePulse {
+  inset: 2px;
+  border-width: 1px;
+  opacity: 0.24;
 }
 
 .securityVehicleMarker.stopped .securityVehiclePulse {
@@ -2517,9 +2802,23 @@ button:disabled {
   transform-origin: center;
 }
 
+.securityVehicleMarker.compact .securityVehicleBody {
+  width: 17px;
+  height: 10px;
+  border-radius: 5px 7px 5px 5px;
+  box-shadow:
+    0 8px 16px rgba(0, 0, 0, 0.36),
+    0 0 12px color-mix(in srgb, var(--vehicle-color, #19a89b) 42%, transparent);
+}
+
 .securityVehicleMarker.pickup .securityVehicleBody {
   width: 38px;
   border-radius: 9px 15px 8px 8px;
+}
+
+.securityVehicleMarker.compact.pickup .securityVehicleBody {
+  width: 20px;
+  border-radius: 5px 8px 5px 5px;
 }
 
 .securityVehicleRoof,
@@ -2539,8 +2838,20 @@ button:disabled {
   background: rgba(3, 20, 31, 0.5);
 }
 
+.securityVehicleMarker.compact .securityVehicleRoof {
+  top: 2px;
+  left: 5px;
+  width: 7px;
+  height: 5px;
+  border-radius: 3px;
+}
+
 .securityVehicleMarker.pickup .securityVehicleRoof {
   left: 9px;
+}
+
+.securityVehicleMarker.compact.pickup .securityVehicleRoof {
+  left: 5px;
 }
 
 .securityVehicleGlass {
@@ -2552,6 +2863,13 @@ button:disabled {
   background: rgba(223, 250, 255, 0.7);
 }
 
+.securityVehicleMarker.compact .securityVehicleGlass {
+  top: 3px;
+  left: 7px;
+  width: 4px;
+  height: 4px;
+}
+
 .securityVehicleHood {
   top: 8px;
   right: 3px;
@@ -2559,6 +2877,13 @@ button:disabled {
   height: 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.25);
+}
+
+.securityVehicleMarker.compact .securityVehicleHood {
+  top: 4px;
+  right: 1px;
+  width: 4px;
+  height: 3px;
 }
 
 .securityVehicleWheel {
@@ -2569,12 +2894,26 @@ button:disabled {
   background: #02070c;
 }
 
+.securityVehicleMarker.compact .securityVehicleWheel {
+  bottom: -2px;
+  width: 4px;
+  height: 3px;
+}
+
 .securityVehicleWheel.front {
   right: 5px;
 }
 
+.securityVehicleMarker.compact .securityVehicleWheel.front {
+  right: 3px;
+}
+
 .securityVehicleWheel.rear {
   left: 5px;
+}
+
+.securityVehicleMarker.compact .securityVehicleWheel.rear {
+  left: 3px;
 }
 
 .securityVehiclePlate {
@@ -2595,6 +2934,14 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+
+.securityVehicleMarker.compact .securityVehiclePlate {
+  top: 21px;
+  max-width: 58px;
+  padding: 2px 4px;
+  font-size: 7px;
+  opacity: 0.88;
 }
 
 .securityMapPopup .maplibregl-popup-content {
@@ -2646,6 +2993,12 @@ button:disabled {
     linear-gradient(180deg, rgba(4, 11, 18, 0.44), transparent 24%, transparent 66%, rgba(4, 11, 18, 0.5)),
     linear-gradient(90deg, rgba(4, 11, 18, 0.32), transparent 22%, transparent 72%, rgba(4, 11, 18, 0.24)),
     radial-gradient(circle at 50% 52%, transparent 0 11%, rgba(4, 11, 18, 0.08) 44%, rgba(4, 11, 18, 0.25));
+}
+
+.vehicleMapCanvas .vehicleLiveMapShade {
+  background:
+    linear-gradient(180deg, rgba(4, 11, 18, 0.12), transparent 18%, transparent 76%, rgba(4, 11, 18, 0.16)),
+    linear-gradient(90deg, rgba(4, 11, 18, 0.08), transparent 18%, transparent 80%, rgba(4, 11, 18, 0.08));
 }
 
 .vehicleLiveMapTop,
@@ -3959,18 +4312,18 @@ button:disabled {
 
 .financeSummaryPanel {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .financeExchangeBox,
 .financeSummaryCard {
   display: grid;
   align-content: space-between;
-  gap: 8px;
-  min-height: 118px;
-  padding: 14px;
+  gap: 5px;
+  min-height: 78px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(15, 34, 52, 0.78);
@@ -3988,7 +4341,7 @@ button:disabled {
 .financeExchangeBox strong,
 .financeSummaryCard strong {
   color: var(--text);
-  font-size: clamp(18px, 2vw, 25px);
+  font-size: clamp(17px, 1.6vw, 22px);
   overflow-wrap: anywhere;
 }
 
@@ -4148,8 +4501,8 @@ button:disabled {
 .paymentCustomerTotals,
 .paymentMethodTotals {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 10px;
+  grid-template-columns: 1fr;
+  gap: 0;
   padding: 12px;
   margin: 12px 14px 0;
 }
@@ -4157,11 +4510,20 @@ button:disabled {
 .paymentCustomerTotals article,
 .paymentMethodTotals article {
   display: grid;
-  gap: 5px;
-  padding: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  background: rgba(5, 13, 24, 0.38);
+  grid-template-columns: minmax(180px, 0.9fr) minmax(280px, 1.6fr) minmax(140px, auto);
+  gap: 12px;
+  align-items: center;
+  min-height: 46px;
+  padding: 9px 10px;
+  border: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 0;
+  background: transparent;
+}
+
+.paymentCustomerTotals article:last-child,
+.paymentMethodTotals article:last-child {
+  border-bottom: 0;
 }
 
 .paymentCustomerTotals span,
@@ -4200,6 +4562,10 @@ button:disabled {
 
 .supplierProfitTotals {
   margin-top: 0;
+}
+
+.supplierProfitTotals article {
+  grid-template-columns: minmax(180px, 0.85fr) minmax(220px, 1fr) minmax(130px, auto) minmax(180px, 0.9fr);
 }
 
 .paymentCustomerTotals article.invoiceMismatchCard {
@@ -6797,6 +7163,10 @@ button:disabled {
 }
 
 .vehicleCommandNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: 12px 0 0;
   padding: 12px 14px;
   border: 1px solid rgba(245, 158, 11, 0.45);
@@ -6804,6 +7174,17 @@ button:disabled {
   background: rgba(245, 158, 11, 0.1);
   color: #f8d38d;
   font-weight: 700;
+}
+
+.vehicleCommandNotice span {
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.vehicleCommandNotice .secondaryButton {
+  flex: 0 0 auto;
+  border-color: rgba(245, 158, 11, 0.42);
+  color: #f8d38d;
 }
 
 .gmailStatusPanel,
@@ -6861,6 +7242,20 @@ button:disabled {
   background: var(--accent);
   color: white;
   font-weight: 800;
+}
+
+.integrationActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.gmailStatusPanel button.secondaryAction,
+.integrationStatusPanel button.secondaryAction {
+  border: 1px solid var(--line);
+  background: rgba(15, 23, 42, 0.78);
+  color: var(--text);
 }
 
 .gmailLayout,
@@ -9535,5 +9930,247 @@ body {
 
   .documentTable {
     min-width: 0;
+  }
+}
+
+/* Final responsive/theme hardening for native controls and dense modules. */
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  color-scheme: dark;
+}
+
+.formGrid input,
+.formGrid select,
+.formGrid textarea,
+.fieldGroup input,
+.fieldGroup select,
+.fieldGroup textarea,
+.siteForm input,
+.siteForm select,
+.siteForm textarea,
+.searchBox input,
+.directoryToolbar input,
+.directoryToolbar select,
+.agendaControls input,
+.agendaControls select,
+.messageComposeGrid input,
+.messageComposeGrid select,
+.messageComposeGrid textarea,
+.vehicleDetailActions input,
+.traccarConfigGroup input,
+.dispatcherBasePanel input,
+.workOrderMaterialForm input,
+.workOrderMaterialForm select,
+.quoteCatalogControls input,
+.quoteLaborControls input,
+.inlineCatalogField input,
+.reportFieldGrid textarea,
+.stockQuickActions input {
+  border-color: var(--line);
+  background: rgba(2, 9, 16, 0.82);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.formGrid select,
+.fieldGroup select,
+.siteForm select,
+.directoryToolbar select,
+.agendaControls select,
+.messageComposeGrid select,
+.workOrderMaterialForm select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%;
+  background-repeat: no-repeat;
+  background-size: 6px 6px, 6px 6px;
+  padding-right: 34px;
+  appearance: none;
+}
+
+select option {
+  background: #06111a;
+  color: var(--ink);
+}
+
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="number"] {
+  min-height: 40px;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(1) brightness(1.25) saturate(0.8);
+  opacity: 0.8;
+}
+
+input[type="date"]:focus,
+input[type="time"]:focus,
+input[type="datetime-local"]:focus,
+input[type="month"]:focus,
+.vehicleDetailActions input:focus {
+  border-color: rgba(67, 211, 198, 0.72);
+  outline: 2px solid rgba(67, 211, 198, 0.18);
+}
+
+.paymentListRow > span,
+.paymentCustomerTotals article,
+.supplierProfitTotals article,
+.workOrderCard,
+.quoteCard,
+.vehicleCard,
+.deviceCard,
+.meetingListRow {
+  min-width: 0;
+}
+
+.paymentListRow strong,
+.paymentListRow small,
+.paymentCustomerTotals span,
+.paymentCustomerTotals small,
+.supplierProfitTotals span,
+.supplierProfitTotals small,
+.workOrderCard strong,
+.quoteCard strong,
+.vehicleCard strong,
+.deviceCard strong {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .paymentListTable,
+  .paymentListTable[role="table"] {
+    display: grid;
+    gap: 10px;
+    border: 0;
+    background: transparent;
+  }
+
+  .paymentListHeader {
+    display: none;
+  }
+
+  .paymentListRow {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(7, 18, 29, 0.86);
+  }
+
+  .paymentListRow > span {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 6px 10px;
+    align-items: center;
+  }
+
+  .paymentListRow > span::before {
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  .paymentListRow > span:nth-child(1)::before {
+    content: "Movimiento";
+  }
+
+  .paymentListRow > span:nth-child(2)::before {
+    content: "Entidad";
+  }
+
+  .paymentListRow > span:nth-child(3)::before {
+    content: "Categoria";
+  }
+
+  .paymentListRow > span:nth-child(4)::before {
+    content: "Metodo";
+  }
+
+  .paymentListRow > span:nth-child(5)::before {
+    content: "Vence";
+  }
+
+  .paymentListRow > span:nth-child(6)::before {
+    content: "Estado";
+  }
+
+  .paymentListRow > span:nth-child(7)::before {
+    content: "Importe";
+  }
+
+  .paymentListRow .rowActionButtons {
+    display: flex;
+    grid-template-columns: none;
+    justify-content: flex-end;
+  }
+
+  .paymentCustomerTotals article,
+  .paymentMethodTotals article,
+  .supplierProfitTotals article {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .vehicleDetailActions {
+    grid-template-columns: 1fr;
+  }
+
+  .vehicleDetailActions input,
+  .vehicleDetailActions button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .workspace {
+    padding: 10px;
+  }
+
+  .customerProfileOverlay,
+  .deviceDetailOverlay {
+    padding: 6px;
+  }
+
+  .customerProfileModal,
+  .paymentDetailModal,
+  .quoteDetailModal {
+    width: 100%;
+    max-width: none;
+    border-radius: 8px;
+  }
+
+  .modalActions {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .modalActions button {
+    width: 100%;
+  }
+
+  .formGrid input,
+  .formGrid select,
+  .fieldGroup input,
+  .fieldGroup select,
+  .directoryToolbar select,
+  .agendaControls input,
+  .agendaControls select {
+    min-height: 44px;
   }
 }

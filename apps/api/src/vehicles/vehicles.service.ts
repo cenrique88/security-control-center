@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { AuditSeverity, Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service";
 import { FuelService } from "../fuel/fuel.service";
+import { GmailService } from "../gmail/gmail.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { WhatsAppService } from "../whatsapp/whatsapp.service";
 import { CreateVehicleDto } from "./dto/create-vehicle.dto";
@@ -38,6 +39,10 @@ type TraccarSettingsShape = {
   token: string | null;
   username: string | null;
   password: string | null;
+  companyLatitude?: number | Prisma.Decimal | null;
+  companyLongitude?: number | Prisma.Decimal | null;
+  matchRadiusMeters?: number | null;
+  minStopMinutes?: number | null;
 };
 
 type TraccarEvent = {
@@ -65,6 +70,29 @@ type TraccarDevice = {
   attributes?: Record<string, unknown>;
 };
 
+type TraccarNotification = {
+  id?: number;
+  type?: string;
+  always?: boolean;
+  notificators?: string;
+  attributes?: Record<string, unknown>;
+};
+
+type DesiredTraccarNotification = TraccarNotification & {
+  type: string;
+};
+
+type TraccarReportStop = {
+  deviceId?: number;
+  deviceName?: string;
+  startTime?: string;
+  endTime?: string;
+  duration?: number;
+  latitude?: number;
+  longitude?: number;
+  address?: string;
+};
+
 type MatchedRoutePoint = {
   time?: string;
   latitude: number;
@@ -77,6 +105,10 @@ type MatchedRouteResult = {
   mode: "MATCHED" | "GPS_FILTERED";
   distanceKm: number;
   route: MatchedRoutePoint[];
+  engine?: "OSRM" | "GPS";
+  sampledPoints?: number;
+  matchedPoints?: number;
+  confidence?: number | null;
   message?: string;
 };
 
@@ -106,23 +138,31 @@ const GPS_MAX_ACCURACY_METERS = 100;
 const GPS_MAX_SEGMENT_SPEED_KMH = 130;
 const GPS_MIN_POINT_DISTANCE_METERS = 3;
 const OSRM_MAX_MATCH_POINTS = 95;
+const LIVE_STALE_SECONDS = 600;
+const MONTEVIDEO_UTC_OFFSET_HOURS = 3;
 
 @Injectable()
 export class VehiclesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(VehiclesService.name);
   private alertTimer?: NodeJS.Timeout;
   private alertSyncRunning = false;
+  private dailyFuelSyncRunning = false;
+  private lastDailyFuelSyncDate = "";
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly fuelService: FuelService,
+    private readonly gmailService: GmailService,
     private readonly whatsAppService: WhatsAppService,
     private readonly config: ConfigService,
   ) {}
 
   onModuleInit() {
-    this.alertTimer = setInterval(() => void this.syncAllVehicleAlerts(), 60_000);
+    this.alertTimer = setInterval(() => {
+      void this.syncAllVehicleAlerts();
+      void this.syncDailyFuelExpensesIfDue();
+    }, 60_000);
   }
 
   onModuleDestroy() {
@@ -168,9 +208,11 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
         fuelKmPerLiter: dto.fuelKmPerLiter,
         active: dto.active ?? true,
         monitoringPhones: this.cleanOptional(dto.monitoringPhones),
+        monitoringEmails: this.cleanOptional(dto.monitoringEmails),
         clientShareUrl: this.cleanOptional(dto.clientShareUrl),
         gpsMonitoringEnabled: dto.gpsMonitoringEnabled ?? false,
         gpsWhatsappAlerts: dto.gpsWhatsappAlerts ?? false,
+        gpsEmailAlerts: dto.gpsEmailAlerts ?? false,
         gpsEngineCommandsEnabled: dto.gpsEngineCommandsEnabled ?? false,
         gpsAutoEngineStopOnAlarm: dto.gpsAutoEngineStopOnAlarm ?? false,
         gpsCommandTextChannel: dto.gpsCommandTextChannel ?? false,
@@ -199,9 +241,11 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
         fuelKmPerLiter: dto.fuelKmPerLiter,
         active: dto.active,
         monitoringPhones: this.cleanNullable(dto.monitoringPhones),
+        monitoringEmails: this.cleanNullable(dto.monitoringEmails),
         clientShareUrl: this.cleanNullable(dto.clientShareUrl),
         gpsMonitoringEnabled: dto.gpsMonitoringEnabled,
         gpsWhatsappAlerts: dto.gpsWhatsappAlerts,
+        gpsEmailAlerts: dto.gpsEmailAlerts,
         gpsEngineCommandsEnabled: dto.gpsEngineCommandsEnabled,
         gpsAutoEngineStopOnAlarm: dto.gpsAutoEngineStopOnAlarm,
         gpsCommandTextChannel: dto.gpsCommandTextChannel,
@@ -280,11 +324,7 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       return this.emptyDailySummary(vehicle, date, "Configura Traccar y vincula el ID del dispositivo.");
     }
 
-    const day = this.parseReportDate(date);
-    const from = new Date(day);
-    from.setHours(0, 0, 0, 0);
-    const to = new Date(day);
-    to.setHours(23, 59, 59, 999);
+    const { from, to } = this.reportRange(date);
 
     let positions: TraccarPosition[] = [];
     try {
@@ -299,8 +339,8 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
     const routePositions = this.cleanRoutePositions(sorted);
     const matchedRoute = await this.matchRouteToRoads(routePositions);
     const distanceKm = matchedRoute.distanceKm;
-    const stops = this.detectStops(routePositions, settings.minStopMinutes, MOVEMENT_SPEED_THRESHOLD_KMH);
-    const visits = await this.detectCustomerVisits(stops, settings.matchRadiusMeters);
+    const stops = this.detectStops(routePositions, settings.minStopMinutes || 2, MOVEMENT_SPEED_THRESHOLD_KMH);
+    const visits = await this.detectCustomerVisits(stops, settings.matchRadiusMeters || 20);
     const movingMinutes = Math.round(this.calculateMovingMinutes(routePositions, MOVEMENT_SPEED_THRESHOLD_KMH));
     const speedStats = this.calculateSpeedStats(routePositions, MOVEMENT_SPEED_THRESHOLD_KMH);
     const fuelKmPerLiter = Number(vehicle.fuelKmPerLiter) || 10;
@@ -316,6 +356,10 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       routePositions: routePositions.length,
       filteredPositions: Math.max(0, sorted.length - routePositions.length),
       routeMode: matchedRoute.mode,
+      routeEngine: matchedRoute.engine ?? (matchedRoute.mode === "MATCHED" ? "OSRM" : "GPS"),
+      routeSampledPoints: matchedRoute.sampledPoints ?? routePositions.length,
+      routeMatchedPoints: matchedRoute.matchedPoints ?? matchedRoute.route.length,
+      routeConfidence: matchedRoute.confidence ?? null,
       distanceKm,
       movingMinutes,
       stoppedMinutes: stops.reduce((sum, stop) => sum + stop.durationMinutes, 0),
@@ -330,6 +374,142 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       unmatchedStops: stops.filter((stop) => !visits.some((visit) => visit.stopIndex === stop.index)),
       route: matchedRoute.route,
       message: sorted.length ? (matchedRoute.message ?? "") : "Traccar no devolvio posiciones para ese dia.",
+    };
+  }
+
+  async traccarNativeStopsReport(id: string, date?: string) {
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id } });
+    if (!vehicle) {
+      throw new NotFoundException("Vehicle not found");
+    }
+
+    const settings = await this.prisma.traccarSettings.findUnique({ where: { id: "default" } });
+    if (!settings?.baseUrl || !vehicle.traccarDeviceId) {
+      return {
+        configured: false,
+        vehicle,
+        date: this.parseReportDate(date).toISOString().slice(0, 10),
+        stops: [],
+        visits: [],
+        message: "Configura Traccar y vincula el ID del dispositivo.",
+      };
+    }
+
+    const { from, to } = this.reportRange(date);
+
+    const reportStops = await this.fetchTraccarReportStops(settings, vehicle.traccarDeviceId, from, to);
+    const stops = this.cleanNativeReportStops(reportStops
+      .map((stop, index) => this.toNativeReportStop(stop, index))
+      .filter((stop) => Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude)), settings);
+    const visits = await this.detectCustomerVisits(stops, settings.matchRadiusMeters || 20);
+
+    return {
+      configured: true,
+      vehicle,
+      date: from.toISOString().slice(0, 10),
+      stops,
+      visits,
+      message: stops.length ? "Paradas tomadas desde reporte nativo de Traccar." : "Traccar no devolvio paradas nativas para ese dia.",
+    };
+  }
+
+  async registerDailyFuelExpense(id: string, date?: string) {
+    const summary = await this.traccarDailySummary(id, date);
+    const vehicle = summary.vehicle as { id: string; name: string; plate?: string | null };
+    if (!summary.configured) {
+      throw new BadRequestException(summary.message || "No se pudo calcular el recorrido GPS.");
+    }
+    if (!vehicle?.id) {
+      throw new BadRequestException("No se encontro el vehiculo del resumen GPS.");
+    }
+
+    const distanceKm = Number(summary.distanceKm) || 0;
+    const estimatedFuelCost = Number(summary.estimatedFuelCost) || 0;
+    if (distanceKm <= 0 || estimatedFuelCost <= 0) {
+      throw new BadRequestException("El resumen GPS no tiene kilometros o combustible estimado para registrar.");
+    }
+
+    const customer = await this.ensureVehicleExpenseCustomer();
+    const routePositions = "routePositions" in summary ? (summary.routePositions ?? 0) : 0;
+    const routeEngine = "routeEngine" in summary ? summary.routeEngine : null;
+    const routeConfidence = "routeConfidence" in summary ? summary.routeConfidence : null;
+    const reference = `GPS-FUEL-${vehicle.id}-${summary.date}`;
+    const concept = `Combustible GPS ${vehicle.name}${vehicle.plate ? ` (${vehicle.plate})` : ""} - ${summary.date}`;
+    const notes = [
+      `Resumen automatico 24h desde Traccar.`,
+      `Km recorridos: ${this.roundNumber(distanceKm, 2)} km.`,
+      `Litros estimados: ${this.roundNumber(Number(summary.estimatedLiters) || 0, 2)} L.`,
+      `Precio combustible: ${this.roundNumber(Number(summary.fuelPricePerLiter) || 0, 2)} UYU/L.`,
+      `Posiciones: ${summary.positions}. Ruta util: ${routePositions}.`,
+      routeEngine ? `Motor ruta: ${routeEngine}.` : "",
+      routeConfidence !== null && routeConfidence !== undefined ? `Confianza ruta: ${this.roundNumber(routeConfidence * 100, 0)}%.` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const existing = await this.prisma.payment.findFirst({
+      where: {
+        reference,
+        vehicleId: vehicle.id,
+        category: "FUEL",
+      },
+      include: this.paymentInclude(),
+    });
+
+    const paidAt = new Date(`${summary.date}T23:59:00`);
+    const data = {
+      customerId: customer.id,
+      vehicleId: vehicle.id,
+      transactionType: "EXPENSE",
+      category: "FUEL",
+      concept,
+      amount: estimatedFuelCost,
+      quantity: Math.max(1, Math.round(Number(summary.estimatedLiters) || 1)),
+      unitPrice: Number(summary.fuelPricePerLiter) || null,
+      currency: "UYU",
+      method: "GPS / estimado",
+      reference,
+      notes,
+      dueDate: paidAt,
+      paidAt,
+    };
+
+    const payment = existing
+      ? await this.prisma.payment.update({
+          where: { id: existing.id },
+          data,
+          include: this.paymentInclude(),
+        })
+      : await this.prisma.payment.create({
+          data,
+          include: this.paymentInclude(),
+        });
+
+    await this.audit.record({
+      module: "VEHICLES",
+      action: existing ? "GPS_FUEL_EXPENSE_UPDATED" : "GPS_FUEL_EXPENSE_CREATED",
+      entityType: "Vehicle",
+      entityId: vehicle.id,
+      severity: AuditSeverity.WARNING,
+      summary: `${existing ? "Actualizado" : "Registrado"} combustible GPS de ${vehicle.name}: ${this.roundNumber(distanceKm, 2)} km / $ ${this.roundNumber(estimatedFuelCost, 2)}`,
+      metadata: {
+        paymentId: payment.id,
+        reference,
+        date: summary.date,
+        distanceKm,
+        estimatedLiters: summary.estimatedLiters,
+        estimatedFuelCost,
+      },
+    });
+
+    return {
+      created: !existing,
+      updated: Boolean(existing),
+      payment,
+      summary,
+      message: existing
+        ? "Gasto de combustible GPS actualizado para ese dia."
+        : "Gasto de combustible GPS registrado en Gastos e Ingresos.",
     };
   }
 
@@ -363,6 +543,7 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       const positionTime = resolvedPosition ? this.positionTime(resolvedPosition) : null;
       const lastUpdate = this.parsePositionDate(device?.lastUpdate) ?? positionTime;
       const ageSeconds = lastUpdate ? Math.max(0, Math.round((Date.now() - lastUpdate.getTime()) / 1000)) : null;
+      const displayPositionTime = lastUpdate ?? positionTime;
       const attributes = {
         ...(device?.attributes ?? {}),
         ...(resolvedPosition?.attributes ?? {}),
@@ -385,7 +566,7 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
           : null,
         online: device?.status === "online",
         moving: speedKmh >= MOVEMENT_SPEED_THRESHOLD_KMH || Boolean(attributes.motion),
-        stale: ageSeconds === null ? true : ageSeconds > 120,
+        stale: ageSeconds === null ? true : ageSeconds > LIVE_STALE_SECONDS,
         ageSeconds,
         latitude: hasPosition ? latitude : null,
         longitude: hasPosition ? longitude : null,
@@ -394,7 +575,7 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
         altitude: Number.isFinite(Number(resolvedPosition?.altitude)) ? Number(resolvedPosition?.altitude) : null,
         accuracyMeters: resolvedPosition ? this.positionAccuracyMeters(resolvedPosition) : null,
         address: resolvedPosition?.address ?? null,
-        positionTime: positionTime?.toISOString() ?? null,
+        positionTime: displayPositionTime?.toISOString() ?? null,
         serverTime: resolvedPosition?.serverTime ?? null,
         fixTime: resolvedPosition?.fixTime ?? null,
         mapUrl: hasPosition ? this.googleMapsSearchUrl(latitude, longitude) : null,
@@ -432,7 +613,7 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
-    const radius = settings.matchRadiusMeters || 120;
+    const radius = settings.matchRadiusMeters || 20;
     const vehicles = await this.prisma.vehicle.findMany({
       where: { active: true, traccarDeviceId: { not: null } },
       select: { traccarDeviceId: true },
@@ -548,11 +729,7 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       return { configured: false, vehicle, events: [], message: "Configura Traccar y vincula el ID del dispositivo." };
     }
 
-    const day = this.parseReportDate(date);
-    const from = new Date(day);
-    from.setHours(0, 0, 0, 0);
-    const to = new Date(day);
-    to.setHours(23, 59, 59, 999);
+    const { from, to } = this.reportRange(date);
     const events = await this.fetchTraccarEvents(settings, vehicle.traccarDeviceId, from, to);
 
     return { configured: true, vehicle, events, message: events.length ? "" : "Sin eventos Traccar para ese dia." };
@@ -723,21 +900,28 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
     let failed = 0;
     for (const event of newEvents) {
       const enriched = await this.enrichTraccarEvent(settings, event);
-      const results = await this.sendVehicleWhatsApp(vehicle, this.buildEventWhatsAppMessage(vehicle, event, enriched), {
+      const message = this.buildEventWhatsAppMessage(vehicle, event, enriched);
+      const context = {
+        eventType: event.type,
+        eventId: event.id,
+        traccarDeviceId: vehicle.traccarDeviceId,
+        geofenceId: event.geofenceId,
+        geofenceName: enriched.geofenceName,
+        positionId: event.positionId,
+        latitude: enriched.latitude,
+        longitude: enriched.longitude,
+        mapUrl: enriched.mapUrl,
+        eventTime: event.eventTime ?? event.serverTime,
+      };
+      const whatsappResults = await this.sendVehicleWhatsApp(vehicle, message, {
         onlyIfEnabled: true,
-        context: {
-          eventType: event.type,
-          eventId: event.id,
-          traccarDeviceId: vehicle.traccarDeviceId,
-          geofenceId: event.geofenceId,
-          geofenceName: enriched.geofenceName,
-          positionId: event.positionId,
-          latitude: enriched.latitude,
-          longitude: enriched.longitude,
-          mapUrl: enriched.mapUrl,
-          eventTime: event.eventTime ?? event.serverTime,
-        },
+        context,
       });
+      const emailResults = await this.sendVehicleEmail(vehicle, `Alerta GPS ${this.traccarEventLabel(event.type)} - ${vehicle.name}`, message, {
+        onlyIfEnabled: true,
+        context,
+      });
+      const results = [...whatsappResults, ...emailResults];
       sent += results.filter((result) => result.sent !== false).length;
       failed += results.filter((result) => result.sent === false).length;
     }
@@ -776,8 +960,62 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       message: sent
         ? `Alertas enviadas: ${sent}${failed ? `, fallidas: ${failed}` : ""}.`
         : failed
-          ? `No se pudo enviar WhatsApp (${failed} intento/s fallidos).`
+          ? `No se pudieron enviar alertas (${failed} intento/s fallidos).`
           : "Sin alertas nuevas.",
+    };
+  }
+
+  async configureTraccarNotifications(id: string) {
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id } });
+    if (!vehicle) {
+      throw new NotFoundException("Vehicle not found");
+    }
+    if (!vehicle.traccarDeviceId) {
+      throw new BadRequestException("El vehiculo no tiene dispositivo Traccar vinculado.");
+    }
+
+    const settings = await this.prisma.traccarSettings.findUnique({ where: { id: "default" } });
+    if (!settings?.baseUrl || (!settings.token && (!settings.username || !settings.password))) {
+      throw new BadRequestException("Configura Traccar antes de crear notificaciones.");
+    }
+
+    const desired = this.defaultTraccarNotifications();
+    const existing = await this.fetchTraccarNotifications(settings);
+    const results = [];
+
+    for (const notification of desired) {
+      const current = existing.find((item) => item.type === notification.type && this.hasTraccarNotificator(item.notificators, "web"));
+      const saved = current?.id
+        ? await this.updateTraccarNotification(settings, current.id, { ...current, ...notification, notificators: this.mergeTraccarNotificators(current.notificators, "web") })
+        : await this.createTraccarNotification(settings, notification);
+      const linked = saved.id ? await this.linkNotificationToDevice(settings, saved.id, vehicle.traccarDeviceId) : false;
+      results.push({
+        type: notification.type,
+        label: this.traccarEventLabel(notification.type),
+        notificationId: saved.id ?? null,
+        status: current?.id ? "actualizada" : "creada",
+        linked,
+      });
+    }
+
+    await this.audit.record({
+      module: "VEHICLES",
+      action: "TRACCAR_NOTIFICATIONS_CONFIGURED",
+      entityType: "Vehicle",
+      entityId: vehicle.id,
+      severity: AuditSeverity.INFO,
+      summary: `Notificaciones Traccar configuradas para ${vehicle.name}`,
+      metadata: {
+        traccarDeviceId: vehicle.traccarDeviceId,
+        notifications: results,
+      },
+    });
+
+    return {
+      configured: true,
+      vehicle,
+      notifications: results,
+      message: `Traccar configurado: ${results.length} notificaciones web vinculadas al vehiculo.`,
     };
   }
 
@@ -792,7 +1030,7 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
         where: {
           active: true,
           gpsMonitoringEnabled: true,
-          gpsWhatsappAlerts: true,
+          OR: [{ gpsWhatsappAlerts: true }, { gpsEmailAlerts: true }],
           traccarDeviceId: { not: null },
         },
         select: { id: true },
@@ -807,6 +1045,38 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       }
     } finally {
       this.alertSyncRunning = false;
+    }
+  }
+
+  private async syncDailyFuelExpensesIfDue() {
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    if (minutes < 23 * 60 + 55 || this.lastDailyFuelSyncDate === today || this.dailyFuelSyncRunning) {
+      return;
+    }
+
+    this.dailyFuelSyncRunning = true;
+    try {
+      const vehicles = await this.prisma.vehicle.findMany({
+        where: {
+          active: true,
+          traccarDeviceId: { not: null },
+        },
+        select: { id: true },
+      });
+
+      for (const vehicle of vehicles) {
+        try {
+          await this.registerDailyFuelExpense(vehicle.id, today);
+        } catch (error) {
+          this.logger.warn(`No se pudo registrar combustible GPS automatico del vehiculo ${vehicle.id}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      this.lastDailyFuelSyncDate = today;
+    } finally {
+      this.dailyFuelSyncRunning = false;
     }
   }
 
@@ -832,7 +1102,7 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       description: customer.address ?? "",
       latitude: coords.latitude,
       longitude: coords.longitude,
-      radius: settings.matchRadiusMeters || 120,
+      radius: settings.matchRadiusMeters || 20,
     });
 
     if (result.status !== "created" && result.status !== "updated") {
@@ -892,7 +1162,7 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       description: site.address,
       latitude: coords.latitude,
       longitude: coords.longitude,
-      radius: settings.matchRadiusMeters || 120,
+      radius: settings.matchRadiusMeters || 20,
     });
 
     if (result.status !== "created" && result.status !== "updated") {
@@ -921,6 +1191,70 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
     return { configured: true, ...result, linked };
   }
 
+  async syncDispatchStopGeofence(stop: {
+    id: string;
+    title: string;
+    address?: string | null;
+    notes?: string | null;
+    zone?: string | null;
+    placeType?: string | null;
+    latitude?: Prisma.Decimal | number | string | null;
+    longitude?: Prisma.Decimal | number | string | null;
+    vehicleId?: string | null;
+    traccarGeofenceId?: number | null;
+  }) {
+    const settings = await this.prisma.traccarSettings.findUnique({ where: { id: "default" } });
+    if (!settings?.baseUrl || (!settings.token && (!settings.username || !settings.password))) {
+      return { configured: false, status: "skipped" as const, reason: "Configura Traccar antes de crear geozonas." };
+    }
+
+    const latitude = Number(stop.latitude);
+    const longitude = Number(stop.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return { configured: true, status: "skipped" as const, reason: "La parada no tiene coordenadas validas." };
+    }
+
+    const radius = Math.max(10, Math.min(Number(settings.matchRadiusMeters) || 20, 25));
+    const placeLabel = this.dispatchPlaceTypeLabel(stop.placeType);
+    const title = this.cleanGeofenceTitle(stop.title);
+    const description = [
+      stop.notes?.trim() ? `Descripcion: ${stop.notes.trim()}` : "",
+      stop.address?.trim() ? `Direccion: ${stop.address.trim()}` : "",
+      stop.zone?.trim() ? `Zona: ${stop.zone.trim()}` : "",
+      `Tipo: ${placeLabel}`,
+      "Origen: parada guardada en el CRM",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const result = await this.upsertTraccarGeofence(settings, {
+      currentId: stop.traccarGeofenceId,
+      name: `CRM ${placeLabel} - ${title}`,
+      description,
+      latitude,
+      longitude,
+      radius,
+    });
+
+    if (result.status !== "created" && result.status !== "updated") {
+      return { configured: true, ...result };
+    }
+
+    const vehicles = await this.prisma.vehicle.findMany({
+      where: stop.vehicleId
+        ? { id: stop.vehicleId, active: true, traccarDeviceId: { not: null } }
+        : { active: true, traccarDeviceId: { not: null } },
+      select: { traccarDeviceId: true },
+    });
+    const linked = await this.linkGeofenceToVehicles(
+      settings,
+      result.geofenceId,
+      vehicles.map((vehicle) => vehicle.traccarDeviceId).filter(Boolean) as string[],
+    );
+
+    return { configured: true, ...result, linked, radius };
+  }
+
   private async fetchTraccarEvents(settings: TraccarSettingsShape, deviceId: string, from: Date, to: Date) {
     const baseUrl = settings.baseUrl?.replace(/\/+$/, "");
     if (!baseUrl) {
@@ -947,6 +1281,13 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       .filter(Boolean);
   }
 
+  private vehicleEmails(vehicle: { monitoringEmails?: string | null }) {
+    return (vehicle.monitoringEmails ?? "")
+      .split(/[\n,;]+/)
+      .map((email) => email.trim())
+      .filter(Boolean);
+  }
+
   private async sendVehicleWhatsApp(
     vehicle: { id: string; monitoringPhones?: string | null; gpsWhatsappAlerts?: boolean },
     message: string,
@@ -962,11 +1303,38 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       try {
         const result = await this.withTimeout(this.whatsAppService.send({ to: phone, message }), 25000);
         results.push(result);
-        await this.logVehicleAlert(vehicle.id, phone, message, result.sent === false ? "FAILED" : "SENT", options.context, null);
+        await this.logVehicleAlert(vehicle.id, phone, message, result.sent === false ? "FAILED" : "SENT", "WHATSAPP", options.context, null);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         results.push({ to: phone, sent: false, error: errorMessage });
-        await this.logVehicleAlert(vehicle.id, phone, message, "FAILED", options.context, errorMessage);
+        await this.logVehicleAlert(vehicle.id, phone, message, "FAILED", "WHATSAPP", options.context, errorMessage);
+      }
+    }
+
+    return results;
+  }
+
+  private async sendVehicleEmail(
+    vehicle: { id: string; name: string; plate?: string | null; monitoringEmails?: string | null; gpsEmailAlerts?: boolean },
+    subject: string,
+    message: string,
+    options: { onlyIfEnabled: boolean; context?: VehicleAlertContext },
+  ) {
+    if (options.onlyIfEnabled && !vehicle.gpsEmailAlerts) {
+      return [];
+    }
+
+    const emails = this.vehicleEmails(vehicle);
+    const results = [];
+    for (const email of emails) {
+      try {
+        const result = await this.gmailService.send({ to: email, subject, message });
+        results.push(result);
+        await this.logVehicleAlert(vehicle.id, email, message, "SENT", "EMAIL", options.context, null);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        results.push({ to: email, sent: false, error: errorMessage });
+        await this.logVehicleAlert(vehicle.id, email, message, "FAILED", "EMAIL", options.context, errorMessage);
       }
     }
 
@@ -975,9 +1343,10 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
 
   private async logVehicleAlert(
     vehicleId: string,
-    phone: string,
+    target: string,
     message: string,
     status: "SENT" | "FAILED",
+    channel: "WHATSAPP" | "EMAIL",
     context?: VehicleAlertContext,
     error?: string | null,
   ) {
@@ -985,7 +1354,8 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       await this.prisma.vehicleAlertLog.create({
         data: {
           vehicleId,
-          phone,
+          phone: target,
+          channel,
           message,
           status,
           eventType: context?.eventType ?? "whatsapp",
@@ -1002,7 +1372,7 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
         },
       });
     } catch (logError) {
-      this.logger.warn(`No se pudo registrar alerta WhatsApp: ${logError instanceof Error ? logError.message : String(logError)}`);
+      this.logger.warn(`No se pudo registrar alerta GPS: ${logError instanceof Error ? logError.message : String(logError)}`);
     }
   }
 
@@ -1095,7 +1465,7 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async resolveGeofenceName(settings: TraccarSettingsShape, geofenceId: number) {
-    const [customer, site] = await Promise.all([
+    const [customer, site, dispatchStop] = await Promise.all([
       this.prisma.customer.findFirst({
         where: { traccarGeofenceId: geofenceId },
         select: { name: true },
@@ -1103,6 +1473,11 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
       this.prisma.site.findFirst({
         where: { traccarGeofenceId: geofenceId },
         select: { name: true, customer: { select: { name: true } } },
+      }),
+      this.prisma.dispatchStop.findFirst({
+        where: { traccarGeofenceId: geofenceId },
+        select: { title: true, notes: true, address: true, placeType: true },
+        orderBy: { updatedAt: "desc" },
       }),
     ]);
 
@@ -1112,6 +1487,9 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
     if (customer) {
       return customer.name;
     }
+    if (dispatchStop) {
+      return this.cleanGeofenceTitle(dispatchStop.notes || dispatchStop.title || dispatchStop.address || this.dispatchPlaceTypeLabel(dispatchStop.placeType));
+    }
 
     const response = await this.traccarRequest(settings, `/api/geofences/${geofenceId}`, { method: "GET" });
     if (!response.ok) {
@@ -1119,6 +1497,24 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
     }
     const data = (await response.json()) as { name?: string };
     return data.name ?? null;
+  }
+
+  private cleanGeofenceTitle(value?: string | null) {
+    const clean = (value ?? "").replace(/\s+/g, " ").trim();
+    return clean || "Lugar guardado";
+  }
+
+  private dispatchPlaceTypeLabel(type?: string | null) {
+    const labels: Record<string, string> = {
+      CLIENT: "Cliente",
+      FUTURE_CLIENT: "Posible cliente",
+      IMPORTER: "Proveedor",
+      WAREHOUSE: "Base operativa",
+      LUNCH: "Almuerzo",
+      TRANSFER: "Traslado",
+      OTHER: "Lugar conocido",
+    };
+    return labels[type ?? ""] ?? "Lugar conocido";
   }
 
   private googleMapsSearchUrl(latitude: number, longitude: number) {
@@ -1197,6 +1593,93 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
     return (await response.json()) as TraccarPosition[];
   }
 
+  private async fetchTraccarReportStops(settings: TraccarSettingsShape, deviceId: string, from: Date, to: Date) {
+    const baseUrl = settings.baseUrl?.replace(/\/+$/, "");
+    if (!baseUrl) {
+      throw new Error("Configura la URL de Traccar.");
+    }
+
+    const url = new URL(`${baseUrl}/api/reports/stops`);
+    url.searchParams.set("deviceId", deviceId);
+    url.searchParams.set("from", from.toISOString());
+    url.searchParams.set("to", to.toISOString());
+
+    const response = await fetch(url, { headers: this.traccarHeaders(settings) });
+    if (!response.ok) {
+      throw new Error(`Traccar respondio ${response.status}. No se pudo leer el reporte nativo de paradas.`);
+    }
+
+    return (await response.json()) as TraccarReportStop[];
+  }
+
+  private toNativeReportStop(stop: TraccarReportStop, index: number) {
+    const arrival = stop.startTime ?? stop.endTime ?? new Date().toISOString();
+    const departure = stop.endTime ?? stop.startTime ?? arrival;
+    const latitude = Number(stop.latitude);
+    const longitude = Number(stop.longitude);
+
+    return {
+      index,
+      latitude,
+      longitude,
+      address: stop.address ?? "",
+      arrival,
+      departure,
+      durationMinutes: this.traccarDurationMinutes(stop.duration, arrival, departure),
+      source: "TRACCAR_REPORT" as const,
+    };
+  }
+
+  private cleanNativeReportStops(
+    stops: ReturnType<typeof this.toNativeReportStop>[],
+    settings: TraccarSettingsShape,
+  ) {
+    const baseLatitude = Number(settings.companyLatitude);
+    const baseLongitude = Number(settings.companyLongitude);
+    const hasBase = Number.isFinite(baseLatitude) && Number.isFinite(baseLongitude);
+    const duplicateRadiusMeters = 25;
+    const baseResidualRadiusMeters = Math.max(50, Number(settings.matchRadiusMeters) || 20);
+
+    return stops
+      .filter((stop, index) => {
+        const durationMinutes = Number(stop.durationMinutes) || 0;
+        const hasAddress = Boolean(stop.address?.trim());
+        const previous = stops[index - 1];
+        const distanceFromPrevious = previous
+          ? this.haversineKm(stop.latitude, stop.longitude, previous.latitude, previous.longitude) * 1000
+          : Number.POSITIVE_INFINITY;
+        const distanceFromBase = hasBase
+          ? this.haversineKm(stop.latitude, stop.longitude, baseLatitude, baseLongitude) * 1000
+          : Number.POSITIVE_INFINITY;
+
+        if (durationMinutes <= 0 && distanceFromBase <= baseResidualRadiusMeters) {
+          return false;
+        }
+
+        if (durationMinutes <= 0 && !hasAddress && distanceFromPrevious <= duplicateRadiusMeters) {
+          return false;
+        }
+
+        return true;
+      })
+      .map((stop, index) => ({ ...stop, index }));
+  }
+
+  private traccarDurationMinutes(duration: number | undefined, arrival: string, departure: string) {
+    const numericDuration = Number(duration);
+    if (Number.isFinite(numericDuration) && numericDuration > 0) {
+      return Math.max(0, Math.round(numericDuration / 60_000));
+    }
+
+    const start = new Date(arrival).getTime();
+    const end = new Date(departure).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+      return 0;
+    }
+
+    return Math.max(0, Math.round((end - start) / 60_000));
+  }
+
   private async fetchTraccarCurrentPosition(settings: TraccarSettingsShape, deviceId: string) {
     const response = await this.traccarRequest(settings, `/api/positions?deviceId=${encodeURIComponent(deviceId)}`, {
       method: "GET",
@@ -1218,6 +1701,94 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
     }
 
     return (await response.json()) as TraccarDevice;
+  }
+
+  private defaultTraccarNotifications(): DesiredTraccarNotification[] {
+    return [
+      "geofenceEnter",
+      "geofenceExit",
+      "deviceOverspeed",
+      "alarm",
+      "ignitionOn",
+      "ignitionOff",
+      "deviceOnline",
+      "deviceOffline",
+      "commandResult",
+    ].map((type) => ({
+      type,
+      always: true,
+      notificators: "web",
+      attributes: {
+        source: "security-control-center",
+        label: this.traccarEventLabel(type),
+      },
+    }));
+  }
+
+  private async fetchTraccarNotifications(settings: TraccarSettingsShape) {
+    const response = await this.traccarRequest(settings, "/api/notifications", { method: "GET" });
+    if (!response.ok) {
+      throw new BadRequestException(`Traccar no permitio consultar notificaciones (${response.status}).`);
+    }
+
+    return (await response.json()) as TraccarNotification[];
+  }
+
+  private async createTraccarNotification(settings: TraccarSettingsShape, notification: TraccarNotification) {
+    const response = await this.traccarRequest(settings, "/api/notifications", {
+      method: "POST",
+      body: JSON.stringify({
+        id: 0,
+        ...notification,
+      }),
+    });
+    if (!response.ok) {
+      throw new BadRequestException(`Traccar no permitio crear notificacion ${notification.type} (${response.status}).`);
+    }
+
+    return (await response.json()) as TraccarNotification;
+  }
+
+  private async updateTraccarNotification(settings: TraccarSettingsShape, id: number, notification: TraccarNotification) {
+    const response = await this.traccarRequest(settings, `/api/notifications/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        ...notification,
+        id,
+      }),
+    });
+    if (!response.ok) {
+      return notification;
+    }
+
+    return (await response.json().catch(() => ({ ...notification, id }))) as TraccarNotification;
+  }
+
+  private async linkNotificationToDevice(settings: TraccarSettingsShape, notificationId: number, deviceId: string) {
+    const response = await this.traccarRequest(settings, "/api/permissions", {
+      method: "POST",
+      body: JSON.stringify({ deviceId: Number(deviceId), notificationId }),
+    });
+
+    return response.ok || response.status === 400;
+  }
+
+  private hasTraccarNotificator(notificators: string | undefined, target: string) {
+    return (notificators ?? "")
+      .split(/[, ]+/)
+      .map((item) => item.trim().toLowerCase())
+      .includes(target.toLowerCase());
+  }
+
+  private mergeTraccarNotificators(notificators: string | undefined, target: string) {
+    const values = new Set(
+      (notificators ?? "")
+        .split(/[, ]+/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    );
+    values.add(target);
+    return Array.from(values).join(",");
   }
 
   private async upsertTraccarGeofence(
@@ -1499,12 +2070,13 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
     const osrmBaseUrl = this.config.get<string>("OSRM_BASE_URL")?.replace(/\/+$/, "");
 
     if (!osrmBaseUrl || this.config.get<string>("OSRM_MAP_MATCHING") === "false" || positions.length < 2) {
-      return { mode: "GPS_FILTERED", distanceKm: fallbackDistanceKm, route: fallbackRoute };
+      return { mode: "GPS_FILTERED", engine: "GPS", distanceKm: fallbackDistanceKm, route: fallbackRoute };
     }
 
     if (osrmBaseUrl.includes("router.project-osrm.org") && this.config.get<string>("OSRM_ALLOW_PUBLIC") !== "true") {
       return {
         mode: "GPS_FILTERED",
+        engine: "GPS",
         distanceKm: fallbackDistanceKm,
         route: fallbackRoute,
         message: "Ruta filtrada por GPS. Map matching publico desactivado para proteger ubicaciones reales.",
@@ -1513,52 +2085,118 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
 
     const sample = this.sampleRoutePositions(positions, OSRM_MAX_MATCH_POINTS);
     try {
-      let response = await this.fetchWithTimeout(this.buildOsrmMatchUrl(osrmBaseUrl, sample, true), 8000);
-      if (!response.ok) {
-        response = await this.fetchWithTimeout(this.buildOsrmMatchUrl(osrmBaseUrl, sample, false), 8000);
-      }
-
-      if (!response.ok) {
+      const matched = await this.matchOsrmRouteChunks(osrmBaseUrl, sample);
+      if (matched.coordinates.length < 2) {
         return {
           mode: "GPS_FILTERED",
+          engine: "GPS",
           distanceKm: fallbackDistanceKm,
           route: fallbackRoute,
-          message: `Ruta filtrada por GPS. OSRM respondio ${response.status}.`,
+          sampledPoints: sample.length,
+          message: matched.message || "Ruta filtrada por GPS. OSRM no pudo ajustar el recorrido a calles.",
         };
+      }
+
+      const distanceKm = this.roundNumber(matched.distanceMeters / 1000, 2) || fallbackDistanceKm;
+      return {
+        mode: "MATCHED",
+        engine: "OSRM",
+        distanceKm,
+        sampledPoints: sample.length,
+        matchedPoints: matched.coordinates.length,
+        confidence: matched.confidence,
+        route: matched.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })),
+        message: `Recorrido ajustado a calles con OSRM privado (${sample.length} puntos GPS -> ${matched.coordinates.length} puntos de ruta).`,
+      };
+    } catch (error) {
+      return {
+        mode: "GPS_FILTERED",
+        engine: "GPS",
+        distanceKm: fallbackDistanceKm,
+        route: fallbackRoute,
+        sampledPoints: sample.length,
+        message: `Ruta filtrada por GPS. No se pudo conectar con OSRM: ${error instanceof Error ? error.message : String(error)}.`,
+      };
+    }
+  }
+
+  private async matchOsrmRouteChunks(baseUrl: string, positions: TraccarPosition[]) {
+    const chunks = this.chunkRoutePositions(positions, 85, 8);
+    const coordinates: Array<[number, number]> = [];
+    let distanceMeters = 0;
+    const confidences: number[] = [];
+    let lastError = "";
+
+    for (const chunk of chunks) {
+      let response = await this.fetchWithTimeout(this.buildOsrmMatchUrl(baseUrl, chunk, true), 10_000);
+      if (!response.ok) {
+        response = await this.fetchWithTimeout(this.buildOsrmMatchUrl(baseUrl, chunk, false), 10_000);
+      }
+      if (!response.ok) {
+        lastError = `OSRM respondio ${response.status}.`;
+        continue;
       }
 
       const data = (await response.json()) as {
         code?: string;
         matchings?: Array<{
+          confidence?: number;
           distance?: number;
           geometry?: { coordinates?: Array<[number, number]> };
         }>;
       };
-      const matching = data.matchings?.[0];
-      const coordinatesMatched = matching?.geometry?.coordinates ?? [];
-      if (data.code !== "Ok" || coordinatesMatched.length < 2) {
-        return {
-          mode: "GPS_FILTERED",
-          distanceKm: fallbackDistanceKm,
-          route: fallbackRoute,
-          message: "Ruta filtrada por GPS. OSRM no pudo ajustar el recorrido a calles.",
-        };
+
+      if (data.code !== "Ok") {
+        lastError = `OSRM devolvio ${data.code || "respuesta invalida"}.`;
+        continue;
       }
 
-      const distanceKm = this.roundNumber((matching?.distance ?? 0) / 1000, 2) || fallbackDistanceKm;
-      return {
-        mode: "MATCHED",
-        distanceKm,
-        route: coordinatesMatched.map(([longitude, latitude]) => ({ latitude, longitude })),
-      };
-    } catch (error) {
-      return {
-        mode: "GPS_FILTERED",
-        distanceKm: fallbackDistanceKm,
-        route: fallbackRoute,
-        message: `Ruta filtrada por GPS. No se pudo conectar con OSRM: ${error instanceof Error ? error.message : String(error)}.`,
-      };
+      for (const matching of data.matchings ?? []) {
+        const matchedCoordinates = matching.geometry?.coordinates ?? [];
+        if (matchedCoordinates.length < 2) {
+          continue;
+        }
+        distanceMeters += matching.distance ?? 0;
+        if (Number.isFinite(matching.confidence)) {
+          confidences.push(Number(matching.confidence));
+        }
+
+        for (const coordinate of matchedCoordinates) {
+          const previous = coordinates.at(-1);
+          if (previous && Math.abs(previous[0] - coordinate[0]) < 0.000001 && Math.abs(previous[1] - coordinate[1]) < 0.000001) {
+            continue;
+          }
+          coordinates.push(coordinate);
+        }
+      }
     }
+
+    return {
+      coordinates,
+      distanceMeters,
+      confidence: confidences.length ? this.roundNumber(confidences.reduce((sum, value) => sum + value, 0) / confidences.length, 3) : null,
+      message: lastError,
+    };
+  }
+
+  private chunkRoutePositions(positions: TraccarPosition[], chunkSize: number, overlap: number) {
+    if (positions.length <= chunkSize) {
+      return [positions];
+    }
+
+    const chunks: TraccarPosition[][] = [];
+    const step = Math.max(2, chunkSize - overlap);
+    for (let start = 0; start < positions.length; start += step) {
+      const chunk = positions.slice(start, start + chunkSize);
+      if (chunk.length >= 2) {
+        chunks.push(chunk);
+      }
+      if (start + chunkSize >= positions.length) {
+        break;
+      }
+    }
+
+    return chunks;
   }
 
   private sampleRoutePositions(positions: TraccarPosition[], maxPoints: number) {
@@ -1773,10 +2411,22 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
 
   private parseReportDate(date?: string) {
     if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return new Date(`${date}T12:00:00`);
+      return new Date(`${date}T12:00:00-03:00`);
     }
 
     return new Date();
+  }
+
+  private reportRange(date?: string) {
+    const dayKey = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : this.montevideoDateKey(new Date());
+    const [year, month, day] = dayKey.split("-").map(Number);
+    const from = new Date(Date.UTC(year, month - 1, day, MONTEVIDEO_UTC_OFFSET_HOURS, 0, 0, 0));
+    const to = new Date(Date.UTC(year, month - 1, day + 1, MONTEVIDEO_UTC_OFFSET_HOURS, 0, 0, 0) - 1);
+    return { from, to, dayKey };
+  }
+
+  private montevideoDateKey(date: Date) {
+    return date.toLocaleDateString("en-CA", { timeZone: "America/Montevideo" });
   }
 
   private emptyDailySummary(vehicle: unknown, date?: string, message = "") {
@@ -1812,6 +2462,81 @@ export class VehiclesService implements OnModuleInit, OnModuleDestroy {
     if (!vehicle) {
       throw new NotFoundException("Vehicle not found");
     }
+  }
+
+  private async ensureVehicleExpenseCustomer() {
+    const existing =
+      (await this.prisma.customer.findFirst({
+        where: {
+          OR: [
+            { name: { equals: "Security Solutions - Operativo", mode: "insensitive" } },
+            { name: { equals: "Security Solutions", mode: "insensitive" } },
+          ],
+        },
+        select: { id: true },
+      })) ??
+      (await this.prisma.customer.findFirst({
+        where: { type: "INTERNAL" },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      }));
+
+    if (existing) {
+      return existing;
+    }
+
+    return this.prisma.customer.create({
+      data: {
+        reference: await this.nextCustomerReference(),
+        name: "Security Solutions - Operativo",
+        type: "INTERNAL",
+        status: "ACTIVE",
+        notes: "Entidad interna creada para gastos automaticos de vehiculos y operacion.",
+      },
+      select: { id: true },
+    });
+  }
+
+  private async nextCustomerReference() {
+    const latest = await this.prisma.customer.findFirst({
+      where: { reference: { startsWith: "CLI-" } },
+      orderBy: { reference: "desc" },
+      select: { reference: true },
+    });
+    const latestNumber = Number(latest?.reference.replace("CLI-", "") ?? "0");
+    const nextNumber = Number.isFinite(latestNumber) ? latestNumber + 1 : 1;
+    return `CLI-${String(nextNumber).padStart(4, "0")}`;
+  }
+
+  private paymentInclude() {
+    return {
+      customer: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          type: true,
+        },
+      },
+      quote: { select: { id: true, number: true, title: true, total: true } },
+      workOrder: { select: { id: true, title: true, status: true } },
+      vehicle: { select: { id: true, name: true, plate: true } },
+      inventoryItem: { select: { id: true, reference: true, sku: true, name: true, unit: true, stock: true, sourceType: true } },
+      inventoryMovements: {
+        select: {
+          id: true,
+          type: true,
+          quantity: true,
+          stockAfter: true,
+          unitCost: true,
+          totalCost: true,
+          currency: true,
+          createdAt: true,
+          item: { select: { id: true, name: true, sku: true, unit: true } },
+        },
+      },
+    } satisfies Prisma.PaymentInclude;
   }
 
   private cleanOptional(value?: string) {

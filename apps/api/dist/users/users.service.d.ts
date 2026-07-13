@@ -8,34 +8,34 @@ export declare class UsersService {
     constructor(prisma: PrismaService, audit: AuditService);
     list(): import(".prisma/client").Prisma.PrismaPromise<{
         id: string;
-        name: string;
         createdAt: Date;
-        updatedAt: Date;
+        name: string;
         email: string;
         role: import(".prisma/client").$Enums.UserRole;
+        updatedAt: Date;
     }[]>;
     create(dto: CreateUserDto): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
-        updatedAt: Date;
+        name: string;
         email: string;
         role: import(".prisma/client").$Enums.UserRole;
+        updatedAt: Date;
     }>;
     update(id: string, dto: UpdateUserDto): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
-        updatedAt: Date;
+        name: string;
         email: string;
         role: import(".prisma/client").$Enums.UserRole;
+        updatedAt: Date;
     }>;
     remove(id: string): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
-        updatedAt: Date;
+        name: string;
         email: string;
         role: import(".prisma/client").$Enums.UserRole;
+        updatedAt: Date;
     }>;
 }

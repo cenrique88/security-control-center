@@ -9,14 +9,14 @@ export declare class MeetingsController {
         customer: {
             id: string;
             name: string;
-            phone: string | null;
-            reference: string;
             email: string | null;
+            reference: string;
+            phone: string | null;
         };
         attachments: {
             id: string;
-            name: string;
             createdAt: Date;
+            name: string;
             meetingId: string;
             mimeType: string | null;
             size: number | null;
@@ -27,12 +27,12 @@ export declare class MeetingsController {
         createdAt: Date;
         updatedAt: Date;
         status: import(".prisma/client").$Enums.MeetingStatus;
-        type: import(".prisma/client").$Enums.MeetingType;
-        notes: string | null;
         customerId: string;
         dateTime: Date;
         contact: string | null;
+        type: import(".prisma/client").$Enums.MeetingType;
         objective: string;
+        notes: string | null;
         commitments: string | null;
         nextStep: string | null;
         followUpDate: Date | null;
@@ -49,14 +49,14 @@ export declare class MeetingsController {
         customer: {
             id: string;
             name: string;
-            phone: string | null;
-            reference: string;
             email: string | null;
+            reference: string;
+            phone: string | null;
         };
         attachments: {
             id: string;
-            name: string;
             createdAt: Date;
+            name: string;
             meetingId: string;
             mimeType: string | null;
             size: number | null;
@@ -67,12 +67,12 @@ export declare class MeetingsController {
         createdAt: Date;
         updatedAt: Date;
         status: import(".prisma/client").$Enums.MeetingStatus;
-        type: import(".prisma/client").$Enums.MeetingType;
-        notes: string | null;
         customerId: string;
         dateTime: Date;
         contact: string | null;
+        type: import(".prisma/client").$Enums.MeetingType;
         objective: string;
+        notes: string | null;
         commitments: string | null;
         nextStep: string | null;
         followUpDate: Date | null;
@@ -89,14 +89,14 @@ export declare class MeetingsController {
         customer: {
             id: string;
             name: string;
-            phone: string | null;
-            reference: string;
             email: string | null;
+            reference: string;
+            phone: string | null;
         };
         attachments: {
             id: string;
-            name: string;
             createdAt: Date;
+            name: string;
             meetingId: string;
             mimeType: string | null;
             size: number | null;
@@ -107,12 +107,12 @@ export declare class MeetingsController {
         createdAt: Date;
         updatedAt: Date;
         status: import(".prisma/client").$Enums.MeetingStatus;
-        type: import(".prisma/client").$Enums.MeetingType;
-        notes: string | null;
         customerId: string;
         dateTime: Date;
         contact: string | null;
+        type: import(".prisma/client").$Enums.MeetingType;
         objective: string;
+        notes: string | null;
         commitments: string | null;
         nextStep: string | null;
         followUpDate: Date | null;

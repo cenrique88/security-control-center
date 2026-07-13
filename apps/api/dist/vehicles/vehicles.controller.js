@@ -46,6 +46,9 @@ let VehiclesController = class VehiclesController {
     traccarDaily(id, date) {
         return this.vehiclesService.traccarDailySummary(id, date);
     }
+    registerDailyFuelExpense(id, date) {
+        return this.vehiclesService.registerDailyFuelExpense(id, date);
+    }
     traccarLive(id) {
         return this.vehiclesService.traccarLivePosition(id);
     }
@@ -63,6 +66,9 @@ let VehiclesController = class VehiclesController {
     }
     syncVehicleAlerts(id) {
         return this.vehiclesService.syncVehicleAlerts(id);
+    }
+    configureTraccarNotifications(id) {
+        return this.vehiclesService.configureTraccarNotifications(id);
     }
     create(dto) {
         return this.vehiclesService.create(dto);
@@ -111,6 +117,14 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], VehiclesController.prototype, "traccarDaily", null);
 __decorate([
+    (0, common_1.Post)(":id/traccar/daily/fuel-expense"),
+    __param(0, (0, common_1.Param)("id")),
+    __param(1, (0, common_1.Query)("date")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], VehiclesController.prototype, "registerDailyFuelExpense", null);
+__decorate([
     (0, common_1.Get)(":id/traccar/live"),
     __param(0, (0, common_1.Param)("id")),
     __metadata("design:type", Function),
@@ -154,6 +168,13 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], VehiclesController.prototype, "syncVehicleAlerts", null);
+__decorate([
+    (0, common_1.Post)(":id/traccar/notifications/configure"),
+    __param(0, (0, common_1.Param)("id")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], VehiclesController.prototype, "configureTraccarNotifications", null);
 __decorate([
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),

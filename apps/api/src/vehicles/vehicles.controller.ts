@@ -43,6 +43,11 @@ export class VehiclesController {
     return this.vehiclesService.traccarDailySummary(id, date);
   }
 
+  @Post(":id/traccar/daily/fuel-expense")
+  registerDailyFuelExpense(@Param("id") id: string, @Query("date") date?: string) {
+    return this.vehiclesService.registerDailyFuelExpense(id, date);
+  }
+
   @Get(":id/traccar/live")
   traccarLive(@Param("id") id: string) {
     return this.vehiclesService.traccarLivePosition(id);
@@ -71,6 +76,11 @@ export class VehiclesController {
   @Post(":id/traccar/sync-alerts")
   syncVehicleAlerts(@Param("id") id: string) {
     return this.vehiclesService.syncVehicleAlerts(id);
+  }
+
+  @Post(":id/traccar/notifications/configure")
+  configureTraccarNotifications(@Param("id") id: string) {
+    return this.vehiclesService.configureTraccarNotifications(id);
   }
 
   @Post()

@@ -12,7 +12,6 @@ export declare class AuditController {
             } | null;
         } & {
             id: string;
-            createdAt: Date;
             module: string;
             action: string;
             entityType: string;
@@ -22,6 +21,7 @@ export declare class AuditController {
             actorName: string | null;
             summary: string;
             metadata: import("@prisma/client/runtime/library").JsonValue | null;
+            createdAt: Date;
         })[];
     }>;
 }

@@ -1,0 +1,3 @@
+ALTER TABLE "Vehicle" ADD COLUMN "monitoringEmails" TEXT;
+ALTER TABLE "Vehicle" ADD COLUMN "gpsEmailAlerts" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "VehicleAlertLog" ADD COLUMN "channel" TEXT NOT NULL DEFAULT 'WHATSAPP';

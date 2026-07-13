@@ -264,11 +264,18 @@ export class GmailService {
       }),
     });
 
+    const data = (await response.json().catch(() => ({}))) as {
+      access_token?: string;
+      error?: string;
+      error_description?: string;
+    };
+
     if (!response.ok) {
-      throw new ServiceUnavailableException(`Gmail token request failed: ${response.status}`);
+      throw new ServiceUnavailableException(
+        data.error_description ?? data.error ?? `Gmail token request failed: ${response.status}`,
+      );
     }
 
-    const data = (await response.json()) as { access_token?: string };
     if (!data.access_token) {
       throw new ServiceUnavailableException("Gmail did not return an access token");
     }
